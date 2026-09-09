@@ -115,7 +115,7 @@ curl -X POST http://localhost:8800/api/v1/predict/batch \
 | `adaptive` | 运行自适应学习引擎 |
 | `all` | 训练 → 评估 → 导出 全流程 |
 
-常用参数：`--horizon {short_term,mid_term,long_term,all}`、`--config <path>`、`--model-type {lightgbm,pytorch_lstm}`、`--host` / `--port`。
+常用参数：`--horizon {short_term,mid_term,long_term,all}`、`--config <path>`、`--model-type {lightgbm,pytorch_lstm,timesfm,ensemble}`、`--host` / `--port`。
 
 ---
 
@@ -136,13 +136,14 @@ curl -X POST http://localhost:8800/api/v1/predict/batch \
 │   ├── data/                  # 采集 / 预处理 / 技术指标 / 情感分析 / 质量门控
 │   ├── train/                 # LightGBM 训练器、模型定义、自适应学习
 │   ├── eval/                  # 双维评估器
-│   ├── inference/             # 推理引擎（含 TimesFM 回退）
+│   ├── inference/             # 推理引擎（predictor.py + predictor_utils.py，含 TimesFM 回退）
 │   ├── api/                   # FastAPI 服务
 │   ├── export/                # ONNX 导出
 │   ├── report/                # 日报 / 周报生成
 │   ├── scheduler/             # 自动重训练调度
 │   ├── audit/                 # 预测审计
 │   ├── notification/          # 信号推送
+│   ├── utils/                 # 通用工具
 │   └── timesfm_predictor.py   # TimesFM 适配（可选）
 ├── Kronos/                    # 第三方基础模型源码快照（见下）
 ├── scripts/                   # 占位模型生成等工具脚本
@@ -201,7 +202,14 @@ python -m pip install timesfm[torch]
 
 启用：`PredictionEngine.load_models(model_type)` 支持 `timesfm` 与 `ensemble`（LightGBM + TimesFM 融合），配置段为 `model.timesfm.{context_days,verbose}`；加载逻辑见 `src/inference/predictor.py`：优先读本地占位 pickle，不存在再懒加载真实 `TimesFMFinancePredictor`（懒加载 `timesfm`/`torch`）。
 
-> 注意：`main.py` CLI 的模型类型白名单当前仅 `lightgbm` / `pytorch_lstm`，**`timesfm` 与 `ensemble` 只能通过直接调用 `PredictionEngine` 使用**，经 CLI 会因类型校验而退出。
+CLI 用法（白名单已放开，见 `main.py` 的 `--model-type` choices 与 `valid_types`）：
+
+```bash
+python main.py predict 600519.SH --horizon mid_term --model-type timesfm
+python main.py predict 600519.SH --horizon mid_term --model-type ensemble   # LightGBM + TimesFM 融合
+```
+
+> 注意：`timesfm` / `ensemble` 未安装 PyTorch 时会回退到 `models/timesfm_*.pkl` 占位模型，结果仅供链路验证，不代表真实预测精度。
 
 Windows 上若出现 `WinError 126`（本机库加载失败），通常是 PyTorch 与 CUDA/CPU 版本不匹配，改用 CPU 版 PyTorch 即可。
 
