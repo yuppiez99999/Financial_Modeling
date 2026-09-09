@@ -46,7 +46,7 @@
 ### 1. 安装
 
 ```bash
-git clone https://cnb.cool/yuppiez328/Financial_Modeling.git
+git clone https://github.com/yuppiez99999/Financial_Modeling.git
 cd Financial_Modeling
 
 python -m venv .venv
