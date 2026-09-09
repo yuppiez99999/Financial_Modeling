@@ -62,6 +62,9 @@ def apply_monkeypatches(monkeypatch):
 
     predmod.DataCollector = DummyCollector
     predmod.FeatureEngineer = DummyFeatureEngineer
+    # ensure TimesFMFinancePredictor uses a safe placeholder by default in tests
+    import src.timesfm_predictor as tfm_mod
+    tfm_mod.TimesFMFinancePredictor = DummyTFM
 
 
 def test_lightgbm_path(cfg, monkeypatch):
