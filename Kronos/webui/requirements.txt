@@ -1,5 +1,10 @@
-flask==2.3.3
-flask-cors==4.0.0
+# 安全下限（消除 Dependabot 告警）：
+#   flask>=3.1.3      GHSA-68rp-wp8r-4726 (Vary: Cookie)
+#   flask-cors>=6.0.0 GHSA-7rxf-gvfg-47g4 / GHSA-43qf-4rqw-9q2g / GHSA-8vgw-p6qm-5gr7
+#                     GHSA-hxwh-jpp2-84pm / GHSA-84pr-m4jr-85g5
+# 注：Kronos webui 属第三方快照，未接入本项目主链路；此处仅上调安全下限，未做完整兼容性验证。
+flask>=3.1.3
+flask-cors>=6.0.0
 pandas==2.2.2
 numpy>=1.26.0
 plotly==5.17.0
