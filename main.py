@@ -365,8 +365,8 @@ def main():
                         help="预测周期")
     parser.add_argument("--config", default=None, help="配置文件路径")
     parser.add_argument("--model-type", default=None,
-                        choices=["lightgbm", "pytorch_lstm"],
-                        help="模型类型 (覆盖配置文件)")
+                        choices=["lightgbm", "pytorch_lstm", "timesfm", "ensemble"],
+                        help="模型类型 (覆盖配置文件), 支持: lightgbm, pytorch_lstm, timesfm, ensemble")
     parser.add_argument("--host", default=None, help="API 服务地址")
     parser.add_argument("--port", type=int, default=None, help="API 服务端口")
 
@@ -388,7 +388,8 @@ def main():
     logger.info(f"数据源: {config['data']['source']}")
 
     # 验证模型类型
-    valid_types = frozenset({"lightgbm", "pytorch_lstm"})
+    # 支持的模型类型：LightGBM（默认）、PyTorch LSTM、TimesFM（外部可选模块）、以及 Ensemble（混合）
+    valid_types = frozenset({"lightgbm", "pytorch_lstm", "timesfm", "ensemble"})
     if config["model"]["type"] not in valid_types:
         logger.error(f"不支持的模型类型: {config['model']['type']}，支持的类型: {sorted(valid_types)}")
         sys.exit(1)
