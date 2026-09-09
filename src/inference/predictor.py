@@ -178,8 +178,16 @@ class PredictionEngine:
             if lgb_entry is not None and isinstance(lgb_entry, dict) and "model" in lgb_entry:
                 m = lgb_entry["model"]
                 s = lgb_entry.get("scaler")
-                X_scaled = s.transform(latest)
-                lgb_prob = float(m.predict_proba(X_scaled)[0][1])
+                try:
+                    if s is None:
+                        # 如果 scaler 缺失，尝试直接使用原始特征（模型可能接受原始特征）
+                        X_in = latest
+                    else:
+                        X_in = s.transform(latest)
+                    lgb_prob = float(m.predict_proba(X_in)[0][1])
+                except Exception as e:
+                    logger.warning(f"LightGBM 分量预测失败，回退为 None: {e}")
+                    lgb_prob = None
 
             tfm_prob = None
             if tfm_entry is not None and isinstance(tfm_entry, TimesFMFinancePredictor):
@@ -187,6 +195,21 @@ class PredictionEngine:
                 tfm_res = tfm_entry.predict_classification(close_prices, horizon=horizon_days, symbol=symbol)
                 if not tfm_res.get("error"):
                     tfm_prob = float(tfm_res.get("probability", 0.5))
+            else:
+                # tfm_entry 可能是占位 dict（{'model':..., 'scaler':...}）
+                if isinstance(tfm_entry, dict) and "model" in tfm_entry:
+                    # 占位 timesfm 使用 lightgbm-like 接口
+                    try:
+                        s = tfm_entry.get("scaler")
+                        m = tfm_entry.get("model")
+                        if s is None:
+                            X_in = latest
+                        else:
+                            X_in = s.transform(latest)
+                        tfm_prob = float(m.predict_proba(X_in)[0][1])
+                    except Exception as e:
+                        logger.warning(f"占位 TimesFM 分量预测失败: {e}")
+                        tfm_prob = None
 
             # 权重
             tfm_weight = float(self.config.get("model", {}).get("ensemble", {}).get("tfm_weight", 0.4))

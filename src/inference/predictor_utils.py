@@ -57,7 +57,12 @@ def load_ensemble_entry(save_dir: Path, model_key: str, lightgbm_file: Path, ins
     # LightGBM 部分
     if lightgbm_file.exists():
         try:
-            entry["lightgbm"] = joblib.load(lightgbm_file)
+            lgb = joblib.load(lightgbm_file)
+            # 确保包装为 {'model':..., 'scaler':...}
+            if isinstance(lgb, dict) and "model" in lgb:
+                entry["lightgbm"] = lgb
+            else:
+                entry["lightgbm"] = _wrap_pickle_model(lgb)
         except Exception as e:
             logger.warning(f"加载 LightGBM ensemble 部分失败: {e}")
 
