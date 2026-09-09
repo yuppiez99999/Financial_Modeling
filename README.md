@@ -199,7 +199,9 @@ python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 python -m pip install timesfm[torch]
 ```
 
-启用：在配置中设置 `model.timesfm.enabled: true`（或 `model.type: timesfm`）。加载逻辑见 `src/inference/predictor.py`：优先读本地占位 pickle，不存在再懒加载真实 `TimesFMFinancePredictor`。
+启用：`PredictionEngine.load_models(model_type)` 支持 `timesfm` 与 `ensemble`（LightGBM + TimesFM 融合），配置段为 `model.timesfm.{context_days,verbose}`；加载逻辑见 `src/inference/predictor.py`：优先读本地占位 pickle，不存在再懒加载真实 `TimesFMFinancePredictor`（懒加载 `timesfm`/`torch`）。
+
+> 注意：`main.py` CLI 的模型类型白名单当前仅 `lightgbm` / `pytorch_lstm`，**`timesfm` 与 `ensemble` 只能通过直接调用 `PredictionEngine` 使用**，经 CLI 会因类型校验而退出。
 
 Windows 上若出现 `WinError 126`（本机库加载失败），通常是 PyTorch 与 CUDA/CPU 版本不匹配，改用 CPU 版 PyTorch 即可。
 

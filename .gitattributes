@@ -1,0 +1,20 @@
+# 统一换行符，避免跨平台 CRLF/LF 抖动
+* text=auto eol=lf
+
+# 二进制资源，禁止换行转换与 diff
+*.pkl binary
+*.onnx binary
+*.pth binary
+*.pt binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+
+# 数据与文本
+*.csv text
+*.md text
+*.py text
+*.yaml text
+*.yml text
