@@ -1,0 +1,35 @@
+# TrendCast Pro 专业版依赖
+# ================================
+
+# 核心数据与计算
+torch>=2.0
+scikit-learn
+pandas
+numpy
+matplotlib
+
+# 可选：TimesFM 模型（大型预训练模型，按需安装）
+# 安装方式: pip install timesfm[torch]
+# 仅在需要使用 TimesFM 推理时安装
+
+# 模型
+lightgbm
+joblib
+
+# 配置
+pyyaml
+
+# 模型导出
+onnxruntime
+onnxmltools
+skl2onnx
+
+# 专业版 - Web API
+fastapi>=0.100
+uvicorn>=0.23
+pydantic>=2.0
+
+# 专业版 - 调度
+schedule>=1.2
+
+# 专业版 - 通知（邮件内置 smtplib，Webhook 内置 urllib，无需额外依赖）

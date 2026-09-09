@@ -1,0 +1,246 @@
+# TrendCast Pro 专业版配置文件
+# ================================
+
+project:
+  name: "TrendCast Pro - 金融市场预测模型"
+  version: "2.0.0"
+  edition: "professional"
+  seed: 42
+
+# 数据配置
+data:
+  # 数据源回退链: Wind(A股/期货, 优先) -> 腾讯(免费A股/港股) -> 模拟(兜底)
+  source: ["wind", "tencent", "simulation"]
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+
+  # 多市场标的列表（专业版扩展至50+标的）
+  markets:
+    stock:
+      enabled: true
+      symbols:
+        # === 量化策略系统 v5.x 核心持仓 (14只，优先训练) ===
+        # 高端制造(含算力) - 45%
+        - "300308.SZ"   # 中际旭创（光模块龙头）
+        - "688041.SH"   # 海光信息（国产算力芯片）
+        - "002371.SZ"   # 北方华创（半导体设备）
+        - "688981.SH"   # 中芯国际（晶圆代工）
+        - "300750.SZ"   # 宁德时代（动力电池）
+        - "000425.SZ"   # 徐工机械（高端装备）
+        # 顺周期 - 20%
+        - "601088.SH"   # 中国神华（煤炭龙头）
+        - "600219.SH"   # 南山铝业（铝加工）
+        - "600019.SH"   # 宝钢股份（钢铁龙头）
+        # 资源 - 20%
+        - "518880.SH"   # 华安黄金ETF（黄金配置）
+        - "000408.SZ"   # 藏格矿业（钾锂资源）
+        # 防御 - 15%
+        - "600276.SH"   # 恒瑞医药（创新药龙头）
+        - "603259.SH"   # 药明康德（CXO龙头）
+        - "002422.SZ"   # 科伦药业（大输液+创新药）
+        # === 扩展标的（原有专业版覆盖） ===
+        - "600519.SH"   # 贵州茅台
+        - "000858.SZ"   # 五粮液
+        - "601318.SH"   # 中国平安
+        - "000333.SZ"   # 美的集团
+        - "600036.SH"   # 招商银行
+        - "601012.SH"   # 隆基绿能
+        - "601899.SH"   # 紫金矿业
+        - "002594.SZ"   # 比亚迪
+        - "600900.SH"   # 长江电力
+        - "000001.SZ"   # 平安银行
+        - "600030.SH"   # 中信证券
+        - "601398.SH"   # 工商银行
+        - "002415.SZ"   # 海康威视
+        - "601628.SH"   # 中国人寿
+        - "600585.SH"   # 海螺水泥
+        - "000651.SZ"   # 格力电器
+        - "601668.SH"   # 中国建筑
+        - "600887.SH"   # 伊利股份
+
+    futures:
+      enabled: true
+      symbols:
+        - "RB.SHF"      # 螺纹钢
+        - "CU.SHF"      # 铜
+        - "AU.SHF"      # 黄金
+        - "SC.INE"      # 原油
+        - "I.DCE"       # 铁矿石
+        - "M.DCE"       # 豆粕
+        - "Y.DCE"       # 豆油
+        - "P.DCE"       # 棕榈油
+        - "C.DCE"       # 玉米
+        - "SR.CZC"      # 白糖
+
+    forex:
+      enabled: false   # 腾讯/Wind MCP 暂不支持 FXCM 外汇代码
+
+  # 时间范围
+  start_date: "2020-01-01"
+  end_date: "2026-06-27"
+
+  # 数据质量门控（基于 Token A级数据训练的质量模型）
+  quality_gate: true
+
+  # 预测目标
+  target: "return_5d"
+  forecast_horizon: 5
+
+  # 短期 vs 长期预测
+  prediction_horizons:
+    short_term: 5    # 短期：5日
+    mid_term: 10     # 中期：10日
+    long_term: 20    # 长期：20日
+
+  # 训练/验证/测试分割比例
+  split_ratio:
+    train: 0.7
+    val: 0.15
+    test: 0.15
+
+# 特征工程（专业版启用扩展指标库 50+）
+features:
+  # 启用专业版扩展指标
+  extended_indicators: true
+
+  # 启用新闻情感分析特征（禁用：优先使用 Wind MCP，跳过慢速网页抓取）
+  sentiment_enabled: false
+
+  # 启用宏观指标特征 (CPI/PMI/GDP)
+  macro_enabled: true
+
+  # 基础技术指标
+  technical:
+    ma_windows: [5, 10, 20, 60]
+    rsi_window: 14
+    macd_fast: 12
+    macd_slow: 26
+    macd_signal: 9
+    bollinger_window: 20
+    bollinger_std: 2
+
+  # 收益率特征
+  returns:
+    windows: [1, 3, 5, 10, 20]
+
+  # 波动率特征
+  volatility:
+    windows: [5, 10, 20]
+
+  # 成交量特征
+  volume:
+    ma_windows: [5, 10, 20]
+
+  # 时间特征
+  time:
+    day_of_week: true
+    month: true
+    quarter: true
+
+# 模型配置
+model:
+  type: "lightgbm"
+
+  lightgbm:
+    objective: "binary"
+    n_estimators: 800
+    learning_rate: 0.005
+    max_depth: 8
+    num_leaves: 63
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 0.1
+    early_stopping_rounds: 50
+    verbose: -1
+
+  pytorch_lstm:
+    input_size: 60
+    hidden_size: 128
+    num_layers: 3
+    dropout: 0.3
+    output_size: 1
+    learning_rate: 0.001
+    weight_decay: 1e-5
+    epochs: 100
+    batch_size: 64
+    sequence_length: 20
+
+  ensemble:
+    models: ["lightgbm", "pytorch_lstm"]
+    voting: "soft"
+
+# 训练配置
+training:
+  use_gpu: false
+  num_workers: 0
+  log_interval: 10
+  save_dir: "models"
+
+  # 自适应学习配置
+  adaptive_learning:
+    enabled: true
+    drift_threshold: 0.05
+    auto_retrain: true
+    monitor_interval: "daily"
+
+# 评估配置
+evaluation:
+  metrics:
+    - accuracy
+    - precision
+    - recall
+    - f1
+    - auc
+  financial_metrics:
+    - sharpe_ratio
+    - max_drawdown
+    - win_rate
+    - profit_factor
+
+# 导出配置
+export:
+  format: "onnx"
+  output_dir: "models/exported"
+
+# 报告配置
+report:
+  output_dir: "reports"
+  daily_report: true
+  weekly_report: true
+
+# Web API 配置
+api:
+  host: "0.0.0.0"
+  port: 8800
+
+# 信号推送通知配置
+notification:
+  # Webhook 推送（支持 generic/dingtalk/feishu/wechat）
+  webhook_url: ""          # 填入你的 Webhook 地址
+  webhook_type: "feishu"   # 飞书
+  # 邮件推送 (SMTP)
+  smtp_host: ""            # 如 smtp.gmail.com
+  smtp_port: 465
+  smtp_user: ""
+  smtp_password: ""
+  email_from: ""
+  email_to: []             # ["recipient@example.com"]
+
+# 自动重训练调度配置
+scheduler:
+  frequency: "weekly"      # daily/weekly/monthly
+  time: "23:00"
+  day: "sun"               # mon/tue/.../sun (weekly 模式)
+  drift_threshold: 0.1     # 命中率下降 10% 触发漂移重训练
+  auto_retrain_on_drift: true
+
+# 审计配置
+audit:
+  dir: "logs/audit"
+
+# 日志配置
+logging:
+  level: "INFO"
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  file: "logs/training_pro.log"

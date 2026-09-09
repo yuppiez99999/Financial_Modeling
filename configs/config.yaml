@@ -1,0 +1,198 @@
+# 金融市场预测模型配置文件
+# ================================
+
+project:
+  name: "金融市场预测模型"
+  version: "1.0.0"
+  seed: 42
+
+# 数据配置
+data:
+  # 数据源（支持字符串或列表，按顺序回退）：
+  #   tencent    腾讯财经（免费、A 股/港股，无需 Key）
+  #   wind       Wind MCP（A 股/期货，需终端或 Key）
+  #   simulation 模拟数据（最终兜底）
+  source: ["wind", "tencent", "simulation"]
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+
+  # 多市场标的列表
+  markets:
+    stock:
+      enabled: true
+      symbols:
+        # === 量化策略系统 v5.x 核心持仓 (14只) ===
+        # 高端制造(含算力) - 45%
+        - "300308.SZ"   # 中际旭创（光模块龙头）
+        - "688041.SH"   # 海光信息（国产算力芯片）
+        - "002371.SZ"   # 北方华创（半导体设备）
+        - "688981.SH"   # 中芯国际（晶圆代工）
+        - "300750.SZ"   # 宁德时代（动力电池）
+        - "000425.SZ"   # 徐工机械（高端装备）
+        # 顺周期 - 20%
+        - "601088.SH"   # 中国神华（煤炭龙头）
+        - "600219.SH"   # 南山铝业（铝加工）
+        - "600019.SH"   # 宝钢股份（钢铁龙头）
+        # 资源 - 20%
+        - "518880.SH"   # 华安黄金ETF（黄金配置）
+        - "000408.SZ"   # 藏格矿业（钾锂资源）
+        # 防御 - 15%
+        - "600276.SH"   # 恒瑞医药（创新药龙头）
+        - "603259.SH"   # 药明康德（CXO龙头）
+        - "002422.SZ"   # 科伦药业（大输液+创新药）
+        # === 原有通用标的 (5只，保留作基准对比) ===
+        - "600519.SH"   # 贵州茅台
+        - "000858.SZ"   # 五粮液
+        - "601318.SH"   # 中国平安
+        - "000333.SZ"   # 美的集团
+        - "600036.SH"   # 招商银行
+
+    futures:
+      enabled: true
+      symbols:
+        - "RB.SHF"      # 螺纹钢
+        - "CU.SHF"      # 铜
+        - "AU.SHF"      # 黄金
+        - "SC.INE"      # 原油
+        - "I.DCE"       # 铁矿石
+        - "C.DCE"       # 玉米
+        - "M.DCE"       # 豆粕
+        - "P.DCE"       # 棕榈油
+        - "SR.CZC"      # 白糖
+        - "Y.DCE"       # 豆油
+
+    forex:
+      enabled: false  # Wind MCP 暂不支持 FXCM 外汇代码，禁用以保证全部数据来自 Wind 真实数据
+      symbols:
+        - "USDCNH.FXCM"  # 美元离岸人民币
+        - "EURUSD.FXCM"  # 欧元美元
+        - "USDJPY.FXCM"  # 美元日元
+        - "GBPUSD.FXCM"  # 英镑美元
+        - "AUDUSD.FXCM"  # 澳元美元
+
+  # 时间范围
+  start_date: "2020-01-01"
+  end_date: "2026-06-27"
+
+  # 预测目标: return_5d (5日收益率方向) / return_10d / return_20d / volatility_5d
+  target: "return_5d"
+  forecast_horizon: 5
+
+  # 短期 vs 长期预测
+  prediction_horizons:
+    short_term: 5    # 短期：5日
+    mid_term: 10     # 中期：10日
+    long_term: 20    # 长期：20日
+
+  # 训练/验证/测试分割比例
+  split_ratio:
+    train: 0.7
+    val: 0.15
+    test: 0.15
+
+# 特征工程
+features:
+  # 技术指标
+  technical:
+    ma_windows: [5, 10, 20, 60]
+    rsi_window: 14
+    macd_fast: 12
+    macd_slow: 26
+    macd_signal: 9
+    bollinger_window: 20
+    bollinger_std: 2
+
+  # 收益率特征
+  returns:
+    windows: [1, 3, 5, 10, 20]
+
+  # 波动率特征
+  volatility:
+    windows: [5, 10, 20]
+
+  # 成交量特征
+  volume:
+    ma_windows: [5, 10, 20]
+
+  # 时间特征
+  time:
+    day_of_week: true
+    month: true
+    quarter: true
+
+# 模型配置
+model:
+  # 可选模型: lightgbm / pytorch_lstm / ensemble
+  type: "lightgbm"
+
+  # 可选大型预训练模型（TimesFM）配置
+  timesfm:
+    enabled: false
+    model_name: "google/timesfm-2.5-200m-pytorch"
+    context_days: 252
+    cache_dir: "models/timesfm"
+
+  lightgbm:
+    objective: "binary"
+    n_estimators: 500
+    learning_rate: 0.01
+    max_depth: 6
+    num_leaves: 31
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 0.1
+    early_stopping_rounds: 50
+    verbose: -1
+
+  pytorch_lstm:
+    input_size: 32
+    hidden_size: 64
+    num_layers: 2
+    dropout: 0.2
+    output_size: 1
+    learning_rate: 0.001
+    weight_decay: 1e-5
+    epochs: 50
+    batch_size: 64
+    sequence_length: 20
+
+  # 集成模型配置
+  ensemble:
+    models: ["lightgbm", "pytorch_lstm"]
+    voting: "soft"  # soft / hard
+    # 当包含 TimesFM 时，TimesFM 在软投票中的权重（0~1）
+    tfm_weight: 0.4
+
+# 训练配置
+training:
+  use_gpu: false
+  num_workers: 0
+  log_interval: 10
+  save_dir: "models"
+
+# 评估配置
+evaluation:
+  metrics:
+    - accuracy
+    - precision
+    - recall
+    - f1
+    - auc
+  # 金融专用指标
+  financial_metrics:
+    - sharpe_ratio
+    - max_drawdown
+    - win_rate
+    - profit_factor
+
+# 导出配置
+export:
+  format: "onnx"  # onnx / torchscript
+  output_dir: "models/exported"
+
+# 日志配置
+logging:
+  level: "INFO"
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  file: "logs/training.log"
