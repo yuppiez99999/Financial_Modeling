@@ -38,11 +38,10 @@ class PredictionEngine:
             model_key = f"{horizon_name}_{horizon_days}d"
             model_file = self.save_dir / f"{model_type}_{model_key}.pkl"
 
-            if not model_file.exists():
-                logger.warning(f"模型文件不存在: {model_file}")
-                continue
-
             if model_type == "lightgbm":
+                if not model_file.exists():
+                    logger.warning(f"模型文件不存在: {model_file}")
+                    continue
                 data = joblib.load(model_file)
                 self.models[model_key] = data
                 logger.info(f"已加载 {model_key} 模型")
@@ -71,6 +70,7 @@ class PredictionEngine:
                         verbose=tfm_cfg.get("verbose", False),
                     )
 
+                # always attempt to build ensemble entry (timesfm placeholder may exist even if lightgbm file missing)
                 entry = load_ensemble_entry(self.save_dir, model_key, model_file, _instantiate)
                 self.models[model_key] = {"ensemble": entry}
             elif model_type == "pytorch_lstm":
@@ -122,6 +122,75 @@ class PredictionEngine:
 
         # 预测
         model_data = self.models[model_key]
+        # ensemble 支持：当 model_data 包含 ensemble 字段时，融合 LightGBM 与 TimesFM
+        if isinstance(model_data, dict) and "ensemble" in model_data:
+            ensemble_entry = model_data["ensemble"]
+
+            lgb_entry = ensemble_entry.get("lightgbm")
+            tfm_entry = ensemble_entry.get("timesfm")
+
+            lgb_prob = None
+            if lgb_entry is not None and isinstance(lgb_entry, dict) and "model" in lgb_entry:
+                m = lgb_entry["model"]
+                s = lgb_entry.get("scaler")
+                try:
+                    if s is None:
+                        X_in = df_features[self.feature_engineer.get_feature_columns(df_features, horizon_days)].iloc[-1:].values
+                    else:
+                        X_in = s.transform(df_features[self.feature_engineer.get_feature_columns(df_features, horizon_days)].iloc[-1:].values)
+                    lgb_prob = float(m.predict_proba(X_in)[0][1])
+                except Exception as e:
+                    logger.warning(f"LightGBM 分量预测失败，回退为 None: {e}")
+                    lgb_prob = None
+
+            tfm_prob = None
+            if tfm_entry is not None and isinstance(tfm_entry, TimesFMFinancePredictor):
+                close_prices = df["close"].values if "close" in df.columns else df.iloc[:, 3].values
+                tfm_res = tfm_entry.predict_classification(close_prices, horizon=horizon_days, symbol=symbol)
+                if not tfm_res.get("error"):
+                    tfm_prob = float(tfm_res.get("probability", 0.5))
+            else:
+                if isinstance(tfm_entry, dict) and "model" in tfm_entry:
+                    try:
+                        s = tfm_entry.get("scaler")
+                        m = tfm_entry.get("model")
+                        if s is None:
+                            X_in = df_features[self.feature_engineer.get_feature_columns(df_features, horizon_days)].iloc[-1:].values
+                        else:
+                            X_in = s.transform(df_features[self.feature_engineer.get_feature_columns(df_features, horizon_days)].iloc[-1:].values)
+                        tfm_prob = float(m.predict_proba(X_in)[0][1])
+                    except Exception as e:
+                        logger.warning(f"占位 TimesFM 分量预测失败: {e}")
+                        tfm_prob = None
+
+            tfm_weight = float(self.config.get("model", {}).get("ensemble", {}).get("tfm_weight", 0.4))
+            lgb_weight = 1.0 - tfm_weight
+
+            if lgb_prob is None and tfm_prob is None:
+                return {"error": "ensemble 无可用分量"}
+            if lgb_prob is None:
+                proba = tfm_prob
+            elif tfm_prob is None:
+                proba = lgb_prob
+            else:
+                proba = lgb_weight * lgb_prob + tfm_weight * tfm_prob
+
+            pred = 1 if proba > 0.5 else 0
+            direction = "看涨" if pred == 1 else "看跌"
+            confidence = proba if pred == 1 else (1 - proba)
+
+            result = {
+                "symbol": symbol,
+                "horizon": horizon_name,
+                "horizon_days": horizon_days,
+                "prediction": pred,
+                "direction": direction,
+                "probability": round(proba, 4),
+                "confidence": round(confidence, 4),
+                "latest_date": str(df_features.iloc[-1].get("date", "N/A")),
+                "latest_close": float(df_features.iloc[-1].get("close", 0)),
+            }
+            return result
 
         # 如果模型为 TimesFM predictor 实例（零样本预测器）
         if isinstance(model_data, TimesFMFinancePredictor):
