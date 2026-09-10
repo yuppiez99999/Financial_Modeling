@@ -6,9 +6,9 @@
     {
       "id": "S1",
       "name": "vectorbt 回测层",
-      "status": "pending",
+      "status": "completed",
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-09-10T09:05:46.734268+00:00",
       "tasks": [
         {
           "id": "T1.1",
@@ -34,8 +34,9 @@
         {
           "id": "T1.4",
           "name": "评价口径定下来",
-          "status": "pending",
-          "auto_run": false
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:05:46.734268+00:00"
         }
       ],
       "auto_acceptable": [
@@ -50,33 +51,37 @@
     {
       "id": "S2",
       "name": "tsai 预测 baseline",
-      "status": "pending",
+      "status": "completed",
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-09-10T09:10:34.723440+00:00",
       "tasks": [
         {
           "id": "T2.1",
           "name": "预测任务定义",
-          "status": "pending",
-          "auto_run": false
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:08:48.703370+00:00"
         },
         {
           "id": "T2.2",
           "name": "时间划分与泄露检查",
-          "status": "pending",
-          "auto_run": false
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:08:48.703370+00:00"
         },
         {
           "id": "T2.3",
           "name": "tsai 跑通示例",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-10T09:08:48.703370+00:00"
         },
         {
           "id": "T2.4",
           "name": "预测 baseline 对比",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-10T09:10:34.723440+00:00"
         }
       ],
       "auto_acceptable": [
@@ -91,33 +96,37 @@
     {
       "id": "S3",
       "name": "mlfinlab 金融建模辅助",
-      "status": "pending",
+      "status": "completed",
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-09-10T09:15:56.994510+00:00",
       "tasks": [
         {
           "id": "T3.1",
           "name": "当前流程卡点识别",
-          "status": "pending",
-          "auto_run": false
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:11:38.271009+00:00"
         },
         {
           "id": "T3.2",
           "name": "模块挑选与映射",
-          "status": "pending",
-          "auto_run": false
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:13:28.067631+00:00"
         },
         {
           "id": "T3.3",
           "name": "小范围试跑",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-10T09:15:56.994510+00:00"
         },
         {
           "id": "T3.4",
           "name": "落地决策",
-          "status": "pending",
-          "auto_run": false
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:15:56.994510+00:00"
         }
       ],
       "auto_acceptable": [
@@ -139,8 +148,9 @@
         {
           "id": "T4.1",
           "name": "阅读重点范围",
-          "status": "pending",
-          "auto_run": false
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:17:42.093474+00:00"
         },
         {
           "id": "T4.2",
@@ -204,7 +214,7 @@
       ]
     }
   ],
-  "current_stage_index": 0,
+  "current_stage_index": 3,
   "current_task_index": 0,
   "last_run_date": "2026-09-10",
   "next_run_date": null,
