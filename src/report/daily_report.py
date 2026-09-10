@@ -59,6 +59,28 @@ class DailyReportGenerator:
         self._save_report(report, now)
         return report
 
+    def generate(self, predictions: list[dict], period: str = "daily") -> Path:
+        """生成报告并返回落盘路径（供 CLI / 测试的稳定接口）。
+
+        Args:
+            predictions: 预测结果列表（PredictionEngine.batch_predict 输出）。
+            period: "daily" | "weekly"，weekly 时委托 WeeklyReportGenerator。
+        Returns:
+            生成的报告文件 Path。
+        """
+        if period == "weekly":
+            report = WeeklyReportGenerator(self.config).generate_report(predictions)
+            week_start = datetime.now() - timedelta(days=datetime.now().weekday())
+            return self.report_dir / f"weekly_report_{week_start.strftime('%Y-%m-%d')}.md"
+
+        self.generate_report(predictions)
+        candidates = sorted(self.report_dir.glob("report_*.md"), key=lambda p: p.stat().st_mtime)
+        if not candidates:  # 兜底：目录被外部清理时重新落盘
+            path = self.report_dir / f"report_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.md"
+            path.write_text(self.generate_report(predictions), encoding="utf-8")
+            return path
+        return candidates[-1]
+
     def _generate_market_overview(self, predictions: list[dict]) -> list[str]:
         """生成市场概览"""
         bullish = 0

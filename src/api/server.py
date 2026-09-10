@@ -18,9 +18,24 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import yaml
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+
+try:  # FastAPI 为可选依赖：未安装时本模块仍可导入，仅无法启动服务
+    from fastapi import FastAPI, HTTPException, Query
+    from fastapi.middleware.cors import CORSMiddleware
+    from pydantic import BaseModel
+
+    _HAS_FASTAPI = True
+except ImportError:  # pragma: no cover - 取决于运行环境
+    FastAPI = None  # type: ignore[assignment]
+    HTTPException = Exception  # type: ignore[assignment,misc]
+    CORSMiddleware = None  # type: ignore[assignment]
+    BaseModel = object  # type: ignore[assignment,misc]
+
+    def Query(*args, **kwargs):  # type: ignore[misc]
+        """FastAPI 缺失时的 Query 占位，保证模块可导入。"""
+        return None
+
+    _HAS_FASTAPI = False
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +46,8 @@ _notifier = None
 _audit = None
 _init_lock = threading.Lock()
 _initialized = False
+# create_app() 指定的配置文件路径（None = 默认查找顺序）
+_config_override: str | None = None
 
 
 def _init_engine():
@@ -41,9 +58,12 @@ def _init_engine():
     with _init_lock:
         if _initialized:
             return
-        config_path = Path(__file__).parent.parent.parent / "configs" / "config_pro.yaml"
-        if not config_path.exists():
-            config_path = Path(__file__).parent.parent.parent / "configs" / "config.yaml"
+        if _config_override:
+            config_path = Path(_config_override)
+        else:
+            config_path = Path(__file__).parent.parent.parent / "configs" / "config_pro.yaml"
+            if not config_path.exists():
+                config_path = Path(__file__).parent.parent.parent / "configs" / "config.yaml"
         with open(config_path, "r", encoding="utf-8") as f:
             _config = yaml.safe_load(f)
 
@@ -74,19 +94,50 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(
-    title="TrendCast Pro API",
-    description="金融市场预测模型 - 专业版 Web API",
-    version="2.0.0",
-    lifespan=lifespan,
-)
+def create_app(config_path: str | None = None):
+    """创建 FastAPI 应用（供 CLI / 测试 / 部署复用）。
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    config_path 为 None 时沿用默认配置查找顺序（config_pro.yaml → config.yaml）。
+    """
+    if not _HAS_FASTAPI:
+        raise RuntimeError(
+            "未安装 FastAPI，无法创建 API 应用。请执行: pip install fastapi uvicorn pydantic"
+        )
+    global _config_override
+    _config_override = config_path
+    application = FastAPI(
+        title="TrendCast Pro API",
+        description="金融市场预测模型 - 专业版 Web API",
+        version="2.0.0",
+        lifespan=lifespan,
+    )
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    # 复用同一组路由定义（装饰器注册在模块级 app 上，这里整体挂载）
+    application.router.routes = list(app.router.routes)
+    return application
+
+
+if _HAS_FASTAPI:
+    app = FastAPI(
+        title="TrendCast Pro API",
+        description="金融市场预测模型 - 专业版 Web API",
+        version="2.0.0",
+        lifespan=lifespan,
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:  # pragma: no cover - 未安装 FastAPI 的降级分支
+    app = None
 
 
 # ==================== 请求/响应模型 ====================

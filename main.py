@@ -411,7 +411,8 @@ def run_backtest(config: dict, symbol: str) -> None:
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """构建 CLI 参数解析器（供 main() 与测试复用）"""
     parser = argparse.ArgumentParser(
         description="TrendCast Pro - 金融市场预测模型（专业版）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -453,7 +454,11 @@ def main():
                         help="模型类型 (覆盖配置文件), 支持: lightgbm, pytorch_lstm, timesfm, ensemble")
     parser.add_argument("--host", default=None, help="API 服务地址")
     parser.add_argument("--port", type=int, default=None, help="API 服务端口")
+    return parser
 
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
 
     # 加载配置（优先使用专业版配置）

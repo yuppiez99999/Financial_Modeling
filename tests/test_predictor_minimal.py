@@ -34,7 +34,7 @@ class DummyFeatureEngineer:
     def transform(self, df, horizon_days):
         out = df.copy()
         out["f1"] = out["close"].pct_change().fillna(0)
-        out["f2"] = out["close"].rolling(3).mean().fillna(method="bfill")
+        out["f2"] = out["close"].rolling(3).mean().bfill()
         out["f3"] = out["close"].rolling(5).std().fillna(0)
         return out
 
