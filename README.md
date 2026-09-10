@@ -41,6 +41,7 @@
 | 数据源 | Wind MCP (P0，需 Key) → **腾讯财经 (P1，免费真实日K，前复权，已真实可用)** → 模拟数据 (P6 兜底，仅链路验证，不落盘) |
 | 数据纪律 | simulation 兜底数据**绝不写入缓存**；推理缓存过期自动经真实源刷新 |
 | 防泄漏 | `get_feature_columns` 强制排除 `target_*` 目标列（早期 AUC 0.84 虚高值的根因已修复） |
+| 风控建议 | 止损止盈建议（ATR + 结构位 + 盈亏比约束）；**门禁未放行时不给可用价位**（fail-close），见 §13 |
 | 出口 | CLI / REST API / ONNX 导出 / 每日与周度报告 |
 
 ---
@@ -722,15 +723,116 @@ python -m pytest tests/ -q     # 260 passed（Q2 基线 230 → Q3 260）
 > 决策仍走日频 + 门禁路径（`strategy_gate` 当前 `readonly`）。
 
 > **Q3 剩余 / Q4 展望**：分钟级行情源（需付费数据商）、盘中信号需积累样本后再评估门禁口径；
-> Q4 智能风控模块（自动生成止损止盈建议）。
+> Q4 智能风控模块（自动生成止损止盈建议）→ 已落地，见「十三、Q4 路线进展」。
 
-## 十三、技术栈
+---
+
+## 十三、Q4 路线进展（智能风控模块 · 自动止损止盈建议）
+
+对照 `SALES_PLAN.md` §8.2 路线图 Q4「智能风控模块，自动生成止损止盈建议」。
+
+### 13.1 先说清楚它**不是**什么
+
+`src/trading/risk.py`（既有）已经把信号变成仓位与止损止盈了 —— 但那是
+`price * (1 - 3%)` 的**固定比例**，代价是两个：全池共用一个常数（3% 对 ETF 偏松、
+对高波动个股偏紧），以及整数百分比止损**几乎必然落在噪音里**（要么被日内正常波动打掉，
+要么宽到失去意义）。
+
+Q4 模块（`src/trading/risk_advice.py`）只补这两件事，**不重算仓位、不下单、不改动
+`RiskManager` / `OrderGenerator` / `TradingAdapter` 的任何行为**（有测试守护）。
+
+### 13.2 止损：取「结构位」与「ATR」中更保守的一侧
+
+| 输入 | 计算 | 说明 |
+|------|------|------|
+| 结构位 | 近 20 日最低价 × (1 − 0.5%) | **不含最后一根K线**（避免用当日极值自我参照） |
+| 波动位 | 入场价 − ATR×2 | ATR 为真实波幅的 Wilder 平滑 |
+| 最终 | 取更远的一侧 | 更保守 = 更不容易被正常波动扫掉 |
+
+再压进 `[min_stop_pct, max_stop_pct]`（默认 1.5%~12%）区间；发生收敛时写入
+`notes`，不静默改数。空头方向完全镜像（阻力位上方 / 入场价 + ATR×2）。
+
+### 13.3 止盈：盈亏比下界与近端阻力取更近者
+
+先按 `min_risk_reward`（默认 1.5）算出止盈下界，再与近端阻力/支撑比较，**取更近的一侧**
+—— 不假设价格能穿越阻力。两边都不足以覆盖下界时，输出 `notes` **建议放弃该机会**，
+而不是把止损放宽去凑盈亏比（后者是典型的"为了好看而破坏风控"）。
+
+```bash
+python main.py risk-advice 600519.SH          # 单只（Markdown）
+python main.py risk-advice --all --json       # 全池（JSON，落盘 reports/risk_advice.json）
+```
+
+实测（2026-09-10 真实腾讯行情，门禁放行口径下）：
+
+| 标的 | 参考价 | 建议止损 | 建议止盈 | 止损% | 止盈% | 盈亏比 | ATR% |
+|------|--------|---------|---------|-------|-------|--------|------|
+| `600519.SH` | 1285.13 | 1240.25 | 1352.45 | 3.49% | 5.24% | 1.50 | 1.75% |
+| `000858.SZ` | 70.48 | 68.18 | 73.94 | 3.27% | 4.90% | 1.50 | 1.63% |
+| `510300.SH` | 4.62 | 4.495 | 4.807 | 2.70% | 4.06% | 1.50 | 1.35% |
+
+三只标的的止损比例互不相同（2.70% / 3.27% / 3.49%），这正是"比例由标的自身波动决定"
+的直接体现 —— 若沿用固定 3%，`510300.SH` 会被打得偏紧、`600519.SH` 偏松。
+
+### 13.4 合规与安全边界（本模块最重要的一节）
+
+Q4 是路线图里**唯一直接产出"价位"**的模块。价位对下游有交易暗示性，因此加了四道闸：
+
+| 边界 | 做法 |
+|------|------|
+| **门禁 fail-close** | `strategy_gate` 非 `gated` 时返回 `status=withheld`，`suggested_stop/take` 为 `null`，只保留波动结构与仓位侧信息。**"没评估过"（`unknown`）同样不放行** —— 未验证 ≠ 可用 |
+| **信息不足拒绝给数** | 无行情 / 少于 30 根K线 / 缺 `high·low·close` 列 / 参考价非法 / ATR 不可用 → `status=unavailable` + 原因，**绝不用默认比例兜底算一个"看起来能用"的价** |
+| **不冒充交易指令** | 字段统一 `suggested_*` 前缀，`not_trade_instruction: true`，附 `disclaimer`；`RiskManager` 输出保持不变（测试逐字段比对） |
+| **无未来函数** | 只读已落盘日K，不触网、不重算当日盘中数据 |
+
+> 当前 `strategy_gate` 为 `readonly`，因此**真实运行下本模块对本仓库全部标的均返回
+> `withheld`** —— 这是预期行为，不是故障。门禁达标后自动恢复价位建议，无需改配置。
+
+### 13.5 接口与配置
+
+```bash
+python main.py risk-advice 600519.SH     # 单只建议（Markdown）
+python main.py risk-advice --all         # 全池建议（Markdown）
+python main.py risk-advice --all --json  # JSON，同时落盘 reports/risk_advice.json
+```
+
+| API | 说明 |
+|-----|------|
+| `GET /api/v1/risk/advice/{symbol}` | 单标的止损止盈建议（契约见 §13.4） |
+| `GET /api/v1/risk/advice?symbols=A,B` | 标的池批量建议 |
+
+监控报表新增「智能风控建议（Q4）」章节（读 `reports/risk_advice.json`，只读、零副作用）：
+门禁状态 / 建议产出条数 / 暂缓条数 / 平均盈亏比。
+
+配置段 `trading.risk_advice`：`atr_window` · `atr_stop_mult` · `atr_take_mult` ·
+`support_lookback` · `support_buffer` · `min_stop_pct` · `max_stop_pct` ·
+`min_risk_reward` · `vol_target_pct` · `min_bars`。
+
+### 13.6 波动缩放仓位建议
+
+在 `RiskManager` 给出的仓位之上**只做缩放**（不出新仓位）：ATR 占比高于
+`vol_target_pct`（默认 1.5%）时，按 `vol_target_pct / atr_pct` 等比缩小并写入
+`vol_scaled_position_pct` 与 `notes`。缩放系数封顶 1.0 —— 低波动标的不会被放大仓位。
+
+### 13.7 测试
+
+```bash
+python -m pytest tests/test_roadmap_q4.py -q   # 34 passed, 1 skipped
+```
+
+新增 `tests/test_roadmap_q4.py`（34 项）：ATR/结构位计算与样本不足拒答、止损取保守侧、
+比例区间收敛与备注、止盈受阻力约束、盈亏比不足提示放弃而非放宽、门禁
+`readonly`/`unknown`/无报告三种 withhold 分支、五类数据不足拒答、HOLD 不给价位、
+波动缩放封顶、**建议不改变 `RiskManager` 输出**、`advise_payload` 与 `SignalEngine` 同源、
+契约可序列化、配置段、CLI 命令、API 状态码、监控报表两种分支。
+
+## 十四、技术栈
 
 Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn · ONNX / onnxruntime · Wind MCP · 可选 TimesFM(PyTorch)
 
 ---
 
-## 十四、免责声明
+## 十五、免责声明
 
 > **本项目仅供学习、交流、研究使用，不构成任何投资建议。**
 
@@ -746,7 +848,7 @@ Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn 
 
 ---
 
-## 十五、许可证与版权
+## 十六、许可证与版权
 
 > **著作权归作者所有，禁止商用。**
 

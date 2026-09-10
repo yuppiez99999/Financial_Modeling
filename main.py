@@ -740,6 +740,114 @@ def run_consistency(config: dict, symbol: str) -> dict:
     return report
 
 
+# ==================== Q4 路线：智能风控建议（止损止盈） ====================
+
+def run_risk_advice(config: dict, symbols: list[str] | None = None,
+                    as_json: bool = False) -> dict:
+    """智能风控建议：为标的池产出止损/止盈建议（Q4 路线）。
+
+    **定位**：建议，不是下单指令。门禁未放行（`readonly`/`unknown`）时**不产出可用价位**，
+    只保留波动结构与仓位侧信息，避免未过门禁的信号被误当作可交易。
+    """
+    from src.data.collector import DataCollector
+    from src.inference.predictor import PredictionEngine
+    from src.trading.risk import RiskManager
+    from src.trading.risk_advice import RiskAdvisor
+    from src.trading.signal import SignalEngine
+
+    symbols = symbols or _config_symbols(config)
+    logger.info(f"生成智能风控建议: {len(symbols)} 个标的")
+
+    advisor = RiskAdvisor(config)
+    signal_engine = SignalEngine(config)
+    risk_manager = RiskManager(config)
+    collector = DataCollector(config)
+
+    engine = None
+    if not _offline(config):
+        try:
+            engine = PredictionEngine(config)
+            engine.load_models(config["model"].get("type", "lightgbm"))
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[risk-advice] 模型加载失败，退化为纯波动结构建议（无信号）：{e}")
+            engine = None
+
+    # 无模型时按 HOLD 处理 —— 不臆造方向，此时建议必然 withheld（诚实标注）
+    from src.trading.signal import Signal
+
+    items: list[dict] = []
+    for symbol in symbols:
+        try:
+            df = collector.load_cached(symbol)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[risk-advice] {symbol} 行情读取失败: {e}")
+            df = None
+
+        if engine is not None:
+            try:
+                payload = engine.predict_all_horizons(symbol)
+                sig = signal_engine.build_signal(symbol, payload)
+                price = _latest_close(payload)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[risk-advice] {symbol} 预测失败: {e}")
+                payload, sig, price = {}, None, None
+        else:
+            payload, sig, price = {}, None, _last_close(df)
+
+        if sig is None:
+            sig = Signal(symbol=symbol, action="HOLD", score=0.0, strength=0.0,
+                         confidence=0.0, direction_consensus="未知")
+
+        budget = None
+        if getattr(sig, "action", "HOLD") != "HOLD":
+            try:
+                budget = risk_manager.budget(sig, price=price)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[risk-advice] {symbol} 仓位预算失败: {e}")
+
+        items.append({
+            "symbol": symbol, "signal": sig, "df": df, "price": price,
+            "risk_budget": budget, "horizon": "", "confidence": None,
+        })
+
+    result = advisor.advise_portfolio(items)
+
+    # 落盘：供监控报表（reports/risk_advice.json）与下游只读消费
+    out_dir = Path(config.get("report", {}).get("output_dir", "reports"))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_path = out_dir / "risk_advice.json"
+    report_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(advisor.render_markdown(result))
+        print(f"\n风控建议已保存: {report_path}")
+    return result
+
+
+def _latest_close(payload: dict) -> float | None:
+    """从预测结果中取最新收盘价（多周期任一携带即可）。"""
+    for block in (payload.get("predictions") or {}).values():
+        if isinstance(block, dict) and block.get("latest_close"):
+            return float(block["latest_close"])
+    return None
+
+
+def _last_close(df) -> float | None:
+    try:
+        if df is not None and len(df) and "close" in df.columns:
+            return float(df["close"].iloc[-1])
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def _offline(config: dict) -> bool:
+    """是否处于离线模式（离线时不做任何模型推理，只读本地缓存）。"""
+    return bool((config.get("data", {}) or {}).get("offline", False))
+
+
 def _load_daily(config: dict, symbol: str):
     """读取日K缓存（只读，不触发刷新；供盘中/一致性等观测路径复用）。"""
     from src.data.collector import DataCollector
@@ -786,6 +894,8 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py stream                   # 盘中轮询常驻（Ctrl+C 退出）
   python main.py intraday 600519.SH       # 单只标的盘中信号更新
   python main.py consistency 600519.SH    # 信号一致性校验（跨周期/跨模型/跨口径）
+  python main.py risk-advice 600519.SH    # 智能风控建议：止损/止盈（Q4）
+  python main.py risk-advice --all        # 全标的池风控建议（Markdown）
         """,
     )
     parser.add_argument("command", choices=[
@@ -794,7 +904,7 @@ def build_parser() -> argparse.ArgumentParser:
         "daily-report", "weekly-report", "adaptive",
         "signal", "orders", "trade", "backtest", "macro", "monitor",
         "ic", "gate", "factors", "factor-model",
-        "stream", "intraday", "consistency",
+        "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
     parser.add_argument("args", nargs="*", help="附加参数")
     parser.add_argument("--horizon", default="short_term",
@@ -809,6 +919,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="stream 命令：只执行一轮盘中更新（不常驻轮询）")
     parser.add_argument("--symbols", default=None,
                         help="stream / ic 命令：逗号分隔的标的列表（缺省用配置启用标的）")
+    parser.add_argument("--all", dest="all_symbols", action="store_true",
+                        help="risk-advice 命令：对配置内全部启用标的产出建议")
+    parser.add_argument("--json", dest="as_json", action="store_true",
+                        help="risk-advice 命令：输出 JSON（缺省输出 Markdown）")
     parser.add_argument("--host", default=None, help="API 服务地址")
     parser.add_argument("--port", type=int, default=None, help="API 服务端口")
     return parser
@@ -941,6 +1055,12 @@ def main():
             print("错误: consistency 命令需要指定标的代码")
             sys.exit(1)
         run_consistency(config, symbol)
+    elif args.command == "risk-advice":
+        symbols = args.args or None
+        if not symbols and not args.all_symbols:
+            print("错误: risk-advice 命令需要指定标的代码，或使用 --all 对全池产出建议")
+            sys.exit(1)
+        run_risk_advice(config, symbols, as_json=args.as_json)
 
 
 if __name__ == "__main__":

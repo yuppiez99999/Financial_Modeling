@@ -537,6 +537,89 @@ async def get_consistency(symbol: str):
         raise HTTPException(500, f"一致性校验失败: {e}")
 
 
+# ==================== Q4 智能风控建议接口 ====================
+
+from src.trading.signal import SignalEngine  # noqa: E402  (Q4 风控建议用信号聚合)
+
+
+@app.get("/api/v1/risk/advice/{symbol}")
+async def get_risk_advice(symbol: str):
+    """单标的智能风控建议（止损/止盈）。
+
+    契约要点：
+      - **建议，不是下单指令**（`not_trade_instruction: true`）；
+      - 门禁未放行（`readonly`/`unknown`）时返回 `status=withheld` 且价位为 `null`，
+        fail-close —— 未过门禁的信号不配"可直接使用的止损价"；
+      - 数据不足返回 `status=unavailable` 与原因，绝不用默认比例兜底。
+    """
+    _init_engine()
+    if not _engine or not _engine.models:
+        raise HTTPException(503, "模型未加载，请先训练模型")
+    try:
+        from src.data.collector import DataCollector
+        from src.trading.risk import RiskManager
+        from src.trading.risk_advice import RiskAdvisor
+
+        payload = _engine.predict_all_horizons(symbol)
+        advisor = RiskAdvisor(_config)
+        df = DataCollector(_config).load_cached(symbol)
+        plan = advisor.advise_payload(symbol, payload, df=df)
+        if plan.action != "HOLD" and plan.available:
+            sig = SignalEngine(_config).build_signal(symbol, payload)
+            price = next((b.get("latest_close") for b in (payload.get("predictions") or {}).values()
+                          if isinstance(b, dict) and b.get("latest_close")), None)
+            budget = RiskManager(_config).budget(sig, price=price)
+            plan.position_pct = budget.position_pct
+            plan.position_amount = budget.position_amount
+            plan.risk_amount = budget.risk_per_trade
+            plan.suggested_qty = budget.suggested_qty
+        return plan.to_dict()
+    except Exception as e:
+        raise HTTPException(500, f"风控建议生成失败: {e}")
+
+
+@app.get("/api/v1/risk/advice")
+async def get_risk_advice_batch(
+    symbols: str = Query(None, description="逗号分隔的标的列表，缺省用 config 启用的 markets 标的"),
+):
+    """标的池批量风控建议（只读；门禁未放行时统一 withheld）。"""
+    _init_engine()
+    if not _engine or not _engine.models:
+        raise HTTPException(503, "模型未加载，请先训练模型")
+    if symbols:
+        symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    else:
+        symbol_list = []
+        for name, cfg in (_config.get("data", {}).get("markets", {}) or {}).items():
+            if cfg.get("enabled"):
+                symbol_list.extend(cfg.get("symbols", []))
+    symbol_list = list(dict.fromkeys(symbol_list))
+    try:
+        from src.data.collector import DataCollector
+        from src.trading.risk_advice import RiskAdvisor
+
+        advisor = RiskAdvisor(_config)
+        collector = DataCollector(_config)
+        items = []
+        for sym in symbol_list:
+            try:
+                payload = _engine.predict_all_horizons(sym)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[risk/advice] {sym} 预测失败: {e}")
+                payload = {}
+            items.append({
+                "symbol": sym,
+                "signal": SignalEngine(_config).build_signal(sym, payload),
+                "df": collector.load_cached(sym),
+                "price": next((b.get("latest_close")
+                               for b in (payload.get("predictions") or {}).values()
+                               if isinstance(b, dict) and b.get("latest_close")), None),
+            })
+        return advisor.advise_portfolio(items)
+    except Exception as e:
+        raise HTTPException(500, f"风控建议批量生成失败: {e}")
+
+
 @app.get("/api/v1/portfolio/summary")
 async def get_portfolio_summary(
     symbols: str = Query(None, description="逗号分隔的标的列表，缺省用 config 启用的 markets 标的"),
