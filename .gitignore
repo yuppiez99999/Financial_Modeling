@@ -63,3 +63,13 @@ models/**/*.onnx
 
 # 量化交易适配层输出
 output/
+
+# 临时提交消息与草稿文件
+__commit_msg.txt
+__tmp_*.*
+_*_msg.txt
+_*_tmp.txt
+
+# 临时调试脚本（schedule 目录下以下划线开头的辅助脚本）
+schedule/_*.py
+
