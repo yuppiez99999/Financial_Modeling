@@ -94,6 +94,8 @@ class RetrainScheduler:
 
     def _scheduled_job(self):
         """定时任务入口"""
+        if not self._should_run():
+            return
         self._do_retrain("scheduled")
         if self.auto_retrain_on_drift and self._check_drift():
             self._do_retrain("drift_detected")
@@ -145,3 +147,31 @@ class RetrainScheduler:
     def run_now(self) -> bool:
         """手动触发一次重训练"""
         return self._do_retrain("manual")
+
+    def _should_run(self, now: datetime | None = None) -> bool:
+        """判断当前时刻是否命中调度计划（纯逻辑，可单测，不触网）。
+
+        - daily:   每天 time 之后且当天未跑过 → True
+        - weekly:  命中配置星期且 time 之后、本周未跑过 → True
+        - monthly: 每月 1 日 time 之后且当天未跑过 → True
+        """
+        now = now or datetime.now()
+        hh, _, mm = (self.time or "23:00").partition(":")
+        try:
+            scheduled = now.replace(hour=int(hh), minute=int(mm or 0), second=0, microsecond=0)
+        except (TypeError, ValueError):
+            logger.warning(f"无法解析调度时间: {self.time}，按不触发处理")
+            return False
+
+        if now < scheduled:
+            return False
+
+        last = self.last_run
+        if last is None:
+            return True
+        if self.freq == "daily":
+            return last.date() < now.date()
+        if self.freq == "monthly":
+            return now.day == 1 and last.date() < now.date()
+        # weekly：同一 ISO 周内只跑一次
+        return last.isocalendar()[:2] < now.isocalendar()[:2]

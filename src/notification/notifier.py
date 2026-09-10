@@ -60,6 +60,27 @@ class SignalNotifier:
         logger.info(f"信号推送完成: {results}")
         return results
 
+    def send_webhook(self, payload: dict[str, Any] | list[dict[str, Any]] | None = None,
+                     summary: str | None = None) -> bool:
+        """发送 Webhook（公开接口）。
+
+        未配置 webhook_url 时返回 False（不抛异常）；payload 兼容
+        预测结果列表或任意 dict（dict 会被包装为 generic 事件体）。
+        """
+        if not self.webhook_url:
+            logger.info("未配置 webhook_url，跳过 Webhook 推送")
+            return False
+        if summary is None:
+            if isinstance(payload, list):
+                summary = self._format_summary(payload)
+                predictions = payload
+            else:
+                summary = json.dumps(payload or {}, ensure_ascii=False)
+                predictions = [payload] if isinstance(payload, dict) else []
+        else:
+            predictions = payload if isinstance(payload, list) else []
+        return self._send_webhook(predictions, summary)  # type: ignore[arg-type]
+
     def _format_summary(self, predictions: list[dict]) -> str:
         """格式化预测摘要"""
         lines = [

@@ -49,6 +49,10 @@ class PredictionAudit:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         logger.debug(f"审计记录: {entry['id']}")
 
+    def load_records(self) -> list[dict]:
+        """加载所有预测记录（公开接口）"""
+        return self._load_records()
+
     def _load_records(self) -> list[dict]:
         """加载所有预测记录"""
         if not self.record_file.exists():
@@ -129,7 +133,31 @@ class PredictionAudit:
         verified = [r for r in records if r.get("verified")]
 
         if not verified:
-            return "暂无已验证的预测记录"
+            # 尚无已验证记录时也输出完整报告骨架：报告始终可读、字段稳定，
+            # 便于上游（28 系统 / 日报）无差别解析。
+            pending = len(records) - len(verified)
+            lines = [
+                "# 预测审计报告",
+                "",
+                f"生成时间: {now.strftime('%Y-%m-%d %H:%M:%S')}",
+                "",
+                "## 总览",
+                "",
+                "| 指标 | 值 |",
+                "|------|-----|",
+                f"| 总记录数 | {len(records)} |",
+                f"| 总预测数 | {len(records)} |",
+                "| 已验证数 | 0 |",
+                "| 命中数 | 0 |",
+                "| 整体命中率 | 0.00% |",
+                f"| 待验证数 | {pending} |",
+                "",
+                "> 暂无已验证的预测记录（预测尚未到期，或缺少可用于回溯的真实行情）。",
+            ]
+            report = "\n".join(lines)
+            with open(self.report_file, "w", encoding="utf-8") as f:
+                f.write(report)
+            return report
 
         total = len(verified)
         hits = sum(1 for r in verified if r.get("hit"))
@@ -164,6 +192,7 @@ class PredictionAudit:
             f"",
             f"| 指标 | 值 |",
             f"|------|-----|",
+            f"| 总记录数 | {len(records)} |",
             f"| 总预测数 | {len(records)} |",
             f"| 已验证数 | {total} |",
             f"| 命中数 | {hits} |",

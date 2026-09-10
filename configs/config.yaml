@@ -43,12 +43,22 @@ data:
     val: 0.15
     test: 0.15
 
-  # 情感 / 宏观开关
-  sentiment_enabled: false
-  macro_enabled: false
+  # 宏观指标数据源（CPI/PMI/GDP/M2/LPR）
+  # 回退链: wind(需 Key) -> akshare(免费, 可选依赖) -> local(data/macro/*.csv)
+  macro:
+    source: ["wind", "akshare", "local"]
+    dir: "data/macro"
+    timeout: 15
+    indicators: ["cpi", "pmi", "gdp", "m2", "lpr"]
 
 # 特征工程
 features:
+  # 宏观指标特征注入（需 data.macro 有可用数据；无数据时注入显式零值）
+  macro_enabled: false
+
+  # 情感 / 宏观开关（兼容旧键，等价于 features.macro_enabled）
+  sentiment_enabled: false
+
   technical:
     ma_windows: [5, 10, 20, 60]
     rsi_window: 14

@@ -23,6 +23,18 @@ class FeatureEngineer:
         feat_cfg = config.get("features", {}) if config else {}
         self.ma_windows = feat_cfg.get("technical", {}).get("ma_windows", [5, 10, 20, 60])
         self.rsi_window = feat_cfg.get("technical", {}).get("rsi_window", 14)
+        # 宏观特征开关（config.features.macro_enabled）；开启后懒加载 MacroClient，
+        # 数据不可用时由 MacroClient 输出显式零值，绝不影响主链路。
+        self.macro_enabled = bool(feat_cfg.get("macro_enabled", False))
+        self._macro_client = None
+
+    def _get_macro_client(self):
+        """懒加载宏观指标客户端（仅在 macro_enabled 时实例化）。"""
+        if self._macro_client is None:
+            from src.data.macro_client import MacroClient
+
+            self._macro_client = MacroClient(self.config)
+        return self._macro_client
 
     # ------------------------------------------------------------------
     def _compute_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -74,6 +86,12 @@ class FeatureEngineer:
     def transform(self, df: pd.DataFrame, horizon_days: int = 5) -> pd.DataFrame:
         """输入原始行情 DataFrame，输出带特征的 DataFrame。"""
         out = self._compute_indicators(df)
+        # 宏观特征注入（按发布日期 asof 对齐，无前视）；失败时静默降级
+        if self.macro_enabled:
+            try:
+                out = self._get_macro_client().attach_features(out, date_col="date")
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[macro] 宏观特征注入失败，跳过: {e}")
         # 填充 NaN，避免推理行丢失
         out = out.ffill().fillna(0)
         return out

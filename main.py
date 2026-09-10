@@ -333,6 +333,50 @@ def run_adaptive(config: dict) -> str:
     return report
 
 
+def run_monitor(config: dict, output: str | None = None) -> dict:
+    """生成模型监控报表（审计命中率 / 自适应漂移 / 数据源 / 模型产物）"""
+    from src.monitor.health_report import ModelMonitor
+
+    logger.info("生成模型监控报表")
+    report = ModelMonitor(config).collect()
+    print("\n" + report.to_markdown())
+
+    path = output or (Path(config.get("report", {}).get("output_dir", "reports")) / "monitor_report.md")
+    saved = report.save(path)
+    print(f"\n监控报表已保存: {saved}")
+    return report.to_dict()
+
+
+def run_macro(config: dict) -> dict:
+    """查看/刷新宏观指标（CPI/PMI/GDP/M2/LPR）数据可用性"""
+    from src.data.macro_client import MacroClient
+
+    logger.info("检查宏观指标数据源")
+    client = MacroClient(config)
+    health = client.health()
+
+    print("\n" + "=" * 60)
+    print("宏观指标数据源状态")
+    print("=" * 60)
+    for indicator, info in health.items():
+        mark = "✅" if info["status"] == "ok" else "⚠️"
+        latest = f"{info['latest_value']:.2f} @ {info['latest_date']}" if info["points"] else "无数据"
+        print(f"  {mark} {indicator:<6} {info['name']:<26} {info['points']:>4} 期  {latest}")
+
+    ok = sum(1 for v in health.values() if v["status"] == "ok")
+    print(f"\n可用指标: {ok}/{len(health)}")
+    if ok < len(health):
+        print("提示: 安装 akshare（pip install akshare）可启用免费宏观数据源；")
+        print("      或把历史数据放入 data/macro/macro_<indicator>.csv（列: date,value）")
+
+    if config.get("features", {}).get("macro_enabled"):
+        feats = client.get_features()
+        print("\n当前宏观特征（供模型特征注入）:")
+        for k, v in sorted(feats.items()):
+            print(f"  {k} = {v:.4f}")
+    return health
+
+
 # ==================== 量化交易适配层 ====================
 
 def run_signal(config: dict, symbol: str) -> dict:
@@ -411,7 +455,8 @@ def run_backtest(config: dict, symbol: str) -> None:
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """构建 CLI 参数解析器（供 main() 与测试复用）"""
     parser = argparse.ArgumentParser(
         description="TrendCast Pro - 金融市场预测模型（专业版）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -435,13 +480,15 @@ def main():
   python main.py orders 600519.SH 000858.SZ  # 输出下单明细
   python main.py trade 600519.SH          # 执行交易适配流程并导出数据流
   python main.py backtest 600519.SH       # 信号假设成交回测
+  python main.py macro                    # 查看宏观指标数据源状态
+  python main.py monitor                  # 生成模型监控报表
         """,
     )
     parser.add_argument("command", choices=[
         "train", "evaluate", "predict", "export", "all",
         "serve", "schedule", "audit", "notify", "batch",
         "daily-report", "weekly-report", "adaptive",
-        "signal", "orders", "trade", "backtest",
+        "signal", "orders", "trade", "backtest", "macro", "monitor",
     ], help="执行命令")
     parser.add_argument("args", nargs="*", help="附加参数")
     parser.add_argument("--horizon", default="short_term",
@@ -453,7 +500,11 @@ def main():
                         help="模型类型 (覆盖配置文件), 支持: lightgbm, pytorch_lstm, timesfm, ensemble")
     parser.add_argument("--host", default=None, help="API 服务地址")
     parser.add_argument("--port", type=int, default=None, help="API 服务端口")
+    return parser
 
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
 
     # 加载配置（优先使用专业版配置）
@@ -542,6 +593,11 @@ def main():
             print("错误: backtest 命令需要指定标的代码")
             sys.exit(1)
         run_backtest(config, symbol)
+    elif args.command == "macro":
+        run_macro(config)
+    elif args.command == "monitor":
+        output = args.args[0] if args.args else None
+        run_monitor(config, output)
 
 
 if __name__ == "__main__":

@@ -56,11 +56,26 @@ class NewsCollector:
         },
     }
 
-    def __init__(self, cache_dir: str = "data/news"):
+    def __init__(self, cache_dir: str = "data/news", cache_ttl_seconds: int = 1800,
+                 max_items: int = 5000):
+        """新闻采集器。
+
+        Args:
+            cache_dir: 新闻缓存目录。
+            cache_ttl_seconds: 内存缓存有效期（默认 30 分钟）。同一进程内
+                批量预测多标的时只触网一次，避免「每标的触发 HTTP 请求」。
+            max_items: 内存缓存保留的最大条数（按时间倒序截断）。
+        """
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_ttl_seconds = int(cache_ttl_seconds)
+        self.max_items = int(max_items)
         self._session = requests.Session()
         self._session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+        # 内存缓存：避免批量预测时对每个标的重复触网（性能优化核心）
+        self._memo: pd.DataFrame | None = None
+        self._memo_at: float = 0.0
+        self.fetch_count: int = 0  # 实际触网次数（供测试/监控）
 
     def _fetch_eastmoney(self) -> list[dict]:
         """获取东方财富新闻"""
@@ -103,26 +118,80 @@ class NewsCollector:
             logger.warning(f"新浪财经新闻获取失败: {e}")
             return []
 
-    def fetch_all(self) -> pd.DataFrame:
-        """获取所有新闻源数据"""
-        all_news = []
-        all_news.extend(self._fetch_eastmoney())
-        all_news.extend(self._fetch_sina())
+    def fetch_all(self, force_refresh: bool = False) -> pd.DataFrame:
+        """获取所有新闻源数据（带内存缓存，默认 30 分钟内复用）。
+
+        性能优化：批量预测 N 个标的时，旧实现每个标的都会触网一次
+        （`get_daily_sentiment` → `fetch_all`），N 倍 HTTP 开销。
+        现改为进程级缓存 + TTL，N 个标的只触网 1 次。
+
+        Args:
+            force_refresh: 忽略缓存强制重新拉取。
+        """
+        now = time.time()
+        if (
+            not force_refresh
+            and self._memo is not None
+            and (now - self._memo_at) < self.cache_ttl_seconds
+        ):
+            logger.debug("[news] 命中内存缓存，跳过网络请求")
+            return self._memo
+
+        all_news: list[dict] = []
+        for name, fetcher in (("eastmoney", self._fetch_eastmoney), ("sina", self._fetch_sina)):
+            try:
+                all_news.extend(fetcher())
+            except Exception as e:  # noqa: BLE001  fail-open：单源失败不影响其他源
+                logger.warning(f"[news] 数据源 {name} 异常: {e}")
 
         if not all_news:
             logger.warning("所有新闻源均无数据")
-            return pd.DataFrame()
+            # 回退到当日磁盘缓存（若存在），避免网络抖动导致当日情感特征全空
+            cached = self._load_disk_cache(datetime.now().strftime("%Y-%m-%d"))
+            self._memo = cached
+            self._memo_at = now
+            return cached
 
         df = pd.DataFrame(all_news)
         df["time"] = pd.to_datetime(df["time"], errors="coerce")
         df = df.dropna(subset=["time", "title"])
         df = df.sort_values("time", ascending=False)
+        df = df.drop_duplicates(subset=["title"]).reset_index(drop=True)
         df["date"] = df["time"].dt.strftime("%Y-%m-%d")
+        if self.max_items and len(df) > self.max_items:
+            df = df.head(self.max_items).reset_index(drop=True)
 
         cache_path = self.cache_dir / f"news_{datetime.now().strftime('%Y-%m-%d')}.csv"
-        df.to_csv(cache_path, index=False, encoding="utf-8-sig")
-        logger.info(f"新闻已缓存到 {cache_path} ({len(df)} 条)")
+        try:
+            df.to_csv(cache_path, index=False, encoding="utf-8-sig")
+            logger.info(f"新闻已缓存到 {cache_path} ({len(df)} 条)")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[news] 写缓存失败: {e}")
+
+        self._memo = df
+        self._memo_at = now
+        self.fetch_count += 1
         return df
+
+    def _load_disk_cache(self, date: str) -> pd.DataFrame:
+        """读取指定日期的磁盘新闻缓存（失败返回空 DataFrame）。"""
+        path = self.cache_dir / f"news_{date}.csv"
+        if not path.exists():
+            return pd.DataFrame()
+        try:
+            df = pd.read_csv(path)
+            if "date" in df.columns:
+                df["date"] = df["date"].astype(str)
+            logger.info(f"[news] 回退磁盘缓存 {path} ({len(df)} 条)")
+            return df
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[news] 读取磁盘缓存失败 {path}: {e}")
+            return pd.DataFrame()
+
+    def invalidate_cache(self) -> None:
+        """清空内存缓存（供调度器/测试强制刷新）。"""
+        self._memo = None
+        self._memo_at = 0.0
 
 
 class SentimentAnalyzer:
@@ -178,12 +247,35 @@ class SentimentAnalyzer:
         }
 
     def analyze_batch(self, texts: list[str]) -> pd.DataFrame:
-        """批量分析文本情感"""
-        results = []
-        for text in texts:
-            result = self.analyze_sentiment(text)
-            results.append(result)
-        return pd.DataFrame(results)
+        """批量分析文本情感。
+
+        性能优化：旧实现逐条调用 `analyze_sentiment`，每条都要遍历
+        正/负情感词典（各 ~30 词）× 正则预处理；改为一次性预处理后
+        用集合求交统计，避免重复正则开销。
+        """
+        if not texts:
+            return pd.DataFrame(columns=["sentiment", "positive_score", "negative_score"])
+
+        cleaned = [self._text_preprocess(t) for t in texts]
+        pos_tokens = self.pos_words
+        neg_tokens = self.neg_words
+        rows = []
+        for text in cleaned:
+            if not text:
+                rows.append({"sentiment": 0.0, "positive_score": 0.0, "negative_score": 0.0})
+                continue
+            pos_count = sum(1 for w in pos_tokens if w in text)
+            neg_count = sum(1 for w in neg_tokens if w in text)
+            total = pos_count + neg_count
+            if total == 0:
+                rows.append({"sentiment": 0.0, "positive_score": 0.0, "negative_score": 0.0})
+                continue
+            rows.append({
+                "sentiment": (pos_count - neg_count) / total,
+                "positive_score": pos_count / total,
+                "negative_score": neg_count / total,
+            })
+        return pd.DataFrame(rows)
 
 
 class SentimentFeatureGenerator:
@@ -191,28 +283,67 @@ class SentimentFeatureGenerator:
 
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
-        self.news_collector = NewsCollector()
+        sent_cfg = (config or {}).get("features", {}).get("sentiment", {}) or {}
+        news_cfg = (config or {}).get("data", {}).get("news", {}) or {}
+        self.news_collector = NewsCollector(
+            cache_dir=news_cfg.get("dir", "data/news"),
+            cache_ttl_seconds=news_cfg.get("cache_ttl_seconds", sent_cfg.get("cache_ttl_seconds", 1800)),
+        )
         self.sentiment_analyzer = SentimentAnalyzer(config)
         self.sentiment_cache: dict[str, pd.DataFrame] = {}
+        # 按日期预分组缓存：整表一次性算好，避免逐日反复过滤
+        self._by_date: dict[str, pd.DataFrame] | None = None
+        self._by_date_at: float = 0.0
+
+    # ------------------------------------------------------------------
+    def _prepare_by_date(self, force_refresh: bool = False) -> dict[str, pd.DataFrame]:
+        """一次性拉取新闻并做情感分析，按日期分组缓存。
+
+        性能优化核心：旧实现 `generate_sentiment_features` 对 df 中每个
+        交易日调用一次 `get_daily_sentiment`，每次都触发 `fetch_all()`
+        （即使有 sentiment_cache，首次仍逐日触网）。现改为整表一次
+        触网 + 一次批量情感分析 + 按日期分组。
+        """
+        now = time.time()
+        ttl = self.news_collector.cache_ttl_seconds
+        if (
+            not force_refresh
+            and self._by_date is not None
+            and (now - self._by_date_at) < ttl
+        ):
+            return self._by_date
+
+        news_df = self.news_collector.fetch_all(force_refresh=force_refresh)
+        if news_df.empty or "date" not in news_df.columns:
+            self._by_date = {}
+            self._by_date_at = now
+            return {}
+
+        df = news_df.copy()
+        if "title" not in df.columns:
+            self._by_date = {}
+            self._by_date_at = now
+            return {}
+
+        sentiment = self.sentiment_analyzer.analyze_batch(df["title"].astype(str).tolist())
+        df = pd.concat([df.reset_index(drop=True), sentiment], axis=1)
+
+        grouped = {str(d): g.reset_index(drop=True) for d, g in df.groupby("date", sort=False)}
+        self._by_date = grouped
+        self._by_date_at = now
+        return grouped
 
     def get_daily_sentiment(self, date: str | None = None) -> pd.DataFrame:
-        """获取指定日期的情感数据"""
+        """获取指定日期的情感数据（复用整表分组缓存，不重复触网）"""
         if date is None:
             date = datetime.now().strftime("%Y-%m-%d")
+        date = str(date)
 
         if date in self.sentiment_cache:
             return self.sentiment_cache[date]
 
-        news_df = self.news_collector.fetch_all()
-        if news_df.empty:
-            return pd.DataFrame()
-
-        filtered = news_df[news_df["date"] == date]
-        if filtered.empty:
-            return pd.DataFrame()
-
-        sentiment_results = self.sentiment_analyzer.analyze_batch(filtered["title"].tolist())
-        result = pd.concat([filtered.reset_index(drop=True), sentiment_results], axis=1)
+        grouped = self._prepare_by_date()
+        result = grouped.get(date, pd.DataFrame())
         self.sentiment_cache[date] = result
         return result
 
@@ -222,13 +353,30 @@ class SentimentFeatureGenerator:
         if "date" not in df.columns:
             logger.warning("数据中无 date 列，跳过情感特征")
             return df
+        # 统一日期口径为 YYYY-MM-DD 字符串，保证与新闻分组键可对齐
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
 
-        dates = df["date"].unique()
+        dates = list(pd.Series(df["date"]).astype(str).unique())
+        grouped = self._prepare_by_date()
+
+        # 整表一次性分组聚合（替代逐日循环），无新闻的日期走零值默认
+        agg_map: dict[str, dict] = {}
+        for date_str, group in grouped.items():
+            agg_map[date_str] = {
+                "sentiment_mean": float(group["sentiment"].mean()),
+                "sentiment_std": float(group["sentiment"].std()) if len(group) > 1 else 0.0,
+                "positive_ratio": float(group["positive_score"].mean()),
+                "negative_ratio": float(group["negative_score"].mean()),
+                "news_count": int(len(group)),
+            }
+
         sentiment_scores = []
-
         for date_str in dates:
-            sentiment_df = self.get_daily_sentiment(date_str)
-            if sentiment_df.empty:
+            if date_str in agg_map:
+                row = {"date": date_str}
+                row.update(agg_map[date_str])
+                sentiment_scores.append(row)
+            else:
                 sentiment_scores.append({
                     "date": date_str,
                     "sentiment_mean": 0.0,
@@ -236,15 +384,6 @@ class SentimentFeatureGenerator:
                     "positive_ratio": 0.5,
                     "negative_ratio": 0.5,
                     "news_count": 0,
-                })
-            else:
-                sentiment_scores.append({
-                    "date": date_str,
-                    "sentiment_mean": float(sentiment_df["sentiment"].mean()),
-                    "sentiment_std": float(sentiment_df["sentiment"].std()),
-                    "positive_ratio": float(sentiment_df["positive_score"].mean()),
-                    "negative_ratio": float(sentiment_df["negative_score"].mean()),
-                    "news_count": int(len(sentiment_df)),
                 })
 
         sentiment_df = pd.DataFrame(sentiment_scores)

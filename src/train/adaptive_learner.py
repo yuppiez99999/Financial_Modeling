@@ -27,14 +27,30 @@ logger = logging.getLogger(__name__)
 class ModelPerformanceMonitor:
     """模型性能监控器"""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any] | str, monitor_dir: str | None = None):
+        """config 可为完整配置字典，也可直接传监控目录路径（字符串）。
+
+        传入字符串时等价于指定 monitor_dir，便于独立使用与单测。
+        """
+        if isinstance(config, (str, Path)):
+            monitor_dir = monitor_dir or str(config)
+            config = {}
         self.config = config
         self.performance_history: list[dict] = []
-        self.monitor_dir = Path(config.get("training", {}).get("save_dir", "models")) / "monitor"
+        base = monitor_dir or str(
+            Path(config.get("training", {}).get("save_dir", "models")) / "monitor"
+        )
+        self.monitor_dir = Path(base)
         self.monitor_dir.mkdir(parents=True, exist_ok=True)
 
-    def record_performance(self, horizon: str, metrics: dict, timestamp: str | None = None):
-        """记录模型性能"""
+    def record_performance(self, horizon: str, metrics: Any, timestamp: str | None = None):
+        """记录模型性能
+
+        metrics 既支持结构化字典（{"accuracy": 0.7, ...}），也支持直接传入
+        准确率数值（0.7），后者会自动包装为 {"accuracy": 0.7}。
+        """
+        if not isinstance(metrics, dict):
+            metrics = {"accuracy": float(metrics)}
         record = {
             "timestamp": timestamp or datetime.now().isoformat(),
             "horizon": horizon,
@@ -43,6 +59,10 @@ class ModelPerformanceMonitor:
         self.performance_history.append(record)
         self._save_history()
         logger.info(f"记录性能: {horizon} -> accuracy={metrics.get('accuracy', 0):.4f}")
+
+    def record(self, horizon: str, accuracy: float, timestamp: str | None = None) -> None:
+        """记录单周期准确率（record_performance 的简化别名）"""
+        self.record_performance(horizon, {"accuracy": float(accuracy)}, timestamp)
 
     def _save_history(self):
         """保存性能历史"""
