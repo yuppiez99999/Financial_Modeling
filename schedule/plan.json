@@ -1,0 +1,86 @@
+{
+  "project": "16_金融市场预测模型",
+  "start_date": "2026-09-10",
+  "timezone": "Asia/Shanghai",
+  "stages": [
+    {
+      "id": "S1",
+      "name": "vectorbt 回测层",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "tasks": [
+        { "id": "T1.1", "name": "环境与入口准备", "status": "pending", "auto_run": true },
+        { "id": "T1.2", "name": "回测数据结构定义", "status": "pending", "auto_run": false },
+        { "id": "T1.3", "name": "最小回测脚本", "status": "pending", "auto_run": true },
+        { "id": "T1.4", "name": "评价口径定下来", "status": "pending", "auto_run": false }
+      ],
+      "auto_acceptable": ["T1.1", "T1.3"],
+      "manual_checkpoint": ["T1.2", "T1.4"]
+    },
+    {
+      "id": "S2",
+      "name": "tsai 预测 baseline",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "tasks": [
+        { "id": "T2.1", "name": "预测任务定义", "status": "pending", "auto_run": false },
+        { "id": "T2.2", "name": "时间划分与泄露检查", "status": "pending", "auto_run": false },
+        { "id": "T2.3", "name": "tsai 跑通示例", "status": "pending", "auto_run": true },
+        { "id": "T2.4", "name": "预测 baseline 对比", "status": "pending", "auto_run": true }
+      ],
+      "auto_acceptable": ["T2.3", "T2.4"],
+      "manual_checkpoint": ["T2.1", "T2.2"]
+    },
+    {
+      "id": "S3",
+      "name": "mlfinlab 金融建模辅助",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "tasks": [
+        { "id": "T3.1", "name": "当前流程卡点识别", "status": "pending", "auto_run": false },
+        { "id": "T3.2", "name": "模块挑选与映射", "status": "pending", "auto_run": false },
+        { "id": "T3.3", "name": "小范围试跑", "status": "pending", "auto_run": true },
+        { "id": "T3.4", "name": "落地决策", "status": "pending", "auto_run": false }
+      ],
+      "auto_acceptable": ["T3.3"],
+      "manual_checkpoint": ["T3.1", "T3.2", "T3.4"]
+    },
+    {
+      "id": "S4",
+      "name": "freqtrade 策略/执行参考",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "tasks": [
+        { "id": "T4.1", "name": "阅读重点范围", "status": "pending", "auto_run": false },
+        { "id": "T4.2", "name": "可借鉴点提取", "status": "pending", "auto_run": false },
+        { "id": "T4.3", "name": "对你系统的改进建议", "status": "pending", "auto_run": false }
+      ],
+      "auto_acceptable": [],
+      "manual_checkpoint": ["T4.1", "T4.2", "T4.3"]
+    },
+    {
+      "id": "S5",
+      "name": "FinRL 强化学习实验",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "tasks": [
+        { "id": "T5.1", "name": "示例跑通", "status": "pending", "auto_run": true },
+        { "id": "T5.2", "name": "最小实验设计", "status": "pending", "auto_run": false },
+        { "id": "T5.3", "name": "接入已有预测信号", "status": "pending", "auto_run": false },
+        { "id": "T5.4", "name": "对比与结论", "status": "pending", "auto_run": true }
+      ],
+      "auto_acceptable": ["T5.1", "T5.4"],
+      "manual_checkpoint": ["T5.2", "T5.3"]
+    }
+  ],
+  "current_stage_index": 0,
+  "current_task_index": 0,
+  "last_run_date": null,
+  "next_run_date": null,
+  "blockers": []
+}

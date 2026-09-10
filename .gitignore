@@ -2,6 +2,38 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+*.egg
+*.whl
+dist/
+build/
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# IDE / editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS / temp
+*.tmp
+*.log
+
+# 本项目日志目录
+schedule/logs/*.json
+
+# 本地运行留下的临时产物
+*.bak
+
+__pycache__/
+*.py[cod]
+*.egg-info/
 .eggs/
 build/
 dist/
@@ -19,8 +51,8 @@ data/news/
 models/exported/
 
 # 训练产物模型（保留占位模型由 scripts 生成，不提交训练产物）
-models/lightgbm_*.pkl
-models/*.onnx
+models/**/*.pkl
+models/**/*.onnx
 
 # Jupyter
 .ipynb_checkpoints/
