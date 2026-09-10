@@ -468,6 +468,75 @@ def build_portfolio_summary(engine: Any, config: dict, symbol_list: list[str]) -
     }
 
 
+# ==================== Q3 实时流 与 一致性接口 ====================
+
+@app.get("/api/v1/stream/status")
+async def get_stream_status():
+    """实时流状态（只读）：今日快照覆盖 / 新鲜度 / 是否交易时段。"""
+    _init_engine()
+    try:
+        from src.monitor.health_report import ModelMonitor
+
+        return ModelMonitor(_config)._collect_streaming()
+    except Exception as e:
+        raise HTTPException(500, f"实时流状态获取失败: {e}")
+
+
+@app.get("/api/v1/stream/{symbol}")
+async def get_stream_signal(symbol: str):
+    """单标的盘中信号更新（T-1 baseline vs 盘中快照 → intact/stale）。
+
+    需要 `streaming.enabled: true`；未启用或快照不可用时返回 `available: false`，
+    不做任何估算（观测路径 fail-open，不阻断调用方主流程）。
+    """
+    _init_engine()
+    try:
+        from src.inference.intraday import IntradayPredictor
+        from src.data.collector import DataCollector
+
+        predictor = IntradayPredictor(_config)
+        if not predictor.enabled:
+            return {"symbol": symbol, "available": False,
+                    "reason": "实时流未启用（configs: streaming.enabled=false）"}
+        daily_df = DataCollector(_config).load_cached(symbol)
+        snapshot = predictor.quote_client.fetch_quotes([symbol]).get(symbol)
+        return predictor.build(symbol, daily_df, snapshot).to_dict()
+    except Exception as e:
+        raise HTTPException(500, f"盘中信号生成失败: {e}")
+
+
+@app.get("/api/v1/consistency/{symbol}")
+async def get_consistency(symbol: str):
+    """信号一致性校验：跨周期 / 跨模型 / 跨口径是否自相矛盾（观测项，不参与门禁）。"""
+    _init_engine()
+    if not _engine or not _engine.models:
+        raise HTTPException(503, "模型未加载，请先训练模型")
+    try:
+        from src.monitor.signal_consistency import SignalConsistencyChecker
+
+        predicted = _engine.predict_all_horizons(symbol)
+        probs = [
+            float(p.get("probability", 0.5))
+            for p in (predicted.get("predictions") or {}).values()
+            if isinstance(p, dict) and "error" not in p
+        ]
+        components = predicted.get("components") or {}
+        factor_score = None
+        for key, value in components.items():
+            if str(key).startswith("factor"):
+                factor_score = float(value)
+                break
+        return SignalConsistencyChecker(_config).check(
+            symbol,
+            predictions=predicted,
+            components=components,
+            model_probability=(sum(probs) / len(probs)) if probs else None,
+            factor_score=factor_score,
+        ).to_dict()
+    except Exception as e:
+        raise HTTPException(500, f"一致性校验失败: {e}")
+
+
 @app.get("/api/v1/portfolio/summary")
 async def get_portfolio_summary(
     symbols: str = Query(None, description="逗号分隔的标的列表，缺省用 config 启用的 markets 标的"),

@@ -121,6 +121,12 @@ class FeatureEngineer:
                 out = self._get_macro_client().attach_features(out, date_col="date")
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"[macro] 宏观特征注入失败，跳过: {e}")
+        # 清洗非有限值（防未来函数之外的另一类"静默污染"）：
+        # 上游数据里任何 0 价格 / 前复权退化值都会让 pct_change 产生 ±inf，进而在
+        # 特征集里留下 inf，LightGBM 遇到 inf 直接抛
+        # `Input X contains infinity`，**整只标的预测全挂**（2026-09-10 实测）。
+        # 这里统一把 ±inf 视为缺失，交给后续 ffill/fillna 处理，保证特征矩阵有限。
+        out = out.replace([np.inf, -np.inf], np.nan)
         # 填充 NaN，避免推理行丢失
         out = out.ffill().fillna(0)
         return out

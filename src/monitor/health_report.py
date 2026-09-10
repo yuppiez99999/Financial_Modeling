@@ -1,10 +1,11 @@
 """模型监控报表生成器（ModelMonitor / HealthReport）。
 
-汇总四类运行态信息为一份报告：
+汇总五类运行态信息为一份报告：
   1. **预测审计**：命中率（整体 / 分周期 / 近 30 天）、待验证数、漂移信号；
   2. **自适应学习**：各周期近期准确率、漂移检测状态；
-  3. **数据源健康**：宏观指标可用性、行情缓存覆盖；
-  4. **模型产物**：已训练模型文件与更新时间。
+  3. **数据源健康**：宏观指标可用性、行情缓存覆盖、实时流状态（Q3）；
+  4. **模型产物**：已训练模型文件与更新时间；
+  5. **实时流（Q3）**：盘中快照覆盖、快照新鲜度、盘中观点失真预警。
 
 设计约束：
 - **纯读操作**：不写审计记录、不触发重训练、不触网（宏观为读缓存态）；
@@ -228,6 +229,51 @@ class ModelMonitor:
 
         return result
 
+    def _collect_streaming(self) -> Dict[str, Any]:
+        """实时数据流状态（Q3，只读）：盘中快照覆盖 / 新鲜度 / 观点失真预警。
+
+        只读本地快照文件，不触网、不主动拉行情 —— 监控报表必须随时可跑且零副作用。
+        """
+        cfg = (self.config.get("streaming", {}) or {})
+        if not bool(cfg.get("enabled", False)):
+            return {"available": False, "reason": "streaming_disabled",
+                    "hint": "在配置中开启 streaming.enabled 后启用分钟级更新"}
+
+        try:
+            from src.data.streaming import IntradayStore, MarketClock
+
+            store = IntradayStore(self.config)
+            today = datetime.now().strftime("%Y-%m-%d")
+            snaps = store.load(day=today)
+            symbols = sorted({s.symbol for s in snaps})
+            last_ts = max((s.ts for s in snaps), default="")
+            stale_minutes = 0
+            if last_ts:
+                try:
+                    stale_minutes = int(
+                        (datetime.now() - datetime.fromisoformat(last_ts)).total_seconds() // 60
+                    )
+                except ValueError:
+                    stale_minutes = 0
+
+            files = sorted(store.dir.glob("snapshots_*.jsonl"))
+            return {
+                "available": bool(snaps),
+                "reason": "" if snaps else "no_snapshot_today",
+                "dir": str(store.dir),
+                "poll_seconds": int(cfg.get("poll_seconds", 60)),
+                "retention_days": store.retention_days,
+                "is_trading_hours": MarketClock.is_trading_hours(),
+                "symbols_today": len(symbols),
+                "snapshots_today": len(snaps),
+                "last_snapshot_at": last_ts,
+                "snapshot_age_minutes": stale_minutes,
+                "history_files": len(files),
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 实时流状态采集失败: {e}")
+            return {"available": False, "error": str(e)}
+
     def _collect_gate(self) -> Dict[str, Any]:
         """信号准入闸门状态（只读）。
 
@@ -316,6 +362,7 @@ class ModelMonitor:
         models = self._collect_models()
         gate = self._collect_gate()
         factors = self._collect_factor_model()
+        streaming = self._collect_streaming()
 
         issues: List[str] = []
         if audit.get("available") and audit.get("drift"):
@@ -334,6 +381,15 @@ class ModelMonitor:
             issues.append(
                 f"策略门禁为 {gate.get('state', 'readonly')}（信号只读），未达打分因子放行条件"
             )
+        # 实时流（Q3）：启用后盘中应有新鲜快照；交易时段内超过 3 个轮询周期即告警
+        if streaming.get("available") or streaming.get("reason") == "no_snapshot_today":
+            if streaming.get("is_trading_hours"):
+                age = int(streaming.get("snapshot_age_minutes", 0) or 0)
+                max_age = max(int(streaming.get("poll_seconds", 60) / 60 * 3), 3)
+                if not streaming.get("available") or age > max_age:
+                    issues.append(f"实时流盘中无新鲜快照（最近快照 {age} 分钟前，阈值 {max_age} 分钟）")
+            elif not streaming.get("available"):
+                issues.append("实时流启用但今日无快照（休市或实时源不可用）")
 
         status = "ok" if not issues else ("warning" if len(issues) < 3 else "critical")
 
@@ -347,6 +403,7 @@ class ModelMonitor:
             "models": models,
             "gate": gate,
             "factors": factors,
+            "streaming": streaming,
         }
         return HealthReport(payload)
 
@@ -518,6 +575,24 @@ def render_markdown(payload: Dict[str, Any]) -> str:
             f"（{factors.get('hint', '')}）"
         )
         lines.append("")
+
+    streaming = payload.get("streaming", {}) or {}
+    lines.extend(["## 实时数据流（Q3）", ""])
+    if streaming.get("available"):
+        lines.extend([
+            f"- 快照目录：`{streaming.get('dir', '')}`（历史文件 {streaming.get('history_files', 0)} 个）",
+            f"- 轮询间隔：{streaming.get('poll_seconds', 0)} 秒；保留期 {streaming.get('retention_days', 0)} 天",
+            f"- 今日快照：{streaming.get('snapshots_today', 0)} 条 / {streaming.get('symbols_today', 0)} 个标的",
+            f"- 最近快照：{streaming.get('last_snapshot_at') or 'N/A'}"
+            f"（{streaming.get('snapshot_age_minutes', 0)} 分钟前）",
+            f"- 当前{'处于' if streaming.get('is_trading_hours') else '不处于'}交易时段",
+        ])
+    else:
+        lines.append(
+            f"- 不可用：{streaming.get('error') or streaming.get('reason') or '未启用'}"
+            f"（{streaming.get('hint', '')}）"
+        )
+    lines.append("")
 
     models = payload.get("models", {}) or {}
     lines.extend(["## 模型产物", ""])

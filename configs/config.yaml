@@ -246,6 +246,38 @@ trading:
   output_dir: "output/trading"
 
 # ================================
+# Q3 路线：实时数据流接入 与 信号一致性
+# ================================
+
+# 实时数据流（src/data/streaming.py + src/inference/intraday.py）
+# 定位：**盘中观测与预警**，不是盘中下单决策。
+# 分钟级更新回答的问题是「今天开盘后的走势，是否让昨收模型的观点失真」。
+streaming:
+  enabled: false            # 默认关闭：需显式开启才会轮询实时源
+  poll_seconds: 60          # 轮询间隔（秒）；盘中按此频率拉快照
+  quote_timeout: 5          # 实时快照接口超时（秒）
+  realtime_dir: "data/realtime"   # 快照落盘目录（与 data/raw 严格分离，绝不混入日K缓存）
+  retention_days: 30        # 快照保留天数，超期自动清理
+  # 盘中观点失真判定：相对昨收的反向波动超过该幅度即标记 stale
+  drift_notional: 0.01
+  # 日K缓存落后超过该天数时，拒绝据此给盘中结论（节假日容忍）
+  max_stale_days: 5
+  # 分钟级滚动特征窗口
+  ma_fast: 5
+  ma_slow: 20
+  vol_window: 20
+  rsi_window: 14
+  min_bars: 30
+
+# 信号一致性校验（src/monitor/signal_consistency.py）
+# 检查跨周期 / 跨模型 / 跨口径给出的方向是否自相矛盾。
+# 仅作观测，**不参与策略门禁**（门禁仍只看 IC / 命中率）。
+consistency:
+  tolerance: 0.15           # 跨口径强度差距容忍带
+  neutral_band: 0.02        # 概率/得分中性带，带内视为"无观点"，不参与一致性判定
+  ignore_short_term: true   # 短周期噪声大：跨周期一致性只看中/长周期（仅有短期时以短期为准）
+
+# ================================
 # Q2 路线：多因子集成 与 策略门禁
 # ================================
 
