@@ -279,12 +279,62 @@
         "T6.2",
         "T6.4"
       ]
+    },
+    {
+      "id": "S7",
+      "name": "门禁解锁攻坚",
+      "status": "completed",
+      "started_at": "2026-09-10T13:50:00+00:00",
+      "completed_at": "2026-09-10T14:00:00+00:00",
+      "tasks": [
+        {
+          "id": "T7.1",
+          "name": "门禁阻塞诊断（还差多少/哪条腿卡住）",
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T14:00:00+00:00"
+        },
+        {
+          "id": "T7.2",
+          "name": "按标的分层评估（定位拖后腿的标的）",
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T14:00:00+00:00"
+        },
+        {
+          "id": "T7.3",
+          "name": "训练折中性带（无前视过滤 ≈0.5 噪音样本）",
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T14:00:00+00:00"
+        },
+        {
+          "id": "T7.4",
+          "name": "CLI/监控报表接入与合规边界",
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T14:00:00+00:00"
+        },
+        {
+          "id": "T7.5",
+          "name": "回归测试与文档",
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T14:00:00+00:00"
+        }
+      ],
+      "auto_acceptable": [
+        "T7.5"
+      ],
+      "manual_checkpoint": [
+        "T7.3"
+      ]
     }
   ],
-  "current_stage_index": 5,
-  "current_task_index": 5,
+  "current_stage_index": 6,
+  "current_task_index": 0,
   "last_run_date": "2026-09-10",
   "next_run_date": null,
   "blockers": [],
-  "result": "done_all_stages"
+  "result": "all_stages_completed"
 }

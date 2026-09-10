@@ -392,3 +392,7 @@ strategy_gate:
   min_audit_verified: 10    # 审计交叉验证所需最少已验证样本
   min_audit_hit_rate: 0.5   # 审计命中率下限
   report_dir: "reports"     # 判定结果输出目录（strategy_gate.json）
+  # S7 门禁解锁：训练折中性带（过滤 ≈0.5 的噪音样本，仅用训练折学常数，无前视）
+  neutral_band:
+    enabled: false          # true = 评估/门禁启用训练折中性带（默认关闭，保持既有口径）
+    min_keep_ratio: 0.5     # 至少保留多少比例的样本，防"只留 1 个 → 命中率 100%"的退化解
