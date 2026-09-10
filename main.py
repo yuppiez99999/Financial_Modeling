@@ -565,6 +565,69 @@ def run_gate(config: dict, ic_path: str | None = None) -> dict:
     return decision
 
 
+def run_factor_model(config: dict, symbol: str | None = None, top_n: int = 10) -> dict:
+    """多因子模型诊断：因子权重 / 族权重 / IC 排名 / 当前因子值。
+
+    与 `factors`（推理期特征因子组合）互补：
+      - `factors`      ：不需要训练，直接用技术特征因子做组合打分；
+      - `factor-model` ：读取 `ModelTrainer --model-type factor_model` 训练出的
+        **IC 加权因子模型**，输出可解释的权重与 IC 排名。
+    """
+    from src.data.collector import DataCollector
+    from src.factors import FactorLibrary
+    from src.factors.factor_model import FactorModel
+
+    logger.info("多因子模型诊断")
+    save_dir = Path(config.get("training", {}).get("save_dir", "models"))
+    model_path = save_dir / "factor_model_short_term_5d.pkl"
+
+    result: dict = {
+        "factors_enabled": bool(
+            (config.get("model", {}).get("factors", {}) or {}).get("enabled", False)
+        ),
+        "model_path": str(model_path),
+        "model_exists": model_path.exists(),
+    }
+
+    model: FactorModel | None = None
+    if model_path.exists():
+        model = FactorModel(config)
+        model.load(str(model_path))
+        result["explain"] = model.explain(top_n)
+        print("\n" + "=" * 60)
+        print("多因子模型 · 因子权重与 IC")
+        print("=" * 60)
+        for row in result["explain"]["top_factors"]:
+            print(f"  {row['factor']:<24} family={row['family']:<10} "
+                  f"weight={row['weight']:.4f} ic={row['ic']:+.4f}")
+        print(f"\n族权重: {result['explain']['family_weights']}")
+    else:
+        print(f"未找到因子模型：{model_path}")
+        print("提示：先运行 `python main.py train --model-type factor_model`")
+
+    if symbol:
+        collector = DataCollector(config)
+        df = collector.load_cached(symbol) or collector._fetch_with_fallback(symbol)
+        if df is None:
+            print(f"无法获取 {symbol} 的数据")
+            return result
+        lib = FactorLibrary(config)
+        feat = lib.compute(df)
+        cols = lib.factor_columns(feat)
+        latest = {c: round(float(feat[c].iloc[-1]), 4) for c in cols}
+        result["symbol"] = symbol
+        result["latest_factors"] = latest
+        if model is not None:
+            proba = float(model.predict_proba(feat[cols].iloc[-1:])[0][1])
+            result["probability"] = round(proba, 4)
+            print(f"\n{symbol} 当前多因子概率: {proba:.4f} "
+                  f"({'看涨' if proba > 0.5 else '看跌'})")
+        print(f"\n最新因子值（{symbol}）:")
+        for k, v in latest.items():
+            print(f"  {k:<24} {v:+.4f}")
+    return result
+
+
 def run_factors(config: dict, symbol: str) -> dict:
     """多因子加权组合预测：模型因子 + 技术特征因子 → 单周期综合得分。"""
     from src.data.collector import DataCollector
@@ -615,7 +678,8 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py monitor                  # 生成模型监控报表
   python main.py ic                       # IC / 命中率门禁评估（全标的池）
   python main.py gate                     # 策略门禁判定（IC + 审计命中率）
-  python main.py factors 600519.SH        # 多因子加权组合预测
+  python main.py factors 600519.SH        # 多因子加权组合预测（推理期特征因子）
+  python main.py factor-model 600519.SH   # 多因子模型权重 / IC 诊断（可训练模型）
         """,
     )
     parser.add_argument("command", choices=[
@@ -623,7 +687,7 @@ def build_parser() -> argparse.ArgumentParser:
         "serve", "schedule", "audit", "notify", "batch",
         "daily-report", "weekly-report", "adaptive",
         "signal", "orders", "trade", "backtest", "macro", "monitor",
-        "ic", "gate", "factors",
+        "ic", "gate", "factors", "factor-model",
     ], help="执行命令")
     parser.add_argument("args", nargs="*", help="附加参数")
     parser.add_argument("--horizon", default="short_term",
@@ -631,7 +695,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="预测周期")
     parser.add_argument("--config", default=None, help="配置文件路径")
     parser.add_argument("--model-type", default=None,
-                        choices=["lightgbm", "pytorch_lstm", "timesfm", "ensemble"],
+                        choices=["lightgbm", "pytorch_lstm", "timesfm", "ensemble",
+                                 "factor_model", "multifactor"],
                         help="模型类型 (覆盖配置文件), 支持: lightgbm, pytorch_lstm, timesfm, ensemble")
     parser.add_argument("--host", default=None, help="API 服务地址")
     parser.add_argument("--port", type=int, default=None, help="API 服务端口")
@@ -659,7 +724,9 @@ def main():
 
     # 验证模型类型
     # 支持的模型类型：LightGBM（默认）、PyTorch LSTM、TimesFM（外部可选模块）、以及 Ensemble（混合）
-    valid_types = frozenset({"lightgbm", "pytorch_lstm", "timesfm", "ensemble"})
+    valid_types = frozenset({
+        "lightgbm", "pytorch_lstm", "timesfm", "ensemble", "factor_model", "multifactor",
+    })
     if config["model"]["type"] not in valid_types:
         logger.error(f"不支持的模型类型: {config['model']['type']}，支持的类型: {sorted(valid_types)}")
         sys.exit(1)
@@ -737,6 +804,9 @@ def main():
         run_ic(config, args.args or None)
     elif args.command == "gate":
         run_gate(config, args.args[0] if args.args else None)
+    elif args.command == "factor-model":
+        symbol = args.args[0] if args.args else None
+        run_factor_model(config, symbol)
     elif args.command == "factors":
         symbol = args.args[0] if args.args else None
         if not symbol:

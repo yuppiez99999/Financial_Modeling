@@ -28,8 +28,41 @@ class DataCollector:
         self.raw_dir = Path(config.get("data", {}).get("raw_dir", "data/raw"))
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.sources = list(config.get("data", {}).get("source", ["simulation"]))
+        # 数据质量门控（config.data.quality_gate）：对真实源数据做质量体检，
+        # 不达标时**不删除数据**（避免训练集体量骤降），只记录告警与质量分，
+        # 供监控报表呈现"当前训练数据质量"。
+        self.quality_gate_enabled = bool(config.get("data", {}).get("quality_gate", False))
+        self._quality_gate = None
+        self.last_quality: dict[str, Any] = {}
 
     # ------------------------------------------------------------------
+    def _get_quality_gate(self):
+        """懒加载数据质量门控（仅 quality_gate 开启时需要）。"""
+        if self._quality_gate is None:
+            from src.data.quality_gate import DataQualityGate
+
+            self._quality_gate = DataQualityGate()
+        return self._quality_gate
+
+    def assess_quality(self, symbol: str, df: pd.DataFrame) -> dict[str, Any]:
+        """对行情数据做质量体检（fail-soft：任何异常都不影响主链路）。"""
+        if not self.quality_gate_enabled or df is None or len(df) == 0:
+            return {}
+        try:
+            scored = self._get_quality_gate().score_market_data(df)
+            info = {
+                "symbol": symbol,
+                "rows": int(len(scored)),
+                "quality_score": round(float(scored["quality_score"].mean()), 2),
+                "a_level_ratio": round(float(scored["token_level_pred"].eq("A").mean()), 4),
+                "min_quality": round(float(scored["quality_score"].min()), 2),
+            }
+            self.last_quality[symbol] = info
+            return info
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[quality] {symbol} 质量体检失败，跳过: {e}")
+            return {}
+
     def _cache_path(self, symbol: str) -> Path:
         safe = symbol.replace("/", "_").replace("\\", "_")
         return self.raw_dir / f"{safe}.csv"
@@ -137,7 +170,21 @@ class DataCollector:
             return None
         if df is not None and len(df) > 0:
             self._save_cache(symbol, df)
+            self.assess_quality(symbol, df)
         return df
+
+    def quality_summary(self) -> dict[str, Any]:
+        """汇总本次进程内已体检标的质量（供监控报表 / CLI 输出）。"""
+        if not self.last_quality:
+            return {"available": False, "reason": "no_assessment"}
+        scores = [v["quality_score"] for v in self.last_quality.values()]
+        return {
+            "available": True,
+            "assessed_symbols": len(scores),
+            "avg_quality_score": round(sum(scores) / len(scores), 2),
+            "min_quality_score": round(min(scores), 2),
+            "details": dict(self.last_quality),
+        }
 
     def fetch_realtime(
         self, symbol: str, start_date: str = "", end_date: str = ""

@@ -203,16 +203,89 @@ class ModelMonitor:
                 "cached_symbols": len(files),
                 "latest_update": latest,
             }
+            # 持仓池覆盖度（Q2-4）：配置里的启用标的有多少已落地行情缓存
+            markets = ((self.config.get("data", {}) or {}).get("markets", {}) or {})
+            wanted: List[str] = []
+            for mcfg in markets.values():
+                if (mcfg or {}).get("enabled"):
+                    wanted.extend((mcfg or {}).get("symbols", []) or [])
+            cached = {f.stem for f in files}
+            missing = [s for s in wanted if s not in cached]
+            result["holdings_pool"] = {
+                "configured": len(wanted),
+                "cached": len([s for s in wanted if s in cached]),
+                "coverage": round(
+                    len([s for s in wanted if s in cached]) / len(wanted), 4
+                ) if wanted else 0.0,
+                "missing": missing[:20],
+                "missing_count": len(missing),
+            }
+            result["quality_gate"] = {
+                "enabled": bool((self.config.get("data", {}) or {}).get("quality_gate", False)),
+            }
         except Exception as e:  # noqa: BLE001
             result["market_cache"] = {"cached_symbols": 0, "error": str(e)}
 
         return result
+
+    def _collect_gate(self) -> Dict[str, Any]:
+        """信号准入闸门状态（只读）。
+
+        优先读最近一次评估报告（logs/eval_report.json）里的 gate 结果；
+        无报告时如实标注 unavailable，绝不用估算值冒充判定。
+        """
+        try:
+            gate_dir = Path(
+                (self.config.get("strategy_gate", {}) or {}).get("report_dir", "reports")
+            )
+            path = gate_dir / "strategy_gate.json"
+            if not path.exists():
+                return {
+                    "available": False,
+                    "reason": "no_gate_report",
+                    "hint": "先运行 `python main.py gate` 生成 reports/strategy_gate.json",
+                }
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            gate = dict(payload) if isinstance(payload, dict) else {}
+            gate.update({"available": True, "source": str(path)})
+            return gate
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取策略门禁状态失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_factor_model(self) -> Dict[str, Any]:
+        """多因子模型状态（只读）：因子权重 / 族权重 / IC 排名。"""
+        save_dir = Path((self.config.get("training", {}) or {}).get("save_dir", "models"))
+        path = save_dir / "factor_model_short_term_5d.pkl"
+        if not path.exists():
+            return {
+                "available": False,
+                "reason": "no_factor_model",
+                "hint": "先运行 `python main.py train --model-type factor_model`",
+            }
+        try:
+            from src.factors.factor_model import FactorModel
+
+            model = FactorModel(self.config)
+            model.load(str(path))
+            explain = model.explain(8)
+            explain.update({"available": True, "path": str(path)})
+            return explain
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取多因子模型失败: {e}")
+            return {"available": False, "error": str(e)}
 
     def _collect_models(self) -> Dict[str, Any]:
         """已训练模型产物清单（只读）。"""
         save_dir = Path((self.config.get("training", {}) or {}).get("save_dir", "models"))
         horizons = (self.config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
         expected = [f"lightgbm_{name}_{days}d.pkl" for name, days in horizons.items()]
+        model_type = str((self.config.get("model", {}) or {}).get("type", "lightgbm"))
+        # 按当前配置的模型类型补充期望产物（避免把"未启用 LSTM"误判为缺失）
+        if model_type == "pytorch_lstm":
+            expected = [f"pytorch_lstm_{name}_{days}d.pt" for name, days in horizons.items()]
+        elif model_type in ("factor_model", "multifactor"):
+            expected = [f"factor_model_{name}_{days}d.pkl" for name, days in horizons.items()]
 
         found: List[Dict[str, Any]] = []
         if save_dir.exists():
@@ -241,6 +314,8 @@ class ModelMonitor:
         adaptive = self._collect_adaptive()
         sources = self._collect_data_sources()
         models = self._collect_models()
+        gate = self._collect_gate()
+        factors = self._collect_factor_model()
 
         issues: List[str] = []
         if audit.get("available") and audit.get("drift"):
@@ -255,6 +330,10 @@ class ModelMonitor:
             issues.append("宏观指标全部不可用（CPI/PMI/GDP 等）")
         if not sources.get("market_cache", {}).get("cached_symbols"):
             issues.append("无行情缓存（data/raw 为空）")
+        if gate.get("available") and not gate.get("passed"):
+            issues.append(
+                f"策略门禁为 {gate.get('state', 'readonly')}（信号只读），未达打分因子放行条件"
+            )
 
         status = "ok" if not issues else ("warning" if len(issues) < 3 else "critical")
 
@@ -266,6 +345,8 @@ class ModelMonitor:
             "adaptive": adaptive,
             "data_sources": sources,
             "models": models,
+            "gate": gate,
+            "factors": factors,
         }
         return HealthReport(payload)
 
@@ -365,7 +446,78 @@ def render_markdown(payload: Dict[str, Any]) -> str:
         f"- 行情缓存：{cache.get('cached_symbols', 0)} 个标的"
         f"（最近更新 {cache.get('latest_update') or 'N/A'}）"
     )
+    pool = sources.get("holdings_pool", {}) or {}
+    if pool:
+        lines.append(
+            f"- 持仓池覆盖：{pool.get('cached', 0)}/{pool.get('configured', 0)}"
+            f"（{_fmt_pct(pool.get('coverage'))}）"
+            + (f"，缺 {pool.get('missing_count')} 个" if pool.get("missing_count") else "")
+        )
+    qg = sources.get("quality_gate", {}) or {}
+    if qg:
+        lines.append(f"- 数据质量门控：{'已启用' if qg.get('enabled') else '未启用'}")
     lines.append("")
+
+    gate = payload.get("gate", {}) or {}
+    lines.extend(["## 策略门禁（Q2）", ""])
+    if gate.get("available"):
+        state = str(gate.get("state", "readonly"))
+        icon = "🟢" if state == "gated" else "🔒"
+        lines.append(f"- 状态：{icon} **{state}**（{gate.get('reason', '')}）")
+        lines.append(f"- 来源：`{gate.get('source', '')}`"
+                     f"（判定时间 {gate.get('generated_at') or 'N/A'}）")
+        blocked = gate.get("blocked_by") or []
+        if blocked:
+            lines.append(f"- 未放行原因：{'；'.join(str(b) for b in blocked)}")
+        horizons = gate.get("horizons") or {}
+        if isinstance(horizons, dict) and horizons:
+            lines.extend([
+                "", "| 周期 | IC | ICIR | 命中率 | 样本 | 通过 |",
+                "|------|----|------|--------|------|------|",
+            ])
+            for name, h in sorted(horizons.items()):
+                if not isinstance(h, dict):
+                    continue
+                try:
+                    ic = float(h.get("ic", 0.0) or 0.0)
+                    icir = float(h.get("icir", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    ic, icir = 0.0, 0.0
+                lines.append(
+                    f"| {name} | {ic:+.4f} | {icir:+.4f} | "
+                    f"{_fmt_pct(h.get('hit_rate'))} | {h.get('samples', 0)} | "
+                    f"{'✅' if h.get('passed') else '❌'} |"
+                )
+        lines.append("")
+    else:
+        lines.append(
+            f"- 不可用：{gate.get('error') or gate.get('reason') or '无门禁报告'}"
+            f"（{gate.get('hint', '')}）"
+        )
+        lines.append("")
+
+    factors = payload.get("factors", {}) or {}
+    lines.extend(["## 多因子模型（Q2）", ""])
+    if factors.get("available"):
+        fw = factors.get("family_weights") or {}
+        if fw:
+            lines.append("族权重：" + " · ".join(f"{k}={v}" for k, v in fw.items()))
+        rows = factors.get("top_factors") or []
+        if rows:
+            lines.extend([
+                "", "| 因子 | 族 | 权重 | IC |", "|------|-----|------|-----|",
+            ])
+            for r in rows:
+                lines.append(
+                    f"| {r['factor']} | {r['family']} | {r['weight']:.4f} | {r['ic']:+.4f} |"
+                )
+        lines.append("")
+    else:
+        lines.append(
+            f"- 不可用：{factors.get('error') or factors.get('reason') or '无因子模型'}"
+            f"（{factors.get('hint', '')}）"
+        )
+        lines.append("")
 
     models = payload.get("models", {}) or {}
     lines.extend(["## 模型产物", ""])
