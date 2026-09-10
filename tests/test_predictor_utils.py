@@ -85,8 +85,12 @@ class DummyInst:
         self.name = name
 
 
-def test_load_placeholder_existing():
-    p = PROJECT_ROOT / "models" / "timesfm_short_term_5d.pkl"
+def test_load_placeholder_existing(tmp_path):
+    """占位模型目录被 .gitignore 忽略，干净克隆下不存在 —— 测试自行生成到 tmp。"""
+    from scripts.create_timesfm_placeholders import create_placeholders
+
+    create_placeholders(tmp_path)
+    p = tmp_path / "timesfm_short_term_5d.pkl"
     res = utils.load_placeholder(p)
     assert res is not None
     assert isinstance(res, dict)
@@ -94,7 +98,10 @@ def test_load_placeholder_existing():
     assert "scaler" in res
 
 
-def test_try_load_timesfm_prefers_placeholder(monkeypatch):
+def test_try_load_timesfm_prefers_placeholder(monkeypatch, tmp_path):
+    from scripts.create_timesfm_placeholders import create_placeholders
+
+    create_placeholders(tmp_path)
     # provide instantiate fn that would raise if called
     called = {"inst": False}
 
@@ -102,8 +109,7 @@ def test_try_load_timesfm_prefers_placeholder(monkeypatch):
         called["inst"] = True
         return DummyInst()
 
-    p = PROJECT_ROOT / "models"
-    res = utils.try_load_timesfm_or_instance(p, "short_term_5d", inst_fn)
+    res = utils.try_load_timesfm_or_instance(tmp_path, "short_term_5d", inst_fn)
     # because placeholder exists, instantiate_fn should not be called
     assert called["inst"] is False
     assert isinstance(res, dict) and "model" in res

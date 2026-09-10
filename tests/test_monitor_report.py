@@ -27,6 +27,11 @@ def cfg(tmp_path):
     c["training"]["save_dir"] = str(tmp_path / "models")
     c["data"]["raw_dir"] = str(tmp_path / "raw")
     c["data"]["macro"] = {"source": ["local"], "dir": str(tmp_path / "macro")}
+    # 隔离到 tmp：IC 趋势章节读 reports/ 下的报告，
+    # 否则本地残留的 reports/ic_trend.json 会让「全健康」前提失效
+    c["ic_trend"] = {"report_dir": str(tmp_path / "reports")}
+    c["strategy_gate"] = {"report_dir": str(tmp_path / "reports")}
+    c["report"] = {"output_dir": str(tmp_path / "reports")}
     (tmp_path / "models").mkdir(parents=True, exist_ok=True)
     return c
 
