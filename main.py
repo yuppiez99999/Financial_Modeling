@@ -455,6 +455,137 @@ def run_backtest(config: dict, symbol: str) -> None:
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
 
 
+# ==================== Q2 路线：门禁与多因子 ====================
+
+def run_ic(config: dict, symbols: list[str] | None = None, folds: int = 3) -> dict:
+    """IC / 命中率门禁评估（walk-forward 时序回测，口径与 scripts/evaluate_models.py 一致）。
+
+    复用评估脚本的 ``build_supervised`` / ``walk_forward_splits`` / ``compute_metrics``，
+    保证「门禁判定」与「评估报告」同源同口径，避免两套数字互相打架：
+      - 逐标的特征工程 + 逐标的构造目标（防跨标的 shift 污染）；
+      - 测试折严格在训练折之后（无未来函数）；
+      - forward return 取真实收盘价，未到期样本自动跳过。
+    """
+    import numpy as np
+    import scripts.evaluate_models as ev
+    from src.inference.ic import ICCalculator
+
+    logger.info("执行 IC / 命中率门禁评估")
+    horizons_cfg = config.get("data", {}).get("prediction_horizons", {})
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "horizons": {}}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    calc = ICCalculator(config)
+    per_horizon: dict = {}
+    for hname, days in horizons_cfg.items():
+        combined = ev.build_supervised(data, config, int(days))
+        if combined.empty:
+            per_horizon[hname] = {"horizon_days": int(days), "scores": [], "returns": [],
+                                  "window_size": 0}
+            continue
+        from src.data.preprocessor import FeatureEngineer
+
+        fe = FeatureEngineer(config)
+        cols = [c for c in fe.get_feature_columns(combined, int(days))
+                if not str(c).startswith("_")]
+        X = combined[cols].to_numpy(dtype=float)
+        y = combined[f"target_{int(days)}d"].to_numpy(dtype=float)
+        fwd = combined["_fwd_ret"].to_numpy(dtype=float)
+
+        scores: list = []
+        returns: list = []
+        splits = ev.walk_forward_splits(len(X), folds)
+        for train_idx, test_idx in splits:
+            if len(np.unique(y[train_idx])) < 2:
+                continue
+            try:
+                from src.train.models.lightgbm_model import LightGBMModel
+
+                model = LightGBMModel(config)
+                model.train(X[train_idx], y[train_idx])
+                proba = model.predict_proba(X[test_idx])[:, 1]
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[ic] {hname} 折训练失败: {e}")
+                continue
+            # 分数用「概率 - 0.5」去中性化：与因子/信号口径一致（0 = 无观点）
+            scores.extend([float(p) - 0.5 for p in proba])
+            returns.extend([float(r) for r in fwd[test_idx]])
+
+        per_horizon[hname] = {
+            "horizon_days": int(days),
+            "scores": scores,
+            "returns": returns,
+            # 门禁需 IC 稳定性：按 20 样本滚动窗口统计 ICIR
+            "window_size": 20 if len(scores) >= 60 else None,
+        }
+
+    result = calc.evaluate_all(per_horizon)
+    result["symbols_evaluated"] = len(data)
+    result["folds"] = folds
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return result
+
+
+def _config_symbols(config: dict) -> list[str]:
+    """取配置中启用的标的（去重保序）。"""
+    out: list[str] = []
+    for _name, cfg in (config.get("data", {}).get("markets", {}) or {}).items():
+        if isinstance(cfg, dict) and cfg.get("enabled"):
+            out.extend(cfg.get("symbols", []))
+    return list(dict.fromkeys(out))
+
+
+def run_gate(config: dict, ic_path: str | None = None) -> dict:
+    """策略门禁判定：IC 门禁（+ 可选审计命中率）→ readonly / gated。"""
+    from src.trading.gate import StrategyGate, recent_audit_stats
+
+    logger.info("执行策略门禁判定")
+    ic_payload = None
+    if ic_path and Path(ic_path).exists():
+        ic_payload = json.loads(Path(ic_path).read_text(encoding="utf-8"))
+    else:
+        ic_payload = run_ic(config)
+
+    audit_stats = None
+    if (config.get("strategy_gate", {}) or {}).get("use_audit"):
+        audit_dir = (config.get("audit", {}) or {}).get("dir", "logs/audit")
+        audit_stats = recent_audit_stats(audit_dir)
+
+    decision = StrategyGate(config).decide(ic_payload, audit_stats).to_dict()
+    out = Path(config.get("strategy_gate", {}).get("report_dir", "reports")) / "strategy_gate.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(decision, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(decision, ensure_ascii=False, indent=2))
+    print(f"\n门禁判定已保存: {out}")
+    return decision
+
+
+def run_factors(config: dict, symbol: str) -> dict:
+    """多因子加权组合预测：模型因子 + 技术特征因子 → 单周期综合得分。"""
+    from src.data.collector import DataCollector
+    from src.inference.factor_combiner import FactorCombiner, combine_horizon
+    from src.inference.predictor import PredictionEngine
+
+    logger.info(f"多因子组合预测 {symbol}")
+    engine = PredictionEngine(config)
+    engine.load_models(config["model"].get("type", "lightgbm"))
+    pred = engine.predict_all_horizons(symbol)
+
+    df = DataCollector(config).load_cached(symbol)
+    combiner = FactorCombiner(config)
+    horizons_out = {}
+    for hname, hp in (pred.get("predictions") or {}).items():
+        horizons_out[hname] = combine_horizon(combiner, symbol, df, hp).to_dict()
+    payload = {"symbol": symbol, "combiner": combiner.weighter, "horizons": horizons_out}
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return payload
+
+
 def build_parser() -> argparse.ArgumentParser:
     """构建 CLI 参数解析器（供 main() 与测试复用）"""
     parser = argparse.ArgumentParser(
@@ -482,6 +613,9 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py backtest 600519.SH       # 信号假设成交回测
   python main.py macro                    # 查看宏观指标数据源状态
   python main.py monitor                  # 生成模型监控报表
+  python main.py ic                       # IC / 命中率门禁评估（全标的池）
+  python main.py gate                     # 策略门禁判定（IC + 审计命中率）
+  python main.py factors 600519.SH        # 多因子加权组合预测
         """,
     )
     parser.add_argument("command", choices=[
@@ -489,6 +623,7 @@ def build_parser() -> argparse.ArgumentParser:
         "serve", "schedule", "audit", "notify", "batch",
         "daily-report", "weekly-report", "adaptive",
         "signal", "orders", "trade", "backtest", "macro", "monitor",
+        "ic", "gate", "factors",
     ], help="执行命令")
     parser.add_argument("args", nargs="*", help="附加参数")
     parser.add_argument("--horizon", default="short_term",
@@ -598,6 +733,16 @@ def main():
     elif args.command == "monitor":
         output = args.args[0] if args.args else None
         run_monitor(config, output)
+    elif args.command == "ic":
+        run_ic(config, args.args or None)
+    elif args.command == "gate":
+        run_gate(config, args.args[0] if args.args else None)
+    elif args.command == "factors":
+        symbol = args.args[0] if args.args else None
+        if not symbol:
+            print("错误: factors 命令需要指定标的代码")
+            sys.exit(1)
+        run_factors(config, symbol)
 
 
 if __name__ == "__main__":

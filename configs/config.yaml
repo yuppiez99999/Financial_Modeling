@@ -214,3 +214,33 @@ trading:
 
   # 数据输出目录（适配层导出物）
   output_dir: "output/trading"
+
+# ================================
+# Q2 路线：多因子集成 与 策略门禁
+# ================================
+
+# 多因子加权组合预测（src/inference/factor_combiner.py）
+model_factors:
+  weighter: "static"        # static(静态权重) / ic(按 |IC| 自适应权重)
+  weights:                  # 因子权重（自动归一化；缺失因子会被移出后重归一化）
+    lightgbm: 0.45          # 模型因子：LightGBM 概率
+    timesfm: 0.25           # 模型因子：TimesFM 概率
+    momentum: 0.10          # 特征因子：20 日动量分位
+    trend: 0.10             # 特征因子：MA20 偏离分位
+    volume: 0.05            # 特征因子：量比
+    volatility: 0.05        # 特征因子：20 日波动率分位（取负）
+
+# 策略门禁（src/trading/gate.py）
+# 判定信号能否从「只读观测」升级为「调仓打分因子」；未达标一律 fail-close 保持只读
+strategy_gate:
+  enabled: true
+  force_readonly: false     # true = 人工锁定只读（即使指标达标也不放行）
+  scope: "all"              # all(所有周期都达标) / any(任一周期达标)
+  min_ic: 0.03              # |IC| 下限（Spearman 秩相关）
+  min_hit_rate: 0.52        # 方向命中率下限
+  min_samples: 30           # 单周期最少样本数
+  min_windows: 3            # ICIR 计算所需最少滚动窗口数
+  use_audit: false          # 是否叠加「预测审计命中率」交叉验证
+  min_audit_verified: 10    # 审计交叉验证所需最少已验证样本
+  min_audit_hit_rate: 0.5   # 审计命中率下限
+  report_dir: "reports"     # 判定结果输出目录（strategy_gate.json）

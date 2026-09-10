@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from datetime import datetime
@@ -293,6 +294,49 @@ async def get_monitor_report():
         return ModelMonitor(_config or {}).collect().to_dict()
     except Exception as e:
         raise HTTPException(500, f"监控报表生成失败: {e}")
+
+
+# ==================== Q2 路线：门禁与多因子 ====================
+
+@app.get("/api/v1/strategy/gate")
+async def get_strategy_gate():
+    """策略门禁状态：IC / 命中率判定结果（只读，不触发训练）。
+
+    读取 ``reports/strategy_gate.json``（由 ``python main.py gate`` 产出）；
+    文件缺失时返回 fail-close 的 readonly 判定，绝不默认放行。
+    """
+    from src.trading.gate import StrategyGate
+
+    gate_dir = (_config or {}).get("strategy_gate", {}).get("report_dir", "reports")
+    path = Path(gate_dir) / "strategy_gate.json"
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[gate] 读取门禁结果失败: {e}")
+    return StrategyGate(_config or {}).decide({}).to_dict()
+
+
+@app.get("/api/v1/factors/{symbol}")
+async def get_factors(symbol: str):
+    """多因子加权组合预测（单标的，逐周期输出因子得分与贡献）"""
+    _init_engine()
+    if not _engine or not _engine.models:
+        raise HTTPException(503, "模型未加载，请先训练模型")
+    try:
+        from src.data.collector import DataCollector
+        from src.inference.factor_combiner import FactorCombiner, combine_horizon
+
+        pred = _engine.predict_all_horizons(symbol)
+        df = DataCollector(_config).load_cached(symbol)
+        combiner = FactorCombiner(_config)
+        horizons_out = {
+            hname: combine_horizon(combiner, symbol, df, hp).to_dict()
+            for hname, hp in (pred.get("predictions") or {}).items()
+        }
+        return {"symbol": symbol, "weighter": combiner.weighter, "horizons": horizons_out}
+    except Exception as e:
+        raise HTTPException(500, f"多因子组合失败: {e}")
 
 
 @app.get("/api/v1/config/markets")
