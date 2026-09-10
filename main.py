@@ -333,6 +333,20 @@ def run_adaptive(config: dict) -> str:
     return report
 
 
+def run_monitor(config: dict, output: str | None = None) -> dict:
+    """生成模型监控报表（审计命中率 / 自适应漂移 / 数据源 / 模型产物）"""
+    from src.monitor.health_report import ModelMonitor
+
+    logger.info("生成模型监控报表")
+    report = ModelMonitor(config).collect()
+    print("\n" + report.to_markdown())
+
+    path = output or (Path(config.get("report", {}).get("output_dir", "reports")) / "monitor_report.md")
+    saved = report.save(path)
+    print(f"\n监控报表已保存: {saved}")
+    return report.to_dict()
+
+
 def run_macro(config: dict) -> dict:
     """查看/刷新宏观指标（CPI/PMI/GDP/M2/LPR）数据可用性"""
     from src.data.macro_client import MacroClient
@@ -467,13 +481,14 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py trade 600519.SH          # 执行交易适配流程并导出数据流
   python main.py backtest 600519.SH       # 信号假设成交回测
   python main.py macro                    # 查看宏观指标数据源状态
+  python main.py monitor                  # 生成模型监控报表
         """,
     )
     parser.add_argument("command", choices=[
         "train", "evaluate", "predict", "export", "all",
         "serve", "schedule", "audit", "notify", "batch",
         "daily-report", "weekly-report", "adaptive",
-        "signal", "orders", "trade", "backtest", "macro",
+        "signal", "orders", "trade", "backtest", "macro", "monitor",
     ], help="执行命令")
     parser.add_argument("args", nargs="*", help="附加参数")
     parser.add_argument("--horizon", default="short_term",
@@ -580,6 +595,9 @@ def main():
         run_backtest(config, symbol)
     elif args.command == "macro":
         run_macro(config)
+    elif args.command == "monitor":
+        output = args.args[0] if args.args else None
+        run_monitor(config, output)
 
 
 if __name__ == "__main__":

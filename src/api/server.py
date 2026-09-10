@@ -283,6 +283,18 @@ async def get_audit_stats():
     }
 
 
+@app.get("/api/v1/monitor/report")
+async def get_monitor_report():
+    """模型监控报表（审计命中率 / 自适应漂移 / 数据源健康 / 模型产物）"""
+    _init_engine()
+    try:
+        from src.monitor.health_report import ModelMonitor
+
+        return ModelMonitor(_config or {}).collect().to_dict()
+    except Exception as e:
+        raise HTTPException(500, f"监控报表生成失败: {e}")
+
+
 @app.get("/api/v1/config/markets")
 async def get_markets():
     """查询支持的标的列表"""

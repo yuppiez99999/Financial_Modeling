@@ -1,0 +1,380 @@
+"""模型监控报表生成器（ModelMonitor / HealthReport）。
+
+汇总四类运行态信息为一份报告：
+  1. **预测审计**：命中率（整体 / 分周期 / 近 30 天）、待验证数、漂移信号；
+  2. **自适应学习**：各周期近期准确率、漂移检测状态；
+  3. **数据源健康**：宏观指标可用性、行情缓存覆盖；
+  4. **模型产物**：已训练模型文件与更新时间。
+
+设计约束：
+- **纯读操作**：不写审计记录、不触发重训练、不触网（宏观为读缓存态）；
+- **fail-soft**：任一子模块异常只降级该章节，不影响整份报告；
+- **可序列化**：`to_dict()` 输出稳定字段，供 API / 28 系统消费。
+"""
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+# 命中率低于该阈值且已验证样本充足时判定为漂移
+DEFAULT_DRIFT_THRESHOLD = 0.5
+DEFAULT_MIN_VERIFIED = 10
+
+
+class HealthReport:
+    """监控报表数据容器（可直接 to_dict / to_markdown）。"""
+
+    def __init__(self, payload: Dict[str, Any]) -> None:
+        self.payload = payload
+
+    @property
+    def generated_at(self) -> str:
+        return self.payload.get("generated_at", "")
+
+    @property
+    def status(self) -> str:
+        return self.payload.get("status", "unknown")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return self.payload
+
+    def to_json(self, indent: int = 2) -> str:
+        return json.dumps(self.payload, ensure_ascii=False, indent=indent)
+
+    def to_markdown(self) -> str:
+        return render_markdown(self.payload)
+
+    def save(self, path: str | Path) -> Path:
+        """保存为 Markdown（.md）或 JSON（.json），按后缀自动选择。"""
+        out = Path(path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if out.suffix.lower() == ".json":
+            out.write_text(self.to_json(), encoding="utf-8")
+        else:
+            out.write_text(self.to_markdown(), encoding="utf-8")
+        logger.info(f"监控报表已保存: {out}")
+        return out
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<HealthReport status={self.status} at={self.generated_at}>"
+
+
+class ModelMonitor:
+    """模型监控器：采集各子系统运行态并生成报表。"""
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None,
+                 drift_threshold: float = DEFAULT_DRIFT_THRESHOLD,
+                 min_verified: int = DEFAULT_MIN_VERIFIED) -> None:
+        self.config = config or {}
+        self.drift_threshold = float(drift_threshold)
+        self.min_verified = int(min_verified)
+
+    # ------------------------------------------------------------------
+    # 各章节采集（均 fail-soft）
+    # ------------------------------------------------------------------
+    def _collect_audit(self) -> Dict[str, Any]:
+        """预测审计命中率（只读）。"""
+        audit_cfg = (self.config.get("audit", {}) or {})
+        audit_dir = audit_cfg.get("dir", "logs/audit")
+        try:
+            from src.audit.prediction_audit import PredictionAudit
+
+            audit = PredictionAudit(audit_dir)
+            records = audit.load_records()
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取审计记录失败: {e}")
+            return {"available": False, "error": str(e)}
+
+        verified = [r for r in records if r.get("verified")]
+        hits = sum(1 for r in verified if r.get("hit"))
+        hit_rate = hits / len(verified) if verified else 0.0
+
+        by_horizon: Dict[str, Dict[str, Any]] = {}
+        for r in verified:
+            h = str(r.get("horizon", "unknown"))
+            bucket = by_horizon.setdefault(h, {"verified": 0, "hits": 0})
+            bucket["verified"] += 1
+            if r.get("hit"):
+                bucket["hits"] += 1
+        for h, b in by_horizon.items():
+            b["hit_rate"] = b["hits"] / b["verified"] if b["verified"] else 0.0
+
+        cutoff = datetime.now() - timedelta(days=30)
+        recent = []
+        for r in verified:
+            try:
+                if datetime.fromisoformat(r["timestamp"]) >= cutoff:
+                    recent.append(r)
+            except Exception:  # noqa: BLE001
+                continue
+        recent_hits = sum(1 for r in recent if r.get("hit"))
+        recent_rate = recent_hits / len(recent) if recent else 0.0
+
+        drift = len(verified) >= self.min_verified and hit_rate < self.drift_threshold
+        return {
+            "available": True,
+            "total_records": len(records),
+            "verified": len(verified),
+            "pending": len(records) - len(verified),
+            "hits": hits,
+            "hit_rate": round(hit_rate, 4),
+            "by_horizon": by_horizon,
+            "recent_30d_verified": len(recent),
+            "recent_30d_hit_rate": round(recent_rate, 4),
+            "drift": drift,
+            "drift_threshold": self.drift_threshold,
+            "min_verified": self.min_verified,
+        }
+
+    def _collect_adaptive(self) -> Dict[str, Any]:
+        """自适应学习性能历史（只读，不触发重训练）。"""
+        save_dir = (self.config.get("training", {}) or {}).get("save_dir", "models")
+        path = Path(save_dir) / "monitor" / "performance_history.json"
+        if not path.exists():
+            return {"available": False, "reason": "no_history"}
+
+        try:
+            history = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取性能历史失败: {e}")
+            return {"available": False, "error": str(e)}
+
+        if not isinstance(history, list) or not history:
+            return {"available": False, "reason": "empty_history"}
+
+        cutoff = (datetime.now() - timedelta(days=30)).isoformat()
+        recent = [r for r in history if str(r.get("timestamp", "")) >= cutoff]
+
+        by_horizon: Dict[str, List[float]] = {}
+        for r in recent:
+            try:
+                acc = float((r.get("metrics") or {}).get("accuracy", 0.0))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            by_horizon.setdefault(str(r.get("horizon", "unknown")), []).append(acc)
+
+        summary = {
+            h: {
+                "records": len(vals),
+                "avg_accuracy": round(sum(vals) / len(vals), 4),
+                "min_accuracy": round(min(vals), 4),
+                "max_accuracy": round(max(vals), 4),
+            }
+            for h, vals in by_horizon.items()
+        }
+        return {
+            "available": True,
+            "total_records": len(history),
+            "recent_30d_records": len(recent),
+            "by_horizon": summary,
+        }
+
+    def _collect_data_sources(self) -> Dict[str, Any]:
+        """数据源健康：宏观指标 + 行情缓存覆盖（只读）。"""
+        result: Dict[str, Any] = {}
+
+        try:
+            from src.data.macro_client import MacroClient
+
+            health = MacroClient(self.config).health()
+            ok = sum(1 for v in health.values() if v.get("status") == "ok")
+            result["macro"] = {
+                "available_indicators": ok,
+                "total_indicators": len(health),
+                "details": health,
+            }
+        except Exception as e:  # noqa: BLE001
+            result["macro"] = {"available_indicators": 0, "total_indicators": 0, "error": str(e)}
+
+        try:
+            raw_dir = Path((self.config.get("data", {}) or {}).get("raw_dir", "data/raw"))
+            files = sorted(raw_dir.glob("*.csv")) if raw_dir.exists() else []
+            latest = ""
+            if files:
+                latest_ts = max(f.stat().st_mtime for f in files)
+                latest = datetime.fromtimestamp(latest_ts).strftime("%Y-%m-%d %H:%M:%S")
+            result["market_cache"] = {
+                "raw_dir": str(raw_dir),
+                "cached_symbols": len(files),
+                "latest_update": latest,
+            }
+        except Exception as e:  # noqa: BLE001
+            result["market_cache"] = {"cached_symbols": 0, "error": str(e)}
+
+        return result
+
+    def _collect_models(self) -> Dict[str, Any]:
+        """已训练模型产物清单（只读）。"""
+        save_dir = Path((self.config.get("training", {}) or {}).get("save_dir", "models"))
+        horizons = (self.config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+        expected = [f"lightgbm_{name}_{days}d.pkl" for name, days in horizons.items()]
+
+        found: List[Dict[str, Any]] = []
+        if save_dir.exists():
+            for pattern in ("lightgbm_*.pkl", "timesfm_*.pkl", "pytorch_lstm_*.pkl"):
+                for f in sorted(save_dir.glob(pattern)):
+                    found.append({
+                        "file": f.name,
+                        "size_kb": round(f.stat().st_size / 1024, 1),
+                        "updated_at": datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    })
+        names = {f["file"] for f in found}
+        return {
+            "save_dir": str(save_dir),
+            "count": len(found),
+            "expected": expected,
+            "missing": [n for n in expected if n not in names],
+            "files": found,
+        }
+
+    # ------------------------------------------------------------------
+    # 报表
+    # ------------------------------------------------------------------
+    def collect(self) -> HealthReport:
+        """采集全部章节并生成报表。"""
+        audit = self._collect_audit()
+        adaptive = self._collect_adaptive()
+        sources = self._collect_data_sources()
+        models = self._collect_models()
+
+        issues: List[str] = []
+        if audit.get("available") and audit.get("drift"):
+            issues.append(
+                f"审计命中率 {audit['hit_rate']:.2%} 低于阈值 {self.drift_threshold:.0%}"
+                f"（已验证 {audit['verified']} 条）"
+            )
+        if models.get("missing"):
+            issues.append(f"缺少模型文件: {', '.join(models['missing'])}")
+        macro = sources.get("macro", {})
+        if macro.get("total_indicators") and not macro.get("available_indicators"):
+            issues.append("宏观指标全部不可用（CPI/PMI/GDP 等）")
+        if not sources.get("market_cache", {}).get("cached_symbols"):
+            issues.append("无行情缓存（data/raw 为空）")
+
+        status = "ok" if not issues else ("warning" if len(issues) < 3 else "critical")
+
+        payload = {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "status": status,
+            "issues": issues,
+            "audit": audit,
+            "adaptive": adaptive,
+            "data_sources": sources,
+            "models": models,
+        }
+        return HealthReport(payload)
+
+
+# ----------------------------------------------------------------------
+# Markdown 渲染
+# ----------------------------------------------------------------------
+def _fmt_pct(value: Any) -> str:
+    try:
+        return f"{float(value):.2%}"
+    except (TypeError, ValueError):
+        return "N/A"
+
+
+def render_markdown(payload: Dict[str, Any]) -> str:
+    """把报表 payload 渲染为 Markdown。"""
+    status_icon = {"ok": "✅", "warning": "⚠️", "critical": "🔴"}.get(payload.get("status"), "❔")
+    lines = [
+        "# TrendCast Pro · 模型监控报表",
+        "",
+        f"- 生成时间：{payload.get('generated_at', '')}",
+        f"- 整体状态：{status_icon} {payload.get('status', 'unknown')}",
+        "",
+    ]
+
+    issues = payload.get("issues") or []
+    if issues:
+        lines.extend(["## 待处理事项", ""])
+        for issue in issues:
+            lines.append(f"- ⚠️ {issue}")
+        lines.append("")
+    else:
+        lines.extend(["> 未发现异常。", ""])
+
+    audit = payload.get("audit", {}) or {}
+    lines.extend(["## 预测审计", ""])
+    if audit.get("available"):
+        lines.extend([
+            "| 指标 | 值 |",
+            "|------|-----|",
+            f"| 总记录数 | {audit.get('total_records', 0)} |",
+            f"| 已验证数 | {audit.get('verified', 0)} |",
+            f"| 待验证数 | {audit.get('pending', 0)} |",
+            f"| 整体命中率 | {_fmt_pct(audit.get('hit_rate'))} |",
+            f"| 近 30 天命中率 | {_fmt_pct(audit.get('recent_30d_hit_rate'))}（{audit.get('recent_30d_verified', 0)} 条） |",
+            f"| 漂移信号 | {'⚠️ 是' if audit.get('drift') else '✅ 否'} |",
+            "",
+        ])
+        by_horizon = audit.get("by_horizon") or {}
+        if by_horizon:
+            lines.extend([
+                "### 分周期命中率", "",
+                "| 周期 | 验证数 | 命中数 | 命中率 |",
+                "|------|--------|--------|--------|",
+            ])
+            for h, b in sorted(by_horizon.items()):
+                lines.append(f"| {h} | {b.get('verified', 0)} | {b.get('hits', 0)} | {_fmt_pct(b.get('hit_rate'))} |")
+            lines.append("")
+    else:
+        lines.extend([f"- 不可用：{audit.get('error') or audit.get('reason') or '无审计记录'}", ""])
+
+    adaptive = payload.get("adaptive", {}) or {}
+    lines.extend(["## 自适应学习", ""])
+    if adaptive.get("available"):
+        lines.append(
+            f"- 历史记录总数：{adaptive.get('total_records', 0)}"
+            f"（近 30 天 {adaptive.get('recent_30d_records', 0)} 条）"
+        )
+        by_h = adaptive.get("by_horizon") or {}
+        if by_h:
+            lines.extend([
+                "", "| 周期 | 记录数 | 平均准确率 | 最低 | 最高 |",
+                "|------|--------|-----------|------|------|",
+            ])
+            for h, s in sorted(by_h.items()):
+                lines.append(
+                    f"| {h} | {s['records']} | {_fmt_pct(s['avg_accuracy'])} | "
+                    f"{_fmt_pct(s['min_accuracy'])} | {_fmt_pct(s['max_accuracy'])} |"
+                )
+        lines.append("")
+    else:
+        lines.extend([f"- 不可用：{adaptive.get('error') or adaptive.get('reason') or '无性能历史'}", ""])
+
+    sources = payload.get("data_sources", {}) or {}
+    lines.extend(["## 数据源健康", ""])
+    macro = sources.get("macro", {}) or {}
+    lines.append(f"- 宏观指标可用：{macro.get('available_indicators', 0)}/{macro.get('total_indicators', 0)}")
+    for code, info in (macro.get("details") or {}).items():
+        mark = "✅" if info.get("status") == "ok" else "⚠️"
+        latest = (
+            f"{info.get('latest_value', 0):.2f} @ {info.get('latest_date', '')}"
+            if info.get("points") else "无数据"
+        )
+        lines.append(f"  - {mark} {code}：{info.get('points', 0)} 期 {latest}")
+    cache = sources.get("market_cache", {}) or {}
+    lines.append(
+        f"- 行情缓存：{cache.get('cached_symbols', 0)} 个标的"
+        f"（最近更新 {cache.get('latest_update') or 'N/A'}）"
+    )
+    lines.append("")
+
+    models = payload.get("models", {}) or {}
+    lines.extend(["## 模型产物", ""])
+    lines.append(f"- 目录：`{models.get('save_dir', '')}`，共 {models.get('count', 0)} 个文件")
+    if models.get("missing"):
+        lines.append(f"- ⚠️ 缺失：{', '.join(models['missing'])}")
+    for f in models.get("files") or []:
+        lines.append(f"  - `{f['file']}`（{f['size_kb']} KB，{f['updated_at']}）")
+    lines.append("")
+
+    lines.extend(["---", "", "*本报表仅供运维巡检参考，不构成投资建议。*"])
+    return "\n".join(lines)
