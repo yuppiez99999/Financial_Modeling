@@ -141,9 +141,9 @@
     {
       "id": "S4",
       "name": "freqtrade 策略/执行参考",
-      "status": "pending",
+      "status": "completed",
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-09-10T09:25:54.983122+00:00",
       "tasks": [
         {
           "id": "T4.1",
@@ -155,14 +155,16 @@
         {
           "id": "T4.2",
           "name": "可借鉴点提取",
-          "status": "pending",
-          "auto_run": false
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:25:54.983122+00:00"
         },
         {
           "id": "T4.3",
           "name": "对你系统的改进建议",
-          "status": "pending",
-          "auto_run": false
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:25:54.983122+00:00"
         }
       ],
       "auto_acceptable": [],
@@ -214,7 +216,7 @@
       ]
     }
   ],
-  "current_stage_index": 3,
+  "current_stage_index": 4,
   "current_task_index": 0,
   "last_run_date": "2026-09-10",
   "next_run_date": null,
