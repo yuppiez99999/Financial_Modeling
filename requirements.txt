@@ -1,36 +1,5 @@
-# TrendCast Pro · 金融市场预测模型 依赖
-# ================================
-
-# 核心数据与计算
-numpy>=1.24
-pandas>=2.0
-scikit-learn>=1.2
-joblib>=1.2
-PyYAML>=6.0
-schedule>=1.0          # 定时重训调度（src/scheduler/retrain_scheduler.py 顶层导入）
-
-# 模型（训练主流模型 / 跑全套测试需要）
-# lightgbm 需 >=4.6：4.6+ 改用 ensure_all_finite，兼容 scikit-learn>=1.8；
-# 旧版 4.5 在 sklearn>=1.8 下会因 force_all_finite 被移除而报错。
-lightgbm>=4.6
-
-# 特征 / 数据增强
-# requests>=2.31        # 腾讯数据源、新闻情感采集（可选）
-
-# Web API（可选，启用 serve 时安装）
-# fastapi>=0.100
-# uvicorn>=0.23
-# pydantic>=2.0
-
-# 模型导出（可选，启用 onnx 导出时安装）
-# skl2onnx
-# onnxruntime
-
-# 深度学习（可选，启用 pytorch_lstm 时安装）
-# torch>=2.0
-
-# 可选大型预训练模型 TimesFM（按需安装，需匹配系统 PyTorch）
-# timesfm[torch]
-
-# 测试
-pytest>=7.0
+# 核心依赖
+akshare>=1.12.0
+pandas>=2.0.0
+numpy>=1.24.0
+pyarrow>=12.0.0
