@@ -123,6 +123,8 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 | `daily-report` / `weekly-report` | 生成日/周报 |
 | `adaptive` | 运行自适应学习引擎 |
 | `all` | 训练 → 评估 → 导出 全流程 |
+| `macro` | 查看宏观指标（CPI/PMI/GDP/M2/LPR）数据源状态 |
+| `monitor` | 生成模型监控报表（审计命中率 / 漂移 / 数据源 / 模型产物） |
 
 常用参数：`--horizon {short_term,mid_term,long_term,all}`、`--config <path>`、`--model-type {lightgbm,pytorch_lstm,timesfm,ensemble}`、`--host` / `--port`。
 
@@ -146,6 +148,7 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 │   ├── data/                  # 采集 / 预处理 / 技术指标 / 情感分析 / 质量门控
 │   │   ├── collector.py       # DataCollector：多源回退 + collect_all + simulation 不落盘
 │   │   ├── tencent_client.py  # 腾讯财经免费日K客户端（前复权/分页/NO_PROXY/fail-open）
+│   │   ├── macro_client.py    # 宏观指标客户端（wind→akshare→local 回退，asof 无前视对齐）
 │   │   └── preprocessor.py    # FeatureEngineer（防目标泄漏）+ DataPreprocessor
 │   ├── train/                 # LightGBM 训练器、模型定义、自适应学习
 │   ├── eval/                  # 双维评估器
@@ -157,10 +160,11 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 │   ├── audit/                 # 预测审计
 │   ├── notification/          # 信号推送
 │   ├── trading/               # 量化交易适配层（信号/风控/订单/回测）
+│   ├── monitor/               # 模型监控报表（审计命中率/漂移/数据源/模型产物）
 │   ├── utils/                 # 通用工具（dummy_models）
 │   └── timesfm_predictor.py   # TimesFM 适配（可选）
 ├── Kronos/                    # 第三方基础模型源码快照（见下）
-├── scripts/                   # 占位模型生成等工具脚本
+├── scripts/                   # 工具脚本（占位模型生成 / evaluate_models.py 预测评估）
 ├── tests/                     # pytest 测试（tencent_client/data_freshness/pipeline/api 等）
 ├── 为28终极量化交易系统提供策略决策依据_设计方案_20260909.md   # 对接设计与验证记录
 ├── main.py                    # CLI 入口
@@ -204,6 +208,22 @@ report:
   daily_report: true
   weekly_report: true
 ```
+
+宏观指标配置（`features.macro_enabled: true` 时启用特征注入）：
+
+```yaml
+data:
+  macro:
+    source: ["wind", "akshare", "local"]   # 按顺序回退；全失败则注入显式零值
+    dir: "data/macro"                      # 本地缓存目录（CSV 列: date,value）
+    indicators: ["cpi", "pmi", "gdp", "m2", "lpr"]
+
+features:
+  macro_enabled: false                     # 开启后每个指标注入 latest/mom/yoy3 三列
+```
+
+> 宏观数据按**发布日期 asof 对齐**注入（每行行情只使用发布日期 ≤ 该日的宏观值），杜绝未来函数。
+> 离线环境可把历史数据手工放入 `data/macro/macro_<indicator>.csv`（列 `date,value`）。
 
 数据源优先级：`Wind MCP (P0) → 腾讯财经 (P1) → 模拟数据 (P6 兜底)`。腾讯客户端按 6 字段参数格式拉取前复权日K（单页 800 条，向历史翻页覆盖 start_date），列序自动重排为标准 OHLCV；Wind 与腾讯均不可用时才用模拟数据，且模拟数据仅作链路验证、绝不写缓存污染真实历史。
 
@@ -294,23 +314,79 @@ python -m pytest tests/ -q
 - 模型评估为历史回测口径，未扣除真实滑点与冲击成本，实盘前需做纸面跟踪
 - Wind 数据源需终端/Key，缺失时降级到腾讯财经（免费）；期货/外汇代码腾讯不支持（futures 已暂关，二期接 Wind 后开启）
 - TimesFM / Kronos 路径尚未接入主推理链路
-- 遗留：`tests/test_cli_api.py`(2) 与 `tests/test_modules.py`(5) 共 7 例失败——精简恢复版缺失完整版接口（`main.build_parser`/`server._HAS_FASTAPI`/`DailyReportGenerator.generate`/`PredictionAudit.load_records`/`SignalNotifier.send_webhook`/`RetrainScheduler._should_run` 等），待按完整版语义补全
+- 宏观指标（CPI/PMI/GDP/M2/LPR）依赖 Wind Key 或可选依赖 `akshare`；两者均缺失时回退 `data/macro/*.csv`，仍无数据则注入**显式零值**（不编造数据）
+- 新闻情感特征默认关闭（`features.sentiment_enabled: false`），开启后受新闻源可用性影响
+
+> **Q1 排期已完成的修复**（2026-09-10）：原「已知限制」中「宏观指标 API 连接失败」「新闻采集性能待优化」两项已解决；
+> 7 例遗留失败测试（`test_cli_api`/`test_modules`）已全部转绿。详见「十、Q1 排期进展」。
 
 ---
 
-## 十、技术栈
+## 十、Q1 排期进展（2026-09-10 完成）
+
+对照 `SALES_PLAN.md` §8.2 技术改进路线图 Q1 与 §10 落地执行计划，本仓库 Q1 项已全部落地。
+
+### 10.1 路线图 Q1
+
+| 路线图项 | 状态 | 实现 |
+|---------|------|------|
+| 修复宏观指标 API | ✅ | 新增 `src/data/macro_client.py`，四级回退链 wind → akshare → local CSV → 显式零值；`python main.py macro` 查看状态 |
+| 优化新闻采集性能 | ✅ | `NewsCollector` 进程级缓存 + TTL；`SentimentFeatureGenerator` 整表一次分组聚合。26 标的 × 10 日由 260 次触网降至 **1 次** |
+| 缺陷清零 | ✅ | 补齐 `main.build_parser` / `server._HAS_FASTAPI` + `create_app` / `DailyReportGenerator.generate` / `PredictionAudit.load_records` / `SignalNotifier.send_webhook` / `RetrainScheduler._should_run`；修复 pandas 3.0 `fillna(method=)` |
+
+### 10.2 新增运维与评估能力
+
+| 能力 | 入口 | 说明 |
+|------|------|------|
+| 预测评估 | `python scripts/evaluate_models.py` | **walk-forward 时序回测**（无泄漏），输出 Accuracy / AUC / **IC** / 夏普 / 最大回撤（可选手续费口径），生成 Markdown + JSON 报告 |
+| 模型监控 | `python main.py monitor` | 汇总审计命中率（整体/分周期/近 30 天）、漂移信号、自适应性能历史、宏观指标可用性、行情缓存覆盖、模型产物缺失检测 |
+| 监控 API | `GET /api/v1/monitor/report` | 同上，JSON 契约，供外部系统消费 |
+| 宏观指标 | `python main.py macro` | CPI/PMI/GDP/M2/LPR 数据源可用性与当前特征值 |
+
+### 10.3 评估脚本口径（防误读）
+
+```bash
+python scripts/evaluate_models.py                                   # 配置全标的池 × 三周期
+python scripts/evaluate_models.py --symbols 600519.SH --horizon mid_term --folds 3
+python scripts/evaluate_models.py --fee 0.0005                      # 计入双边手续费
+python scripts/evaluate_models.py --offline --output logs/eval.json # 离线 + JSON 落盘
+```
+
+- **walk-forward 时序切分**：滚动扩窗，训练严格早于测试（打乱 = 未来数据泄漏，指标虚高）
+- **特征口径与训练一致**：强制排除 `target_*` 与评估辅助列
+- **逐标的构造目标**：避免多标的 concat 后跨标的 shift 污染
+- **IC**：预测概率与未来收益的 Spearman 秩相关，衡量信号单调区分度（二期门禁关注项）
+
+### 10.4 测试
+
+```bash
+python -m pytest tests/ -q     # 159 passed, 1 skipped
+```
+
+新增测试：`test_roadmap_q1.py`(15) · `test_macro_client.py`(17) · `test_sentiment_perf.py`(14) · `test_evaluate_models.py`(20) · `test_monitor_report.py`(18)
+
+### 10.5 下一步（Q2 路线）
+
+- 多因子模型集成，支持因子加权组合预测
+- 按评估脚本的 **IC / 命中率门禁**判定是否将信号从「只读观测」升级为「调仓打分因子」
+- 用 28 真实持仓池扩标的与重训，`price_source` 接真实行情源
+- LSTM 上线（路线图 Q1 第 3 月项，尚未开始）
+
+---
+
+## 十一、技术栈
 
 Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn · ONNX / onnxruntime · Wind MCP · 可选 TimesFM(PyTorch)
 
 ---
 
-## 十一、免责声明
+## 十二、免责声明
 
 本模型仅供学习和研究使用，不构成任何投资建议。金融市场预测存在不确定性，实际投资决策请咨询专业金融顾问。模型历史表现不代表未来收益，使用者需自行承担投资风险。
 
 ---
 
-## 十二、许可证与版权
+## 十三、许可证与版权
 
 本项目采用 **禁止商业用途许可协议（Non-Commercial License）**，详见仓库根目录 [LICENSE](./LICENSE)。
 
