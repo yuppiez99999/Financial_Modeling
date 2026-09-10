@@ -1,0 +1,275 @@
+# TrendCast Pro 专业版配置文件
+# ================================
+
+project:
+  name: "TrendCast Pro - 金融市场预测模型"
+  version: "2.0.0"
+  edition: "professional"
+  seed: 42
+
+# 数据配置
+data:
+  # 数据源回退链: Wind(A股/期货, 优先) -> 腾讯(免费A股/港股) -> 模拟(兜底)
+  source: ["wind", "tencent", "simulation"]
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+
+  # 多市场标的（对齐 28 终极量化交易系统持仓池，2026-09-09 实测口径 26 只）
+  markets:
+    stock:
+      enabled: true
+      symbols:
+        # === 28 持仓池 — 个股（12只） ===
+        - "688041.SH"   # 海光信息（国产算力芯片）
+        - "300308.SZ"   # 中际旭创（光模块）
+        - "002371.SZ"   # 北方华创（半导体设备）
+        - "603019.SH"   # 中科曙光（算力）
+        - "300033.SZ"   # 同花顺（金融信息服务）
+        - "300782.SZ"   # 卓胜微（射频芯片）
+        - "688017.SH"   # 澜起科技（内存接口芯片）
+        - "300274.SZ"   # 阳光电源（光储）
+        - "000408.SZ"   # 藏格矿业（钾锂资源）
+        - "601088.SH"   # 中国神华（煤炭）
+        - "600276.SH"   # 恒瑞医药（创新药）
+        - "600900.SH"   # 长江电力（水电）
+        # === 28 持仓池 — ETF（14只） ===
+        - "588080.SH"   # 科创50ETF
+        - "512880.SH"   # 证券ETF
+        - "510050.SH"   # 上证50ETF
+        - "512800.SH"   # 银行ETF
+        - "515030.SH"   # 新能源车ETF
+        - "512760.SH"   # 芯片ETF
+        - "512170.SH"   # 医疗ETF
+        - "518880.SH"   # 黄金ETF
+        - "588000.SH"   # 科创50ETF(华夏)
+        - "510300.SH"   # 沪深300ETF
+        - "510500.SH"   # 中证500ETF
+        - "512100.SH"   # 中证1000ETF
+        - "159915.SZ"   # 创业板ETF
+        - "511010.SH"   # 国债ETF
+
+    futures:
+      enabled: false    # 腾讯源不支持期货代码（RB.SHF 等）；二期接 Wind 行情后再开启
+      symbols:
+        - "RB.SHF"      # 螺纹钢
+        - "CU.SHF"      # 铜
+        - "AU.SHF"      # 黄金
+        - "SC.INE"      # 原油
+        - "I.DCE"       # 铁矿石
+        - "M.DCE"       # 豆粕
+        - "Y.DCE"       # 豆油
+        - "P.DCE"       # 棕榈油
+        - "C.DCE"       # 玉米
+        - "SR.CZC"      # 白糖
+
+    forex:
+      enabled: false   # 腾讯/Wind MCP 暂不支持 FXCM 外汇代码
+
+  # 时间范围（end_date 留空 = 采集至最新交易日）
+  start_date: "2020-01-01"
+  end_date: ""
+
+  # 数据质量门控（基于 Token A级数据训练的质量模型）
+  quality_gate: true
+
+  # 预测目标
+  target: "return_5d"
+  forecast_horizon: 5
+
+  # 短期 vs 长期预测
+  prediction_horizons:
+    short_term: 5    # 短期：5日
+    mid_term: 10     # 中期：10日
+    long_term: 20    # 长期：20日
+
+  # 训练/验证/测试分割比例
+  split_ratio:
+    train: 0.7
+    val: 0.15
+    test: 0.15
+
+# 特征工程（专业版启用扩展指标库 50+）
+features:
+  # 启用专业版扩展指标
+  extended_indicators: true
+
+  # 启用新闻情感分析特征（禁用：优先使用 Wind MCP，跳过慢速网页抓取）
+  sentiment_enabled: false
+
+  # 启用宏观指标特征 (CPI/PMI/GDP)
+  macro_enabled: true
+
+  # 基础技术指标
+  technical:
+    ma_windows: [5, 10, 20, 60]
+    rsi_window: 14
+    macd_fast: 12
+    macd_slow: 26
+    macd_signal: 9
+    bollinger_window: 20
+    bollinger_std: 2
+
+  # 收益率特征
+  returns:
+    windows: [1, 3, 5, 10, 20]
+
+  # 波动率特征
+  volatility:
+    windows: [5, 10, 20]
+
+  # 成交量特征
+  volume:
+    ma_windows: [5, 10, 20]
+
+  # 时间特征
+  time:
+    day_of_week: true
+    month: true
+    quarter: true
+
+# 模型配置
+model:
+  type: "lightgbm"
+
+  lightgbm:
+    objective: "binary"
+    n_estimators: 800
+    learning_rate: 0.005
+    max_depth: 8
+    num_leaves: 63
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 0.1
+    early_stopping_rounds: 50
+    verbose: -1
+
+  pytorch_lstm:
+    input_size: 60
+    hidden_size: 128
+    num_layers: 3
+    dropout: 0.3
+    output_size: 1
+    learning_rate: 0.001
+    weight_decay: 1e-5
+    epochs: 100
+    batch_size: 64
+    sequence_length: 20
+
+  ensemble:
+    models: ["lightgbm", "pytorch_lstm"]
+    voting: "soft"
+
+# 训练配置
+training:
+  use_gpu: false
+  num_workers: 0
+  log_interval: 10
+  save_dir: "models"
+
+  # 自适应学习配置
+  adaptive_learning:
+    enabled: true
+    drift_threshold: 0.05
+    auto_retrain: true
+    monitor_interval: "daily"
+
+# 评估配置
+evaluation:
+  metrics:
+    - accuracy
+    - precision
+    - recall
+    - f1
+    - auc
+  financial_metrics:
+    - sharpe_ratio
+    - max_drawdown
+    - win_rate
+    - profit_factor
+
+# 导出配置
+export:
+  format: "onnx"
+  output_dir: "models/exported"
+
+# 报告配置
+report:
+  output_dir: "reports"
+  daily_report: true
+  weekly_report: true
+
+# Web API 配置
+api:
+  host: "0.0.0.0"
+  port: 8800
+
+# 信号推送通知配置
+notification:
+  # Webhook 推送（支持 generic/dingtalk/feishu/wechat）
+  webhook_url: ""          # 填入你的 Webhook 地址
+  webhook_type: "feishu"   # 飞书
+  # 邮件推送 (SMTP)
+  smtp_host: ""            # 如 smtp.gmail.com
+  smtp_port: 465
+  smtp_user: ""
+  smtp_password: ""
+  email_from: ""
+  email_to: []             # ["recipient@example.com"]
+
+# 自动重训练调度配置
+scheduler:
+  frequency: "weekly"      # daily/weekly/monthly
+  time: "23:00"
+  day: "sun"               # mon/tue/.../sun (weekly 模式)
+  drift_threshold: 0.1     # 命中率下降 10% 触发漂移重训练
+  auto_retrain_on_drift: true
+
+# 审计配置
+audit:
+  dir: "logs/audit"
+
+# 日志配置
+logging:
+  level: "INFO"
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  file: "logs/training_pro.log"
+
+# ================================
+# 量化交易适配层配置 (src/trading)
+# ================================
+# 将 TrendCast 预测适配为可执行交易信号 / 订单流，供外部量化程序消费
+trading:
+  # 信号聚合
+  signal:
+    horizon_weights:            # 各预测周期在综合信号中的权重（自动归一化）
+      short_term: 0.30
+      mid_term: 0.35
+      long_term: 0.35
+    buy_threshold: 0.25         # 综合得分 >= 该值 → BUY
+    sell_threshold: -0.25       # 综合得分 <= 该值 → SELL
+    allow_short: true           # 是否允许做空(SELL)；false 时仅看多/观望
+
+  # 风险管理
+  risk:
+    capital: 1000000            # 账户资金
+    risk_per_trade_pct: 0.01    # 单笔可承受亏损占资金比例
+    sizing_method: fixed_fractional   # fixed_fractional / kelly
+    base_position_pct: 0.10     # 固定分数法基础仓位
+    max_position_pct: 0.20      # 单标的最大仓位上限
+    max_kelly_fraction: 0.25    # 凯利法上界截断
+    stop_loss_pct: 0.03         # 止损比例（相对入场价）
+    take_profit_pct: 0.06       # 止盈比例（相对入场价）
+
+  # 订单生成
+  order:
+    order_type: market          # market / limit
+    attach_sl_tp: true          # 是否附带止损/止盈条件单
+
+  # 轻量回测
+  backtest:
+    fee: 0.001                  # 每边手续费比例
+    initial_capital: 1000000    # 回测初始资金
+
+  # 数据输出目录（适配层导出物）
+  output_dir: "output/trading"

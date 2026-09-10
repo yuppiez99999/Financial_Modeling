@@ -1,0 +1,33 @@
+# TrendCast Pro · 金融市场预测模型 依赖
+# ================================
+
+# 核心数据与计算
+numpy>=1.24
+pandas>=2.0
+scikit-learn>=1.2
+joblib>=1.2
+PyYAML>=6.0
+
+# 模型（可选，训练主流模型时建议安装）
+# lightgbm>=4.0
+
+# 特征 / 数据增强
+# requests>=2.31        # 腾讯数据源、新闻情感采集（可选）
+
+# Web API（可选，启用 serve 时安装）
+# fastapi>=0.100
+# uvicorn>=0.23
+# pydantic>=2.0
+
+# 模型导出（可选，启用 onnx 导出时安装）
+# skl2onnx
+# onnxruntime
+
+# 深度学习（可选，启用 pytorch_lstm 时安装）
+# torch>=2.0
+
+# 可选大型预训练模型 TimesFM（按需安装，需匹配系统 PyTorch）
+# timesfm[torch]
+
+# 测试
+pytest>=7.0

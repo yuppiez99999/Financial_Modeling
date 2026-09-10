@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# 虚拟环境
+.venv/
+venv/
+
+# 运行时产物目录
+logs/
+reports/
+data/raw/
+data/processed/
+data/news/
+models/exported/
+
+# 训练产物模型（保留占位模型由 scripts 生成，不提交训练产物）
+models/lightgbm_*.pkl
+models/*.onnx
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# 系统
+.DS_Store
+
+# 量化交易适配层输出
+output/

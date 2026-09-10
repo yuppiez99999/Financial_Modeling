@@ -1,0 +1,21 @@
+{
+  "name": "Quant Dev Container",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "root",
+  "workspaceFolder": "/workspace",
+  "extensions": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-toolsai.jupyter",
+    "eamodio.gitlens",
+    "ms-azuretools.vscode-docker",
+    "humao.rest-client",
+    "mtxr.sqltools"
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "/opt/venv/bin/python",
+    "editor.formatOnSave": true
+  }
+}
