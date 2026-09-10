@@ -15,6 +15,14 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+def _fmt_pct(value) -> str:
+    """百分比格式化（None / 非法值显示 N/A，绝不显示 0% 冒充真实数据）。"""
+    try:
+        return f"{float(value):.2%}"
+    except (TypeError, ValueError):
+        return "N/A"
+
+
 class DailyReportGenerator:
     """每日预测报告生成器"""
 
@@ -47,6 +55,7 @@ class DailyReportGenerator:
             report_lines.extend(self._generate_market_overview(predictions))
             report_lines.extend(self._generate_detailed_predictions(predictions))
             report_lines.extend(self._generate_sentiment_section())
+            report_lines.extend(self._generate_gate_section())
             report_lines.extend(self._generate_investment_advice(predictions))
         else:
             report_lines.append("**暂无预测数据**")
@@ -186,6 +195,75 @@ class DailyReportGenerator:
         except Exception as e:
             lines.append(f"- 情感分析失败: {e}")
 
+        lines.append("")
+        return lines
+
+    def _generate_gate_section(self) -> list[str]:
+        """生成策略门禁状态章节（Q2）。
+
+        读取 ``reports/strategy_gate.json``（由 ``python main.py gate`` 产出）。
+        文件缺失时**不自造结论**：明确写「未评估」，并说明默认只读。
+        """
+        lines = ["## 🚦 策略门禁（Q2）"]
+        gate_dir = self.config.get("strategy_gate", {}).get("report_dir", self.report_dir)
+        path = Path(gate_dir) / "strategy_gate.json"
+        if not path.exists():
+            lines.extend([
+                "",
+                "- 状态：**未评估**（未找到 `strategy_gate.json`，执行 `python main.py gate` 生成）",
+                "- 默认口径：信号**仅作只读观测**，不进入决策路径（fail-close）",
+                "",
+            ])
+            return lines
+
+        try:
+            import json as _json
+
+            payload = _json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            lines.extend(["", f"- 门禁结果读取失败：{e}", ""])
+            return lines
+
+        state = payload.get("state", "readonly")
+        icon = "🟢" if state == "gated" else "🔒"
+        lines.extend([
+            "",
+            f"- 状态：{icon} **{state}**",
+            f"- 判定范围：{payload.get('scope', 'all')}",
+            f"- 结论：{payload.get('reason', '')}",
+        ])
+        horizons = payload.get("horizons") or {}
+        rows = [
+            (h, v) for h, v in horizons.items()
+            if isinstance(v, dict) and not str(h).startswith("_")
+        ]
+        audit = horizons.get("_audit") if isinstance(horizons, dict) else None
+        if isinstance(audit, dict):
+            lines.append(
+                f"- 审计交叉验证：已验证 {audit.get('verified', 0)} 条，"
+                f"命中率 {_fmt_pct(audit.get('hit_rate'))}"
+            )
+        if rows:
+            lines.extend([
+                "",
+                "| 周期 | IC | ICIR | 命中率 | 样本 | 是否达标 |",
+                "|------|-----|------|--------|------|----------|",
+            ])
+            for h, v in sorted(rows):
+                lines.append(
+                    f"| {h} | {v.get('ic', 0):.4f} | {v.get('icir', 0):.3f} | "
+                    f"{v.get('hit_rate', 0):.2%} | {v.get('samples', 0)} | "
+                    f"{'✅' if v.get('passed') else '❌'} |"
+                )
+        blocked = payload.get("blocked_by") or []
+        if blocked:
+            lines.append("")
+            lines.append("**未达标原因**")
+            for item in blocked:
+                lines.append(f"- {item}")
+        if state != "gated":
+            lines.append("")
+            lines.append("> 未过门禁 → 信号保持**只读观测**，不作为调仓打分因子（fail-close）。")
         lines.append("")
         return lines
 

@@ -125,6 +125,9 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 | `all` | 训练 → 评估 → 导出 全流程 |
 | `macro` | 查看宏观指标（CPI/PMI/GDP/M2/LPR）数据源状态 |
 | `monitor` | 生成模型监控报表（审计命中率 / 漂移 / 数据源 / 模型产物） |
+| `ic` | 前视 IC / ICIR / 命中率评估（walk-forward 口径，门禁数据源） |
+| `gate` | 策略门禁判定（IC + 可选审计命中率），输出 `reports/strategy_gate.json` |
+| `factors <symbol>` | 多因子加权组合预测（模型因子 + 技术特征因子） |
 
 常用参数：`--horizon {short_term,mid_term,long_term,all}`、`--config <path>`、`--model-type {lightgbm,pytorch_lstm,timesfm,ensemble}`、`--host` / `--port`。
 
@@ -153,13 +156,16 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 │   ├── train/                 # LightGBM 训练器、模型定义、自适应学习
 │   ├── eval/                  # 双维评估器
 │   ├── inference/             # 推理引擎（每日缓存刷新 _ensure_fresh + 特征对齐 _align_features）
+│   │   ├── ic.py              # 前视 IC / ICIR / 命中率计算（Q2 门禁口径）
+│   │   └── factor_combiner.py # 多因子加权组合预测（模型因子 + 特征因子）
 │   ├── api/                   # FastAPI 服务（含 /api/v1/portfolio/summary 组合契约端点）
 │   ├── export/                # ONNX 导出
 │   ├── report/                # 日报 / 周报生成
 │   ├── scheduler/             # 自动重训练调度
 │   ├── audit/                 # 预测审计
 │   ├── notification/          # 信号推送
-│   ├── trading/               # 量化交易适配层（信号/风控/订单/回测）
+│   ├── trading/               # 量化交易适配层（信号/风控/订单/回测/门禁）
+│   │   └── gate.py            # 策略门禁：IC/命中率判定信号能否进入决策路径
 │   ├── monitor/               # 模型监控报表（审计命中率/漂移/数据源/模型产物）
 │   ├── utils/                 # 通用工具（dummy_models）
 │   └── timesfm_predictor.py   # TimesFM 适配（可选）
@@ -224,6 +230,33 @@ features:
 
 > 宏观数据按**发布日期 asof 对齐**注入（每行行情只使用发布日期 ≤ 该日的宏观值），杜绝未来函数。
 > 离线环境可把历史数据手工放入 `data/macro/macro_<indicator>.csv`（列 `date,value`）。
+
+策略门禁与多因子配置（Q2）：
+
+```yaml
+model_factors:
+  weighter: "static"          # static / ic（按 |IC| 自适应权重）
+  weights:                    # 因子权重（自动归一化；缺失因子移出后重归一化）
+    lightgbm: 0.45
+    timesfm: 0.25
+    momentum: 0.10
+    trend: 0.10
+    volume: 0.05
+    volatility: 0.05
+
+strategy_gate:
+  enabled: true
+  force_readonly: false       # 人工锁只读（即使达标也不放行）
+  scope: "all"                # all / any
+  min_ic: 0.03
+  min_hit_rate: 0.52
+  min_samples: 30
+  min_windows: 3
+  use_audit: false            # 叠加审计命中率交叉验证
+  min_audit_verified: 10
+  min_audit_hit_rate: 0.5
+  report_dir: "reports"
+```
 
 数据源优先级：`Wind MCP (P0) → 腾讯财经 (P1) → 模拟数据 (P6 兜底)`。腾讯客户端按 6 字段参数格式拉取前复权日K（单页 800 条，向历史翻页覆盖 start_date），列序自动重排为标准 OHLCV；Wind 与腾讯均不可用时才用模拟数据，且模拟数据仅作链路验证、绝不写缓存污染真实历史。
 
@@ -303,7 +336,7 @@ resp = requests.get(
 ## 八、测试
 
 ```bash
-python -m pytest tests/ -q
+python -m pytest tests/ -q     # 194 passed, 1 skipped
 ```
 
 ---
@@ -316,6 +349,10 @@ python -m pytest tests/ -q
 - TimesFM / Kronos 路径尚未接入主推理链路
 - 宏观指标（CPI/PMI/GDP/M2/LPR）依赖 Wind Key 或可选依赖 `akshare`；两者均缺失时回退 `data/macro/*.csv`，仍无数据则注入**显式零值**（不编造数据）
 - 新闻情感特征默认关闭（`features.sentiment_enabled: false`），开启后受新闻源可用性影响
+
+- **策略门禁当前状态为 `readonly`**（2026-09-10 实测）：三周期 IC 均为正但 short/mid 命中率未过 52%，
+  按 fail-close 口径信号**不进入决策路径**；详见「十一、Q2 路线进展」
+- **多因子组合的特征因子尚未做过拟合校准**（权重为经验值），`weighter: ic` 需先有足量 IC 样本
 
 > **Q1 排期已完成的修复**（2026-09-10）：原「已知限制」中「宏观指标 API 连接失败」「新闻采集性能待优化」两项已解决；
 > 7 例遗留失败测试（`test_cli_api`/`test_modules`）已全部转绿。详见「十、Q1 排期进展」。
@@ -367,26 +404,95 @@ python -m pytest tests/ -q     # 159 passed, 1 skipped
 
 ### 10.5 下一步（Q2 路线）
 
-- 多因子模型集成，支持因子加权组合预测
-- 按评估脚本的 **IC / 命中率门禁**判定是否将信号从「只读观测」升级为「调仓打分因子」
+- ✅ 多因子模型集成，支持因子加权组合预测 → 见「十一、Q2 路线进展」
+- ✅ 按评估脚本的 **IC / 命中率门禁**判定是否升级为「调仓打分因子」 → 见「十一」
 - 用 28 真实持仓池扩标的与重训，`price_source` 接真实行情源
 - LSTM 上线（路线图 Q1 第 3 月项，尚未开始）
 
 ---
 
-## 十一、技术栈
+## 十一、Q2 路线进展（多因子集成 · IC/命中率门禁）
+
+对照 `SALES_PLAN.md` §8.2 路线图 Q2「多因子模型集成，支持因子加权组合预测」，以及
+设计方案 §5「命中率与 IC 达标后再进入决策路径（决策路径 fail-close）」，本轮落地三件事：
+
+### 11.1 前视 IC 计算（`src/inference/ic.py`）
+
+- **IC**：预测分数与未来真实收益的 **Spearman 秩相关**（衡量信号单调区分度）；
+- **ICIR**：滚动窗口 IC 的 均值/标准差（衡量信号稳定性），窗口 IC 无波动时记 0，不做除零放大；
+- **命中率**：sign(score) 与 sign(return) 一致占比，支持观望带（`neutral_band`）；
+- **未到期样本一律返回 `None` 并跳过**，绝不猜测未来价格（防未来函数）。
+
+### 11.2 策略门禁（`src/trading/gate.py`）
+
+把「只读观测信号」升级为「调仓打分因子」的准入判定，**fail-close**：缺数据 / 未达标一律不放行。
+
+| 状态 | 含义 |
+|------|------|
+| `readonly` | 未过门禁（**默认态**），信号仅作参考，不进决策路径 |
+| `gated` | 已过门禁，可作为打分因子进入决策路径（仍不产出仓位/下单建议） |
+| `disabled` | 显式关闭门禁（`strategy_gate.enabled: false`） |
+
+判定口径（`configs/config_pro.yaml` 的 `strategy_gate:` 段）：`min_ic` · `min_hit_rate` · `min_samples` ·
+`min_windows` · `scope`（all/any）· 可选 `use_audit` 审计命中率**与门**交叉验证 · `force_readonly` 人工锁只读。
+
+```bash
+python main.py gate                       # 全标的池评估并落盘 reports/strategy_gate.json
+python main.py gate reports/ic.json       # 复用既有 IC 评估结果，不重复训练
+curl http://localhost:8800/api/v1/strategy/gate      # 供 28 系统读取门禁状态
+```
+
+### 11.3 多因子加权组合预测（`src/inference/factor_combiner.py`）
+
+统一「模型因子」与「特征因子」的加权框架：`score = Σ weightᵢ × factor_scoreᵢ`（∈ [-1, 1]）。
+
+| 因子 | 类型 | 说明 |
+|------|------|------|
+| `lightgbm` / `timesfm` | 模型因子 | 各分量模型概率 → 方向分（0.5 中性映射为 0） |
+| `momentum` | 特征因子 | 20 日收益率的滚动分位 |
+| `trend` | 特征因子 | 收盘价对 MA20 的偏离分位 |
+| `volume` | 特征因子 | 近 5 日 / 近 20 日均量比（tanh 平滑） |
+| `volatility` | 特征因子 | 20 日波动率分位（取负，高波动降权） |
+
+- **缺失因子fail-soft**：缺失因子被移出后**重归一化**，而不是当作 0 分稀释得分（后者会引入方向性偏差）；
+- **权重模式**：`static`（配置权重） / `ic`（按 |IC| 自适应缩放）；
+- `python main.py factors <symbol>`、`GET /api/v1/factors/{symbol}`。
+
+### 11.4 实测门禁结果（2026-09-10，26 只标的池 · walk-forward 口径）
+
+| 周期 | IC | ICIR | 命中率 | 样本 | 是否达标 |
+|------|-----|------|--------|------|----------|
+| short_term 5d | 0.0400 | 0.185 | 51.37% | 12418 | ❌ 命中率未过 52% |
+| mid_term 10d | 0.0513 | 0.274 | 50.49% | 12340 | ❌ 命中率未过 52% |
+| long_term 20d | 0.0604 | 0.277 | **54.53%** | 12184 | ✅ |
+
+**门禁结论：`readonly`（fail-close）**——三周期 IC 均为正（信号方向性存在，非噪声），
+但 short/mid 命中率未过 52% 门槛，按 `scope: all` 判定整体**不放行**，
+信号继续保持只读观测，**不进入调仓打分路径**。
+
+> 该结果与 README §一「真实行情下三周期区分度均有限」的结论一致，是**如实呈现而非掩饰**：
+> 门禁的作用正是把「看着还行」与「统计上可用」区分开。提升方向见 §11.5。
+
+### 11.5 下一步（Q2 剩余 + Q3）
+
+- 特征扩充（横截面 / 宏观 / 情感）提升 short/mid 周期 IC 与命中率至门禁线以上；
+- 通过门禁后，将 `gated` 状态接入 28 的调仓打分因子（须先扩样本、过审）；
+- LSTM 上线（路线图 Q1 遗留项）；
+- Q3：实时数据流接入，支持分钟级预测更新。
+
+## 十二、技术栈
 
 Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn · ONNX / onnxruntime · Wind MCP · 可选 TimesFM(PyTorch)
 
 ---
 
-## 十二、免责声明
+## 十三、免责声明
 
 本模型仅供学习和研究使用，不构成任何投资建议。金融市场预测存在不确定性，实际投资决策请咨询专业金融顾问。模型历史表现不代表未来收益，使用者需自行承担投资风险。
 
 ---
 
-## 十三、许可证与版权
+## 十四、许可证与版权
 
 本项目采用 **禁止商业用途许可协议（Non-Commercial License）**，详见仓库根目录 [LICENSE](./LICENSE)。
 
