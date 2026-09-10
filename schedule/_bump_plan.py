@@ -23,6 +23,8 @@ def complete_task(task_id):
 # 本次开发完成项
 complete_task("T5.1")
 complete_task("T5.2")
+complete_task("T5.3")
+complete_task("T5.4")
 
 # 阶段完成判断
 stage_done = all(t.get("status") == "completed" for t in tasks)
