@@ -127,6 +127,21 @@ def test_unknown_source_is_skipped(tmp_path):
 
 
 def test_akshare_missing_dependency_degrades(tmp_path, monkeypatch):
+    """akshare 未安装时整条链路应降级为空序列，而非抛异常。
+
+    用 monkeypatch 拦截 `import akshare`，无论本机是否实际安装都能稳定复现缺失场景。
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _blocked_import(name, *args, **kwargs):
+        if name == "akshare" or name.startswith("akshare."):
+            raise ImportError("simulated: akshare not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _blocked_import)
+    monkeypatch.setitem(sys.modules, "akshare", None)  # 清除会话内已缓存的 akshare
     client = MacroClient(_cfg(tmp_path, sources=("akshare",)))
     # akshare 未安装 → 返回空序列而非抛异常
     assert len(client.get_series("cpi")) == 0

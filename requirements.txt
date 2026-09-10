@@ -7,9 +7,12 @@ pandas>=2.0
 scikit-learn>=1.2
 joblib>=1.2
 PyYAML>=6.0
+schedule>=1.0          # 定时重训调度（src/scheduler/retrain_scheduler.py 顶层导入）
 
-# 模型（可选，训练主流模型时建议安装）
-# lightgbm>=4.0
+# 模型（训练主流模型 / 跑全套测试需要）
+# lightgbm 需 >=4.6：4.6+ 改用 ensure_all_finite，兼容 scikit-learn>=1.8；
+# 旧版 4.5 在 sklearn>=1.8 下会因 force_all_finite 被移除而报错。
+lightgbm>=4.6
 
 # 特征 / 数据增强
 # requests>=2.31        # 腾讯数据源、新闻情感采集（可选）
