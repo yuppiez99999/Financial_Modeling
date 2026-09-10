@@ -66,6 +66,8 @@ def main():
     # Set environment variables
     os.environ['FLASK_APP'] = 'app.py'
     os.environ['FLASK_ENV'] = 'development'
+    # Debug mode is opt-in via FLASK_DEBUG=1, disabled by default (B201)
+    debug_mode = os.environ.get('FLASK_DEBUG', '0').lower() in ('1', 'true', 'yes')
     
     # Start server
     try:
@@ -79,7 +81,7 @@ def main():
         webbrowser.open('http://localhost:7070')
         
         # Start Flask application
-        app.run(debug=True, host='0.0.0.0', port=7070)
+        app.run(debug=debug_mode, host='0.0.0.0', port=7070)
         
     except Exception as e:
         print(f"❌ Startup failed: {e}")
