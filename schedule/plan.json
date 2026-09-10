@@ -184,14 +184,16 @@
         {
           "id": "T5.1",
           "name": "示例跑通",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-10T09:29:32.697620+00:00"
         },
         {
           "id": "T5.2",
           "name": "最小实验设计",
-          "status": "pending",
-          "auto_run": false
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:29:32.697620+00:00"
         },
         {
           "id": "T5.3",
