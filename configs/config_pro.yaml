@@ -72,6 +72,15 @@ data:
   # 数据质量门控（基于 Token A级数据训练的质量模型）
   quality_gate: true
 
+  # 宏观指标数据源（CPI/PMI/GDP/M2/LPR）
+  # 回退链: wind(需 WIND_API_KEY) -> akshare(免费, pip install akshare) -> local(data/macro/*.csv)
+  # local 兜底：离线/无网环境下读取人工维护的历史 CSV（列: date,value）
+  macro:
+    source: ["wind", "akshare", "local"]
+    dir: "data/macro"
+    timeout: 15
+    indicators: ["cpi", "pmi", "gdp", "m2", "lpr"]
+
   # 预测目标
   target: "return_5d"
   forecast_horizon: 5

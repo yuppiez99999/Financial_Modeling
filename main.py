@@ -333,6 +333,36 @@ def run_adaptive(config: dict) -> str:
     return report
 
 
+def run_macro(config: dict) -> dict:
+    """查看/刷新宏观指标（CPI/PMI/GDP/M2/LPR）数据可用性"""
+    from src.data.macro_client import MacroClient
+
+    logger.info("检查宏观指标数据源")
+    client = MacroClient(config)
+    health = client.health()
+
+    print("\n" + "=" * 60)
+    print("宏观指标数据源状态")
+    print("=" * 60)
+    for indicator, info in health.items():
+        mark = "✅" if info["status"] == "ok" else "⚠️"
+        latest = f"{info['latest_value']:.2f} @ {info['latest_date']}" if info["points"] else "无数据"
+        print(f"  {mark} {indicator:<6} {info['name']:<26} {info['points']:>4} 期  {latest}")
+
+    ok = sum(1 for v in health.values() if v["status"] == "ok")
+    print(f"\n可用指标: {ok}/{len(health)}")
+    if ok < len(health):
+        print("提示: 安装 akshare（pip install akshare）可启用免费宏观数据源；")
+        print("      或把历史数据放入 data/macro/macro_<indicator>.csv（列: date,value）")
+
+    if config.get("features", {}).get("macro_enabled"):
+        feats = client.get_features()
+        print("\n当前宏观特征（供模型特征注入）:")
+        for k, v in sorted(feats.items()):
+            print(f"  {k} = {v:.4f}")
+    return health
+
+
 # ==================== 量化交易适配层 ====================
 
 def run_signal(config: dict, symbol: str) -> dict:
@@ -436,13 +466,14 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py orders 600519.SH 000858.SZ  # 输出下单明细
   python main.py trade 600519.SH          # 执行交易适配流程并导出数据流
   python main.py backtest 600519.SH       # 信号假设成交回测
+  python main.py macro                    # 查看宏观指标数据源状态
         """,
     )
     parser.add_argument("command", choices=[
         "train", "evaluate", "predict", "export", "all",
         "serve", "schedule", "audit", "notify", "batch",
         "daily-report", "weekly-report", "adaptive",
-        "signal", "orders", "trade", "backtest",
+        "signal", "orders", "trade", "backtest", "macro",
     ], help="执行命令")
     parser.add_argument("args", nargs="*", help="附加参数")
     parser.add_argument("--horizon", default="short_term",
@@ -547,6 +578,8 @@ def main():
             print("错误: backtest 命令需要指定标的代码")
             sys.exit(1)
         run_backtest(config, symbol)
+    elif args.command == "macro":
+        run_macro(config)
 
 
 if __name__ == "__main__":
