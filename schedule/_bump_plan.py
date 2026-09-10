@@ -21,9 +21,7 @@ def complete_task(task_id):
             t["completed_at"] = now_iso()
 
 # 本次开发完成项
-complete_task("T1.1")
-complete_task("T1.2")
-complete_task("T1.3")
+complete_task("T3.1")
 
 # 阶段完成判断
 stage_done = all(t.get("status") == "completed" for t in tasks)
