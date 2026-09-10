@@ -50,10 +50,16 @@ class DummyModel:
 
 
 def apply_monkeypatches(monkeypatch):
+    """替换引擎的数据管道为测试替身。
+
+    必须用 `monkeypatch.setattr`（而非直接赋值模块属性）——直接赋值会永久
+    污染 `src.inference.predictor` 的模块全局，导致后续用例拿到假的数据管道
+    （Q2 新增的多因子推理用例正是因此失败）。
+    """
     import src.inference.predictor as predmod
 
-    predmod.DataCollector = DummyCollector
-    predmod.FeatureEngineer = DummyFeatureEngineer
+    monkeypatch.setattr(predmod, "DataCollector", DummyCollector)
+    monkeypatch.setattr(predmod, "FeatureEngineer", DummyFeatureEngineer)
 
 
 def make_cfg(save_dir: Path):

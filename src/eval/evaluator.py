@@ -36,12 +36,23 @@ class ModelEvaluator:
             评估结果字典
         """
         logger.info(f"开始评估 [{horizon_name}/{horizon_days}d]...")
-        y_pred = model.predict(X_test)
+        y_pred = np.asarray(model.predict(X_test))
+        # 序列模型（LSTM）会因滑窗丢弃前若干样本：按实际预测长度反向对齐标签，
+        # 保证 y_true 与 y_pred 等长（否则 accuracy_score 直接抛长度不一致）。
+        y_test, X_test = self._align_labels_like_pred(X_test, y_test, len(y_pred))
 
+        proba = None
         try:
-            y_proba = model.predict_proba(X_test)[:, 1]
-        except (AttributeError, IndexError):
-            y_proba = y_pred.astype(float)
+            proba = model.predict_proba(X_test)
+        except (AttributeError, IndexError, ValueError):
+            proba = None
+        if proba is None:
+            y_proba = np.asarray(y_pred, dtype=float)
+        else:
+            proba = np.asarray(proba)
+            # LSTM 的 predict_proba 返回一维概率（非 (n,2) 矩阵）
+            y_proba = proba[:, 1] if proba.ndim == 2 else proba
+        y_proba = np.asarray(y_proba, dtype=float)
 
         # 标准 ML 指标
         from sklearn.metrics import (
@@ -95,6 +106,24 @@ class ModelEvaluator:
 
         self.results[f"{horizon_name}_{horizon_days}d"] = result
         return result
+
+    @staticmethod
+    def _align_labels_like_pred(X_test: Any, y_test: Any,
+                                n_pred: int) -> tuple[np.ndarray, Any]:
+        """把标签对齐到预测长度：截掉前 (n - n_pred) 个样本（序列模型滑窗丢弃）。
+
+        通用做法不依赖具体 seq_len 配置，对任何"预测少于输入"的模型都成立，
+        因此 LSTM 换结构 / 改窗口都不会再触发长度不一致。
+        """
+        y_arr = np.asarray(y_test)
+        n = len(y_arr)
+        if n_pred <= 0 or n_pred > n:
+            raise ValueError(f"预测长度 {n_pred} 与标签长度 {n} 不匹配")
+        if n_pred == n:
+            return y_test, X_test
+        drop = n - n_pred
+        logger.info(f"序列模型标签对齐：样本 {n} → {n_pred}（丢弃前 {drop} 个滑窗样本）")
+        return y_arr.drop if False else y_arr[drop:], np.asarray(X_test)[drop:]
 
     def _compute_financial_metrics(self, y_true: np.ndarray, y_pred: np.ndarray,
                                    y_proba: np.ndarray, horizon_days: int = 5) -> dict[str, float]:

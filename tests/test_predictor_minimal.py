@@ -58,13 +58,18 @@ def cfg():
 
 
 def apply_monkeypatches(monkeypatch):
+    """替换数据管道 / TimesFM 为测试替身。
+
+    必须走 `monkeypatch.setattr`：直接赋模块属性会永久污染模块全局，
+    使后续用例（如 Q2 多因子推理）拿到假的数据管道。
+    """
     import src.inference.predictor as predmod
 
-    predmod.DataCollector = DummyCollector
-    predmod.FeatureEngineer = DummyFeatureEngineer
+    monkeypatch.setattr(predmod, "DataCollector", DummyCollector)
+    monkeypatch.setattr(predmod, "FeatureEngineer", DummyFeatureEngineer)
     # ensure TimesFMFinancePredictor uses a safe placeholder by default in tests
     import src.timesfm_predictor as tfm_mod
-    tfm_mod.TimesFMFinancePredictor = DummyTFM
+    monkeypatch.setattr(tfm_mod, "TimesFMFinancePredictor", DummyTFM)
 
 
 def test_lightgbm_path(cfg, monkeypatch):

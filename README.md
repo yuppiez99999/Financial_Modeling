@@ -157,6 +157,7 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 │   ├── eval/                  # 双维评估器
 │   ├── inference/             # 推理引擎（每日缓存刷新 _ensure_fresh + 特征对齐 _align_features）
 │   │   ├── ic.py              # 前视 IC / ICIR / 命中率计算（Q2 门禁口径）
+│   │   └── factor_combiner.py # 推理期因子加权组合（Q2 多因子）
 │   │   └── factor_combiner.py # 多因子加权组合预测（模型因子 + 特征因子）
 │   ├── api/                   # FastAPI 服务（含 /api/v1/portfolio/summary 组合契约端点）
 │   ├── export/                # ONNX 导出
@@ -406,8 +407,8 @@ python -m pytest tests/ -q     # 159 passed, 1 skipped
 
 - ✅ 多因子模型集成，支持因子加权组合预测 → 见「十一、Q2 路线进展」
 - ✅ 按评估脚本的 **IC / 命中率门禁**判定是否升级为「调仓打分因子」 → 见「十一」
-- 用 28 真实持仓池扩标的与重训，`price_source` 接真实行情源
-- LSTM 上线（路线图 Q1 第 3 月项，尚未开始）
+- ✅ 用 28 真实持仓池扩标的与重训，`price_source` 接真实行情源 → 见「11.6」
+- ✅ LSTM 上线（路线图 Q1 第 3 月项）→ 见「11.7」
 
 ---
 
@@ -477,8 +478,92 @@ curl http://localhost:8800/api/v1/strategy/gate      # 供 28 系统读取门禁
 
 - 特征扩充（横截面 / 宏观 / 情感）提升 short/mid 周期 IC 与命中率至门禁线以上；
 - 通过门禁后，将 `gated` 状态接入 28 的调仓打分因子（须先扩样本、过审）；
-- LSTM 上线（路线图 Q1 遗留项）；
+- ✅ LSTM 上线（路线图 Q1 遗留项）→ 见 §11.7；
 - Q3：实时数据流接入，支持分钟级预测更新。
+
+### 11.6 可训练多因子模型与真实持仓池（2026-09-10）
+
+§11.3 的 `factor_combiner` 解决「**推理期**如何把已有因子组合成得分」；
+本节解决「**训练期**如何学出因子权重并持久化」。
+
+#### 11.6.1 因子库（`src/factors/factor_library.py`）
+
+7 大因子族 · 15 个因子，每个因子都有明确**正向预期**并压到 `[-1, 1]`（可跨因子直接加权）：
+
+| 族 | 因子 | 正向含义 |
+|----|------|---------|
+| trend | `ma_bias` · `ema_slope` · `adx_strength` | 价格在均线上方 / 均线上行 / 多头趋势强度 |
+| momentum | `rsi_score` · `roc` · `macd_hist` | RSI 高于 50 / 20 日动量为正 / MACD 柱为正 |
+| volatility | `volatility` · `atr_ratio` | **低波动**（取负，低波动溢价） |
+| volume | `volume_ratio` · `obv_slope` · `cmf` | 放量 / OBV 上行 / 资金净流入 |
+| reversal | `boll_revert` · `kdj_score` | 超买看跌（取负，均值回归） |
+| sentiment | `sentiment` | 新闻情感（无数据 → 中性 0，不编造） |
+| macro | `macro` | 宏观指标 z-score 合成（无数据 → 中性 0） |
+
+- **无前视**：全部基于 rolling/ewm/shift，测试 `test_no_lookahead_factor_is_causal` 用"截断末尾数据后前缀不变"验证；
+- **失败隔离**：单个因子族异常只置中性 0，不中断主链路。
+
+#### 11.6.2 因子模型（`src/factors/factor_model.py`）
+
+族级 → 因子级**两级权重**，得分经 logit **单调校准**为概率（测试保证「得分越高概率越高」）：
+
+- 权重来源：显式配置优先，否则由**训练集 IC**（Spearman）估计，`|IC| < min_abs_ic` 的因子不参与；
+- **族权重用族内最强 |IC|** 而非权重和：避免"1 个强因子"与"5 个弱因子"同权，也让**无数据族（IC=0）权重归零**而不稀释有效因子；
+- `level2_shrink` 向等权收缩，防单一因子过度集中；
+- 接口与 LightGBM/LSTM 同构（`train/predict/predict_proba/save/load`），可直接接入 `ModelTrainer`；
+- `explain()` 输出因子/族权重与 IC 排名，报告、监控、API 直接消费。
+
+```bash
+python main.py train --model-type factor_model    # 训练并落盘 factor_model_*.pkl
+python main.py factor-model 600519.SH             # 因子/族权重与 IC 诊断
+curl http://localhost:8800/api/v1/factor-model    # JSON 契约
+```
+
+#### 11.6.3 类级加权组合预测（`src/factors/factor_predictor.py`）
+
+`最终得分 = Σ w_class × 类得分`，各类先映射为方向分再融合：`factor`(0.40) + `tree`(0.35) + `sequence`(0.25)。
+
+- **缺失类自动剔除并重归一化**：没装 torch 时 `sequence` 类自动缺席，**不报错、不稀释**；
+- **列缺失不中断**：推理时缺失因子列按中性 0 补齐（`align_features`），也可直接吃原始 OHLCV 现算因子；
+- `python main.py predict 600519.SH --model-type multifactor` → 结果含 `components`（各类得分）与 `explain`（因子解释）。
+
+#### 11.6.4 真实持仓池与数据质量门控
+
+- 持仓池 **26 只**（12 个股 + 14 ETF），对齐 28 终极量化交易系统；`source: [wind, tencent, simulation]`，仿真**不落盘**；
+- `data.quality_gate: true` 接入质量体检（质量分 / A 级占比），**只告警不删数据**；
+- 监控报表新增**持仓池覆盖度**（已缓存 / 已配置）与质量门控状态。
+
+### 11.7 LSTM 上线与模型注册表（2026-09-10）
+
+补齐 Q1 遗留的 LSTM 上线阻塞点，LSTM 已可**训练 → 落盘 → 加载 → 推理**全链路运行。
+
+| 问题 | 修复 |
+|------|------|
+| 加载逻辑分散 | `src/train/registry/model_registry.py`：joblib/torch/factor/timesfm 四格式统一加载契约，新增格式只需注册 loader |
+| 推理特征列靠猜 | LSTM checkpoint 写入 `meta.feature_cols`，推理按 meta 对齐列序（原先靠"非 factor_ 前缀"推断，极易错位） |
+| 评估长度不一致 | 评估器按**实际预测长度**反向对齐标签，修复 `accuracy_score` 抛错（Q1 遗留阻塞点） |
+| 滑窗丢最新一行 | 修正 `_create_sequences`：样本数 = `n - seq_len + 1`，**覆盖最新一行**（原先实盘等于永远少预测一天） |
+| YAML 数值变字符串 | `weight_decay: 1e-5` 会被 YAML 解析为字符串导致 optimizer 报类型错，改为 `1.0e-5` 并在训练器内做二次兜底 |
+| 无 torch 环境 | 多因子组合自动剔除 `sequence` 类并重归一化，推理不中断 |
+
+> 注：`pytorch_lstm` 未安装 torch 时**自动降级**，其余模型类型不受影响。
+
+### 11.8 测试
+
+```bash
+python -m pytest tests/ -q     # 230 passed（Q1 基线 159 → Q2 230）
+```
+
+| 测试文件 | 数量 | 覆盖 |
+|---------|------|------|
+| `test_q2_roadmap.py` | 25 | IC 计算 / 策略门禁 / 因子组合（同批 Q2 交付） |
+| `test_roadmap_q2.py` | 35 | 因子库 / 因子模型 / 类级融合 / 模型注册表 / LSTM 上线 / 质量门控 / 适配层门禁强制 |
+
+另修复 3 处**跨用例模块全局污染**（`test_predictor_minimal`/`test_ensemble_integration`/`test_predictor_integration`
+直接给模块属性赋值 → 改为 `monkeypatch.setattr`）：原先会污染 `src.inference.predictor` 的
+`DataCollector`/`FeatureEngineer`，导致后续用例拿到假数据管道。
+
+> **Q2 剩余项**：short/mid 周期命中率提升至门禁线以上（特征扩充）、门禁 `gated` 后接入 28 调仓打分。
 
 ## 十二、技术栈
 

@@ -139,6 +139,36 @@ features:
 # 模型配置
 model:
   type: "lightgbm"
+  # ================================
+  # Q2 多因子模型（src/factors）
+  # ================================
+  # 与 `strategy_gate`（IC 门禁）配合：门禁决定信号能否上调仓，
+  # 本段决定"因子如何加权组合成预测"。
+  factors:
+    enabled: true              # true 时训练/推理接入可训练的多因子模型
+    families:                   # 参与合成的因子族
+      - trend
+      - momentum
+      - volatility
+      - volume
+      - reversal
+      - sentiment
+      - macro
+    zscore_window: 252          # 滚动 z-score 窗口（仅用历史，无前视）
+    smoothing: 5                # 因子平滑窗口，抑制单日噪音
+    top_n: 8                    # 每个因子族最多保留的因子数
+    min_abs_ic: 0.005           # 低于该 |IC| 的因子不参与加权
+    level2_shrink: 0.35         # 族内权重向等权收缩比例，防单一因子过度集中
+    family_weights: {}          # 显式族权重（留空 = 由 |IC| 自动估计）
+    factor_weights: {}          # 显式因子权重（留空 = 由 |IC| 自动估计）
+    # 类级加权组合：最终得分 = Σ w_class × 该类得分
+    ensemble:
+      classes: [factor, tree, sequence]
+      weights:
+        factor: 0.40            # IC 加权因子组合
+        tree: 0.35              # LightGBM
+        sequence: 0.25          # LSTM
+      proba_clip: [0.02, 0.98]  # 概率裁剪，防极端值主导融合
 
   lightgbm:
     objective: "binary"
@@ -160,7 +190,7 @@ model:
     dropout: 0.3
     output_size: 1
     learning_rate: 0.001
-    weight_decay: 1e-5
+    weight_decay: 1.0e-5   # YAML 必须带小数点，否则解析为字符串（optimizer 会报类型错）
     epochs: 100
     batch_size: 64
     sequence_length: 20
@@ -302,6 +332,8 @@ model_factors:
 # 判定信号能否从「只读观测」升级为「调仓打分因子」；未达标一律 fail-close 保持只读
 strategy_gate:
   enabled: true
+  # 门禁未放行时交易适配层不发订单（默认关闭，避免历史判定静默改变下单行为）
+  enforce_trading: false
   force_readonly: false     # true = 人工锁定只读（即使指标达标也不放行）
   scope: "all"              # all(所有周期都达标) / any(任一周期达标)
   min_ic: 0.03              # |IC| 下限（Spearman 秩相关）

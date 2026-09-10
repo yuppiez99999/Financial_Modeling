@@ -20,6 +20,8 @@ from typing import Any, Dict, List
 
 import yaml
 
+from src.factors import FACTOR_FAMILIES
+
 try:  # FastAPI 为可选依赖：未安装时本模块仍可导入，仅无法启动服务
     from fastapi import FastAPI, HTTPException, Query
     from fastapi.middleware.cors import CORSMiddleware
@@ -337,6 +339,38 @@ async def get_factors(symbol: str):
         return {"symbol": symbol, "weighter": combiner.weighter, "horizons": horizons_out}
     except Exception as e:
         raise HTTPException(500, f"多因子组合失败: {e}")
+
+
+@app.get("/api/v1/factor-model")
+async def get_factor_model():
+    """可训练多因子模型信息：因子/族权重与 IC 排名（Q2 多因子模型）。
+
+    与 `/api/v1/factors/{symbol}`（推理期特征因子组合）互补：本端点读取
+    `python main.py train --model-type factor_model` 训练出的持久化因子模型。
+    """
+    _init_engine()
+    try:
+        save_dir = Path((_config or {}).get("training", {}).get("save_dir", "models"))
+        path = save_dir / "factor_model_short_term_5d.pkl"
+        if not path.exists():
+            raise HTTPException(
+                404, "多因子模型未训练，请先执行 python main.py train --model-type factor_model"
+            )
+        from src.factors.factor_model import FactorModel
+
+        model = FactorModel(_config or {})
+        model.load(str(path))
+        explain = model.explain(10)
+        explain.update({
+            "available": True,
+            "model_path": str(path),
+            "families": dict(FACTOR_FAMILIES),
+        })
+        return explain
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"多因子模型查询失败: {e}")
 
 
 @app.get("/api/v1/config/markets")
