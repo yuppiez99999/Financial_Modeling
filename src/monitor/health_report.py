@@ -274,6 +274,39 @@ class ModelMonitor:
             logger.warning(f"[monitor] 实时流状态采集失败: {e}")
             return {"available": False, "error": str(e)}
 
+    def _collect_risk_advice(self) -> Dict[str, Any]:
+        """智能风控建议状态（Q4，只读）：门禁是否放行 + 最近一次建议摘要。
+
+        只读 `reports/risk_advice.json`（由 `python main.py risk-advice --json` 落盘），
+        不触网、不跑模型 —— 监控报表必须随时可跑且零副作用。
+        """
+        path = Path((self.config.get("report", {}) or {}).get("output_dir", "reports")) / \
+            "risk_advice.json"
+        if not path.exists():
+            return {
+                "available": False,
+                "reason": "no_risk_advice_report",
+                "hint": "先运行 `python main.py risk-advice --all --json`（或指定标的）生成建议",
+            }
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            items = payload.get("items") or []
+            withheld = [i for i in items if i.get("status") == "withheld"]
+            return {
+                "available": True,
+                "source": str(path),
+                "gate_state": payload.get("gate_state", "unknown"),
+                "count": payload.get("count", len(items)),
+                "advised": payload.get("available", 0),
+                "withheld": payload.get("withheld", len(withheld)),
+                "unavailable": payload.get("unavailable", 0),
+                "avg_risk_reward": payload.get("avg_risk_reward"),
+                "not_trade_instruction": True,
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取风控建议失败: {e}")
+            return {"available": False, "error": str(e)}
+
     def _collect_gate(self) -> Dict[str, Any]:
         """信号准入闸门状态（只读）。
 
@@ -363,6 +396,7 @@ class ModelMonitor:
         gate = self._collect_gate()
         factors = self._collect_factor_model()
         streaming = self._collect_streaming()
+        risk_advice = self._collect_risk_advice()
 
         issues: List[str] = []
         if audit.get("available") and audit.get("drift"):
@@ -391,6 +425,14 @@ class ModelMonitor:
             elif not streaming.get("available"):
                 issues.append("实时流启用但今日无快照（休市或实时源不可用）")
 
+        # 智能风控建议（Q4）：门禁未放行时建议必然 withheld，这是预期行为而非故障，
+        # 只有「报告存在却一条建议都没产出」才提示（可能全池行情缺失）
+        if risk_advice.get("available"):
+            if risk_advice.get("advised", 0) == 0 and risk_advice.get("count", 0) > 0:
+                issues.append(
+                    f"风控建议全部未产出（{risk_advice.get('count')} 只标的）："
+                    f"门禁 {risk_advice.get('gate_state')} 或行情缺失"
+                )
         status = "ok" if not issues else ("warning" if len(issues) < 3 else "critical")
 
         payload = {
@@ -404,6 +446,7 @@ class ModelMonitor:
             "gate": gate,
             "factors": factors,
             "streaming": streaming,
+            "risk_advice": risk_advice,
         }
         return HealthReport(payload)
 
@@ -591,6 +634,23 @@ def render_markdown(payload: Dict[str, Any]) -> str:
         lines.append(
             f"- 不可用：{streaming.get('error') or streaming.get('reason') or '未启用'}"
             f"（{streaming.get('hint', '')}）"
+        )
+    lines.append("")
+
+    risk_advice = payload.get("risk_advice", {}) or {}
+    lines.extend(["## 智能风控建议（Q4）", ""])
+    if risk_advice.get("available"):
+        lines.extend([
+            f"- 门禁状态：`{risk_advice.get('gate_state', 'unknown')}`",
+            f"- 建议产出：{risk_advice.get('advised', 0)}/{risk_advice.get('count', 0)} 条"
+            f"（暂缓 {risk_advice.get('withheld', 0)}｜数据不足 {risk_advice.get('unavailable', 0)}）",
+            f"- 平均盈亏比：{risk_advice.get('avg_risk_reward')}",
+            "- 定位：**建议而非下单指令**；门禁未放行时不产出可直接使用的止损止盈价位",
+        ])
+    else:
+        lines.append(
+            f"- 不可用：{risk_advice.get('error') or risk_advice.get('reason') or '未生成'}"
+            f"（{risk_advice.get('hint', '')}）"
         )
     lines.append("")
 

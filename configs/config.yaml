@@ -232,6 +232,22 @@ trading:
     stop_loss_pct: 0.03         # 止损比例（相对入场价）
     take_profit_pct: 0.06       # 止盈比例（相对入场价）
 
+  # 智能风控建议（src/trading/risk_advice.py，Q4 路线）
+  # 在 RiskManager 的"仓位算多少"之上，回答"止损止盈定多少/定在哪"。
+  # 只产出建议（suggested_*），不改动 RiskManager / OrderGenerator 的任何行为。
+  # 重要：门禁未放行（readonly/unknown）时不产出可直接使用的价位（fail-close）。
+  risk_advice:
+    atr_window: 14            # ATR 窗口（真实波幅均值）
+    atr_stop_mult: 2.0        # 止损 = ATR × 倍数（与结构位取更保守者）
+    atr_take_mult: 3.0        # 止盈 = ATR × 倍数（实际以盈亏比下界与阻力位孰近为准）
+    support_lookback: 20      # 支撑/阻力回看窗口（交易日，不含当日）
+    support_buffer: 0.005     # 结构位缓冲比例（避免贴边被扫）
+    min_stop_pct: 0.015       # 止损比例下限（防过紧被噪音打掉）
+    max_stop_pct: 0.12        # 止损比例上限（防过宽失去风控意义）
+    min_risk_reward: 1.5      # 盈亏比下界，低于该值建议放弃而非放宽止损
+    vol_target_pct: 0.015     # 日波动目标，用于对仓位建议做波动缩放
+    min_bars: 30              # 最少日K根数，不足则如实标注不给数
+
   # 订单生成
   order:
     order_type: market          # market / limit
