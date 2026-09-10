@@ -29,6 +29,7 @@ import argparse
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 
 import yaml
@@ -649,6 +650,107 @@ def run_factors(config: dict, symbol: str) -> dict:
     return payload
 
 
+# ==================== Q3 路线：实时数据流 与 信号一致性 ====================
+
+def run_stream(config: dict, symbols: list[str] | None = None,
+               once: bool = False, persist: bool = True) -> dict:
+    """盘中实时流：拉快照 → 逐只生成分钟级信号更新 → 输出盘中观点失真预警。
+
+    只使用真实数据源；快照失败一律 fail-open（返回 available=False），绝不编造行情。
+    """
+    from src.inference.intraday import IntradayPredictor
+
+    symbols = symbols or _config_symbols(config)
+    predictor = IntradayPredictor(config)
+    logger.info(f"实时流盘中更新: {len(symbols)} 个标的 (once={once})")
+
+    def _cycle() -> dict:
+        payload = predictor.poll_once(symbols, persist=persist)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    if once:
+        payload = _cycle()
+        stale = payload.get("stale") or []
+        if stale:
+            print(f"\n⚠️ 盘中观点失真预警（{len(stale)} 只）: {', '.join(stale)}")
+        return payload
+
+    # 常驻轮询：Ctrl+C 退出（观测路径，异常不终止循环）
+    poll = max(int(predictor.poll_seconds), 5)
+    print(f"盘中轮询已启动（间隔 {poll}s，Ctrl+C 退出）")
+    last = {}
+    try:
+        while True:
+            try:
+                last = _cycle()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[stream] 本轮更新失败（继续下一轮）: {e}")
+            time.sleep(poll)
+    except KeyboardInterrupt:
+        print("\n已停止盘中轮询")
+    return last
+
+
+def run_intraday(config: dict, symbol: str) -> dict:
+    """单只标的的盘中信号更新（一次性，不常驻）。"""
+    from src.inference.intraday import IntradayPredictor
+
+    predictor = IntradayPredictor(config)
+    payload = predictor.build(
+        symbol,
+        _load_daily(config, symbol),
+        predictor.quote_client.fetch_quotes([symbol]).get(symbol),
+    ).to_dict()
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return payload
+
+
+def run_consistency(config: dict, symbol: str) -> dict:
+    """信号一致性校验：跨周期 / 跨模型 / 跨口径是否自相矛盾。"""
+    from src.inference.predictor import PredictionEngine
+    from src.monitor.signal_consistency import SignalConsistencyChecker
+
+    logger.info(f"信号一致性校验 {symbol}")
+    engine = PredictionEngine(config)
+    engine.load_models(config["model"].get("type", "lightgbm"))
+    predicted = engine.predict_all_horizons(symbol)
+
+    probs = [
+        float(p.get("probability", 0.5))
+        for p in (predicted.get("predictions") or {}).values()
+        if isinstance(p, dict) and "error" not in p
+    ]
+    components = predicted.get("components") or {}
+    factor_score = None
+    for key, value in components.items():
+        if str(key).startswith("factor"):
+            factor_score = float(value)
+            break
+
+    checker = SignalConsistencyChecker(config)
+    report = checker.check(
+        symbol,
+        predictions=predicted,
+        components=components,
+        model_probability=(sum(probs) / len(probs)) if probs else None,
+        factor_score=factor_score,
+    ).to_dict()
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return report
+
+
+def _load_daily(config: dict, symbol: str):
+    """读取日K缓存（只读，不触发刷新；供盘中/一致性等观测路径复用）。"""
+    from src.data.collector import DataCollector
+
+    try:
+        return DataCollector(config).load_cached(symbol)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"读取 {symbol} 行情缓存失败: {e}")
+        return None
+
+
 def build_parser() -> argparse.ArgumentParser:
     """构建 CLI 参数解析器（供 main() 与测试复用）"""
     parser = argparse.ArgumentParser(
@@ -680,6 +782,10 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py gate                     # 策略门禁判定（IC + 审计命中率）
   python main.py factors 600519.SH        # 多因子加权组合预测（推理期特征因子）
   python main.py factor-model 600519.SH   # 多因子模型权重 / IC 诊断（可训练模型）
+  python main.py stream --once            # 盘中实时流一次性更新（Q3）
+  python main.py stream                   # 盘中轮询常驻（Ctrl+C 退出）
+  python main.py intraday 600519.SH       # 单只标的盘中信号更新
+  python main.py consistency 600519.SH    # 信号一致性校验（跨周期/跨模型/跨口径）
         """,
     )
     parser.add_argument("command", choices=[
@@ -688,6 +794,7 @@ def build_parser() -> argparse.ArgumentParser:
         "daily-report", "weekly-report", "adaptive",
         "signal", "orders", "trade", "backtest", "macro", "monitor",
         "ic", "gate", "factors", "factor-model",
+        "stream", "intraday", "consistency",
     ], help="执行命令")
     parser.add_argument("args", nargs="*", help="附加参数")
     parser.add_argument("--horizon", default="short_term",
@@ -698,6 +805,10 @@ def build_parser() -> argparse.ArgumentParser:
                         choices=["lightgbm", "pytorch_lstm", "timesfm", "ensemble",
                                  "factor_model", "multifactor"],
                         help="模型类型 (覆盖配置文件), 支持: lightgbm, pytorch_lstm, timesfm, ensemble")
+    parser.add_argument("--once", action="store_true",
+                        help="stream 命令：只执行一轮盘中更新（不常驻轮询）")
+    parser.add_argument("--symbols", default=None,
+                        help="stream / ic 命令：逗号分隔的标的列表（缺省用配置启用标的）")
     parser.add_argument("--host", default=None, help="API 服务地址")
     parser.add_argument("--port", type=int, default=None, help="API 服务端口")
     return parser
@@ -813,6 +924,23 @@ def main():
             print("错误: factors 命令需要指定标的代码")
             sys.exit(1)
         run_factors(config, symbol)
+    elif args.command == "stream":
+        symbols = args.args or (
+            [s.strip() for s in args.symbols.split(",") if s.strip()] if args.symbols else None
+        )
+        run_stream(config, symbols, once=args.once)
+    elif args.command == "intraday":
+        symbol = args.args[0] if args.args else None
+        if not symbol:
+            print("错误: intraday 命令需要指定标的代码")
+            sys.exit(1)
+        run_intraday(config, symbol)
+    elif args.command == "consistency":
+        symbol = args.args[0] if args.args else None
+        if not symbol:
+            print("错误: consistency 命令需要指定标的代码")
+            sys.exit(1)
+        run_consistency(config, symbol)
 
 
 if __name__ == "__main__":

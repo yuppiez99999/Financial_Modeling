@@ -237,12 +237,19 @@ def compute_metrics(
     cumulative = np.cumsum(net)
     running_max = np.maximum.accumulate(cumulative) if len(cumulative) else np.array([0.0])
     drawdowns = cumulative - running_max
+    # 回撤单位是"累计净收益"（已按约当年化口径使用），不是百分比 —— 字段名保留
+    # 历史兼容，另给 *_unit 显式标注，避免下游把它读成"回撤 5%"。
     metrics["max_drawdown_pct"] = float(drawdowns.min()) if len(drawdowns) else 0.0
+    metrics["max_drawdown_unit"] = "cum_return"
     metrics["profit_factor"] = float(total_win / total_loss) if total_loss > 0 else 999.0
+    # 全对时盈亏比数学上发散，999 只是哨兵值：显式标记，防被读作"盈亏比 999 倍"
+    metrics["profit_factor_is_capped"] = bool(total_loss <= 0)
     metrics["total_return"] = float(net.sum())
     metrics["win_rate"] = float(np.mean(net > 0)) if len(net) else 0.0
     metrics["trades"] = int(len(net))
     metrics["fee_per_side"] = float(fee)
+    # 保本胜率：等权对赌 + 双边费用下的盈亏平衡点，供"胜率是否够覆盖成本"对照
+    metrics["breakeven_win_rate"] = round(min(max((1.0 + 2.0 * float(fee)) / 2.0, 0.0), 1.0), 4)
     return metrics
 
 
@@ -376,6 +383,17 @@ def render_markdown(results: List[Dict[str, Any]], meta: Dict[str, Any]) -> str:
         "",
         "> 评估为历史回测口径，未计滑点与冲击成本；指标不代表未来收益。",
         "",
+        "**指标口径（防误读，务必先读）**",
+        "",
+        "- 收益按**预测方向做多/做空**的实际收益率符号计入，单边手续费 "
+        f"`{meta['fee']}`，扣费口径为双边 `2×{meta['fee']}`；",
+        "- 胜率/盈亏比是**逐笔对赌**口径；夏普为按 `sqrt(252/horizon_days)` 近似的年化值，",
+        "  量级高于真实资金夏普，仅用于跨模型/跨周期横向比较；",
+        "- 盈亏比带 `*` 表示**已达解析上限**（无亏损笔时数学发散，取哨兵值），不可读作真实倍数；",
+        "- 最大回撤单位为**累计净收益**（非百分比），不可与资金回撤率混用；",
+        f"- 保本胜率（覆盖双边费用所需的最低胜率）约 "
+        f"{min(max((1.0 + 2.0 * float(meta['fee'])) / 2.0, 0.0), 1.0):.2%}。",
+        "",
         "## 汇总",
         "",
         "| 周期 | 样本 | 准确率 | AUC | IC | 胜率 | 盈亏比 | 夏普(近似) | 最大回撤 | 评级 |",
@@ -387,7 +405,8 @@ def render_markdown(results: List[Dict[str, Any]], meta: Dict[str, Any]) -> str:
         lines.append(
             f"| {r['horizon']} ({r['horizon_days']}d) | {r['total_samples']} | "
             f"{a['accuracy']:.2%} | {a['auc']:.4f} | {a['ic']:.4f} | "
-            f"{a['win_rate']:.2%} | {a['profit_factor']:.2f} | "
+            f"{a['win_rate']:.2%} | {a['profit_factor']:.2f}"
+            f"{'*' if a.get('profit_factor_is_capped') else ''} | "
             f"{a['sharpe_ratio']:.2f} | {a['max_drawdown_pct']:.2%} | "
             f"{_grade(a['accuracy'], a['auc'])} |"
         )

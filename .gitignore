@@ -48,6 +48,8 @@ reports/
 data/raw/
 data/processed/
 data/news/
+# 盘中实时快照（Q3）：分钟级数据绝不入 git，也绝不混入 data/raw 日K缓存
+data/realtime/
 models/exported/
 
 # 训练产物模型（保留占位模型由 scripts 生成，不提交训练产物）

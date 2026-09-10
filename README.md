@@ -124,12 +124,18 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 | `adaptive` | 运行自适应学习引擎 |
 | `all` | 训练 → 评估 → 导出 全流程 |
 | `macro` | 查看宏观指标（CPI/PMI/GDP/M2/LPR）数据源状态 |
-| `monitor` | 生成模型监控报表（审计命中率 / 漂移 / 数据源 / 模型产物） |
+| `monitor` | 生成模型监控报表（审计命中率 / 漂移 / 数据源 / 模型产物 / 实时流） |
 | `ic` | 前视 IC / ICIR / 命中率评估（walk-forward 口径，门禁数据源） |
 | `gate` | 策略门禁判定（IC + 可选审计命中率），输出 `reports/strategy_gate.json` |
 | `factors <symbol>` | 多因子加权组合预测（模型因子 + 技术特征因子） |
+| `factor-model [symbol]` | 多因子模型权重 / 族权重 / IC 诊断（可训练模型） |
+| `stream [--once] [--symbols A,B]` | 盘中实时流：快照轮询 + 分钟级观点失真预警（Q3） |
+| `intraday <symbol>` | 单只标的盘中信号更新（baseline vs live） |
+| `consistency <symbol>` | 信号一致性校验（跨周期 / 跨模型 / 跨口径，Q3） |
 
-常用参数：`--horizon {short_term,mid_term,long_term,all}`、`--config <path>`、`--model-type {lightgbm,pytorch_lstm,timesfm,ensemble}`、`--host` / `--port`。
+常用参数：`--horizon {short_term,mid_term,long_term,all}`、`--config <path>`、
+`--model-type {lightgbm,pytorch_lstm,timesfm,ensemble,factor_model,multifactor}`、
+`--symbols <A,B>`（stream / ic）、`--once`（stream）、`--host` / `--port`。
 
 ---
 
@@ -142,6 +148,7 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 │   └── config_pro.yaml        # 生产配置（wind→tencent→simulation，标的对齐 28 持仓池 26 只）
 ├── data/
 │   ├── raw/                   # 原始行情缓存 <symbol>.csv（simulation 兜底不落盘）
+│   ├── realtime/              # 盘中快照 JSONL（Q3；与 raw 严格分离，绝不混入日K缓存）
 │   ├── processed/             # 特征工程后的数据集
 │   └── news/                  # 新闻缓存
 ├── models/                    # 训练产物（pkl）与 exported/（ONNX）
@@ -152,13 +159,14 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 │   │   ├── collector.py       # DataCollector：多源回退 + collect_all + simulation 不落盘
 │   │   ├── tencent_client.py  # 腾讯财经免费日K客户端（前复权/分页/NO_PROXY/fail-open）
 │   │   ├── macro_client.py    # 宏观指标客户端（wind→akshare→local 回退，asof 无前视对齐）
-│   │   └── preprocessor.py    # FeatureEngineer（防目标泄漏）+ DataPreprocessor
+│   │   ├── streaming.py       # 实时快照 / 交易时段 / 滚动特征 / 快照存储（Q3）
+│   │   └── preprocessor.py    # FeatureEngineer（防目标泄漏 + 非有限值清洗）+ DataPreprocessor
 │   ├── train/                 # LightGBM 训练器、模型定义、自适应学习
 │   ├── eval/                  # 双维评估器
 │   ├── inference/             # 推理引擎（每日缓存刷新 _ensure_fresh + 特征对齐 _align_features）
 │   │   ├── ic.py              # 前视 IC / ICIR / 命中率计算（Q2 门禁口径）
-│   │   └── factor_combiner.py # 推理期因子加权组合（Q2 多因子）
-│   │   └── factor_combiner.py # 多因子加权组合预测（模型因子 + 特征因子）
+│   │   ├── factor_combiner.py # 推理期因子加权组合（Q2 多因子）
+│   │   └── intraday.py        # 分钟级预测更新（Q3：日频 baseline + 盘中快照 → drift）
 │   ├── api/                   # FastAPI 服务（含 /api/v1/portfolio/summary 组合契约端点）
 │   ├── export/                # ONNX 导出
 │   ├── report/                # 日报 / 周报生成
@@ -167,7 +175,8 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 │   ├── notification/          # 信号推送
 │   ├── trading/               # 量化交易适配层（信号/风控/订单/回测/门禁）
 │   │   └── gate.py            # 策略门禁：IC/命中率判定信号能否进入决策路径
-│   ├── monitor/               # 模型监控报表（审计命中率/漂移/数据源/模型产物）
+│   ├── monitor/               # 模型监控报表（审计命中率/漂移/数据源/模型产物/实时流）
+│   │   └── signal_consistency.py  # 信号一致性校验（跨周期/跨模型/跨口径，Q3）
 │   ├── utils/                 # 通用工具（dummy_models）
 │   └── timesfm_predictor.py   # TimesFM 适配（可选）
 ├── Kronos/                    # 第三方基础模型源码快照（见下）
@@ -337,7 +346,7 @@ resp = requests.get(
 ## 八、测试
 
 ```bash
-python -m pytest tests/ -q     # 194 passed, 1 skipped
+python -m pytest tests/ -q     # 260 passed, 3 skipped
 ```
 
 ---
@@ -354,6 +363,13 @@ python -m pytest tests/ -q     # 194 passed, 1 skipped
 - **策略门禁当前状态为 `readonly`**（2026-09-10 实测）：三周期 IC 均为正但 short/mid 命中率未过 52%，
   按 fail-close 口径信号**不进入决策路径**；详见「十一、Q2 路线进展」
 - **多因子组合的特征因子尚未做过拟合校准**（权重为经验值），`weighter: ic` 需先有足量 IC 样本
+- **实时流（Q3）定位为盘中观测预警，不是盘中交易决策**：公开免费源无分钟级行情，
+  且模型训练口径是日频 —— 用盘中未收盘价重算特征会构成未来函数，因此只做「观点是否失真」提醒
+- **实时流的节假日日历不完整**：`MarketClock` 仅按工作日 + 时段粗判，法定休市日会被判为交易时段，
+  故快照一律带 `is_trading_hours` 标记，由下游自行采信
+- **腾讯前复权数据在向历史分页时会退化**：接口对早期页的复权基准不一致，会返回非正价格，
+  已由 `TencentClient._parse_rows` 剔除（中国神华实测剔除 945/3201 行）；需更长历史时建议接 Wind
+- **信号一致性校验不参与策略门禁**：它只回答"各口径是否自相矛盾"，不替代 IC / 命中率门禁
 
 > **Q1 排期已完成的修复**（2026-09-10）：原「已知限制」中「宏观指标 API 连接失败」「新闻采集性能待优化」两项已解决；
 > 7 例遗留失败测试（`test_cli_api`/`test_modules`）已全部转绿。详见「十、Q1 排期进展」。
@@ -565,13 +581,156 @@ python -m pytest tests/ -q     # 230 passed（Q1 基线 159 → Q2 230）
 
 > **Q2 剩余项**：short/mid 周期命中率提升至门禁线以上（特征扩充）、门禁 `gated` 后接入 28 调仓打分。
 
-## 十二、技术栈
+---
+
+## 十二、Q3 路线进展（实时数据流 · 信号一致性 · 口径纠偏）
+
+对照 `SALES_PLAN.md` §8.2 路线图 Q3「实时数据流接入，支持分钟级预测更新」，本轮落地三件事。
+
+### 12.1 实时数据流接入（`src/data/streaming.py`）
+
+| 组件 | 职责 |
+|------|------|
+| `RealtimeQuoteClient` | 腾讯实时快照（最新价 / 昨收 / 今开），批量请求，**逐只容错**，失败 fail-open |
+| `MarketClock` | 交易时段粗判（工作日 + 上午/下午时段），不含节假日日历 → 快照带 `is_trading_hours` 标记由下游采信 |
+| `IntradayStore` | 快照滚动存储（JSONL 按交易日分文件），保留期自动清理，单行损坏不影响其余 |
+| `RollingFeatureBuilder` | 分钟级滚动特征（MA / 波动率 / 动量 / RSI），**严格只用已收盘日K** |
+
+**数据纪律**：快照目录 `data/realtime/` 与日K缓存 `data/raw/` **严格分离** ——
+分钟级数据混入日K缓存会污染训练集，是本项目明令禁止的事故类型（有测试守护）。
+
+### 12.2 分钟级预测更新（`src/inference/intraday.py`）
+
+先说清楚**"分钟级更新"到底更新了什么**：不是每分钟重训/重推模型（既无分钟级数据源支持，
+也会引入未来函数），而是回答盘中才有意义的问题：
+
+> 昨收时的模型观点，在盘中价格相对昨收变化 X% 后，是否仍成立？
+
+输出三段可审计信息：
+
+| 字段 | 含义 |
+|------|------|
+| `baseline` | T-1 收盘口径的日频预测（真实模型优先，失败降级**透明规则口径**并标注 `rules_fallback`） |
+| `live` | 盘中快照（最新价 / 昨收 / 涨跌幅） |
+| `drift` | `intact`（观点仍成立） / `stale`（盘中反向波动超阈值，观点可能失真） / `unknown`（无有效涨跌信息，不误报） |
+
+**防未来函数**：baseline 只读**已落盘的日K**（T-1 及更早），盘中价只作"新观测"比对，
+**绝不回写日K、绝不用于重算日K特征**（有测试用"截断尾部后前缀不变"验证）。
+
+**陈旧保护**：日K缓存落后超过 `max_stale_days`（默认 5 天）时**拒绝给盘中结论**——
+拿一周前的日K解释今天的盘中波动，得出的"观点失真"预警毫无意义。
+
+```bash
+python main.py stream --once --symbols 600519.SH,300308.SZ   # 一次性盘中更新
+python main.py stream                                        # 常驻轮询（Ctrl+C 退出）
+python main.py intraday 600519.SH                            # 单只标的
+```
+
+**实测（2026-09-10 盘中，真实快照）**：
+
+```
+600519.SH  最新价 1284.01  相对昨收 -0.53%  → intact（未与 baseline「看涨」相悖）
+300308.SZ  无日K缓存 → available=false（如实标注，不臆测）
+RB.SHF     实时源不支持该市场 → 跳过（不编造）
+```
+
+### 12.3 信号一致性校验（`src/monitor/signal_consistency.py`）
+
+Q2 之后仓库里同时存在多条"给出方向"的路径（周期模型 / `FactorCombiner` / `FactorModel` / 盘中更新）。
+它们各自都能跑通，但没人回答更基础的问题：**它们互相矛盾吗？**
+
+| 校验维度 | 判定 |
+|---------|------|
+| 跨周期 | 中/长周期方向是否同向；`ignore_short_term: true` 时**允许短期噪声相悖**（仅有短期时以短期为准，不沉默） |
+| 跨模型 | 可用分量（tree / factor / sequence）方向是否一致；**不足 2 个分量即 unknown**，不臆测"一致" |
+| 跨口径 | 模型概率 vs 因子得分：方向相悖，或同向但**强度差距超容忍带**，均判 divergent |
+
+- 中性带（`neutral_band`）内的概率视为**"无观点"**，不参与一致性判定；
+- **一致性校验为观测项，不参与策略门禁**（门禁仍只看 IC / 命中率），输出中显式免责，
+  避免下游误当成"第二道门禁"而产生隐式行为变更；
+- `python main.py consistency 600519.SH`、`GET /api/v1/consistency/{symbol}`。
+
+### 12.4 评估口径纠偏（防"看起来很强"的指标误读）
+
+本轮把评估输出里**长期存在的口径歧义**显式化，避免内部/对外误读：
+
+| 问题 | 修正 |
+|------|------|
+| 盈亏比在无亏损笔时取哨兵值 999，易被读作"盈亏比 999 倍" | 新增 `profit_factor_is_capped` 标记，报告用 `*` 标注并写明"已达解析上限" |
+| 夏普是"每 N 日一次对赌"的近似年化，量级远高于真实资金夏普 | 字段 `sharpe_is_notional` + 报告注明"横向比较用，非资金夏普" |
+| 最大回撤单位是"笔"而非百分比，易与资金回撤率混用 | 新增 `max_drawdown_unit`，报告显式标注 |
+| 未计交易成本，胜率是否"够本"无参照 | 评估器 `evaluate(..., fee=)` 输出扣费口径 `*_net`，并给出**保本胜率** |
+| walk-forward 报告缺少口径说明区 | `scripts/evaluate_models.py` 报告头部新增"指标口径（防误读）"区块 |
+
+```bash
+python scripts/evaluate_models.py --fee 0.0005     # 含双边费用口径 + 保本胜率
+```
+
+### 12.5 修复：真实数据源的非法行情污染（重要）
+
+**症状**：部分标的（如 `601088.SH` 中国神华）**三周期预测全部失败**，报
+`Input X contains infinity or a value too large for dtype('float64')`。
+
+**根因**：腾讯 `qfq`（前复权）接口在**向历史分页**时复权基准不一致，返回"前复权价"退化
+甚至为负 —— 中国神华 2013 年段实测 **912 行 `close` 为负**（如 `-0.32`）。这些行本身无经济含义，
+但会连锁引发：
+
+1. `pct_change()` 除零产生 `-inf` → 污染 `ret_*` / `roc_*` / `pvt` 等特征 →
+   LightGBM 直接拒绝预测，**整只标的全挂**；
+2. 训练集混入分布外极端值，**静默拉低模型质量**（且不会报错，最难发现）。
+
+**修复（三层防御）**：
+
+| 层 | 位置 | 做法 |
+|----|------|------|
+| 数据入口 | `TencentClient._parse_rows` | 剔除 `close/high/low <= 0` 与 `high < low` 的非法行，并记录剔除行数 |
+| 特征出口 | `FeatureEngineer.transform` | `replace([±inf], nan)` 后统一 ffill/fillna，保证特征矩阵**全有限** |
+| 指标内部 | `TechnicalIndicators._add_pvt_nvi` | NVI 单步乘法加 `np.isfinite` 守卫，溢出段保持上一值（不编造） |
+
+**验证**：修复前 `601088.SH` 三周期全 error；修复后正常输出概率，且特征集
+**非有限值计数为 0**（有 3 个回归测试守护）。
+
+### 12.6 接口与配置
+
+```bash
+python main.py stream [--once] [--symbols A,B]   # 盘中实时流
+python main.py intraday <symbol>                 # 单只盘中信号
+python main.py consistency <symbol>              # 信号一致性校验
+```
+
+| API | 说明 |
+|-----|------|
+| `GET /api/v1/stream/status` | 实时流状态（快照覆盖 / 新鲜度 / 是否交易时段） |
+| `GET /api/v1/stream/{symbol}` | 单标的盘中信号（baseline vs live → intact/stale） |
+| `GET /api/v1/consistency/{symbol}` | 信号一致性校验 |
+
+配置新增 `streaming:`（默认 **`enabled: false`**，需显式开启）与 `consistency:` 段；
+监控报表新增「实时数据流（Q3）」章节。
+
+### 12.7 测试
+
+```bash
+python -m pytest tests/ -q     # 260 passed（Q2 基线 230 → Q3 260）
+```
+
+新增 `tests/test_roadmap_q3.py`（33 项）：快照解析/落盘/清理、滚动特征无前视、
+盘中 drift 判定（stale/intact/unknown）、陈旧缓存拒绝结论、引擎失败降级、
+一致性三维校验、扣费口径与保本胜率、以及上述数据卫生的三项回归测试。
+
+> **Q3 定位说明**：实时流是**盘中观测与预警**手段，不是盘中下单决策系统。
+> 分钟级数据源的缺失与"训练口径是日频"这一事实决定了：盘中只做观点漂移提醒，
+> 决策仍走日频 + 门禁路径（`strategy_gate` 当前 `readonly`）。
+
+> **Q3 剩余 / Q4 展望**：分钟级行情源（需付费数据商）、盘中信号需积累样本后再评估门禁口径；
+> Q4 智能风控模块（自动生成止损止盈建议）。
+
+## 十三、技术栈
 
 Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn · ONNX / onnxruntime · Wind MCP · 可选 TimesFM(PyTorch)
 
 ---
 
-## 十三、免责声明
+## 十四、免责声明
 
 > **本项目仅供学习、交流、研究使用，不构成任何投资建议。**
 
@@ -587,7 +746,7 @@ Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn 
 
 ---
 
-## 十四、许可证与版权
+## 十五、许可证与版权
 
 > **著作权归作者所有，禁止商用。**
 

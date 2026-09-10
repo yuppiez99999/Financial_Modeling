@@ -312,12 +312,17 @@ class TechnicalIndicators:
         df["pvt"] = (pct * df["volume"]).cumsum()
         # 向量化 NVI 计算
         vol_change = df["volume"].pct_change().fillna(0)
+        # 单次乘法的极端放大（pct 含 ±inf 或极大值）会让 NVI 溢出为 inf/NaN，
+        # 进而污染整个特征矩阵 → 用 np.isfinite 守卫，异常段保持上一值（不编造）。
         nvi = np.ones(len(df), dtype=np.float64) * 1000.0
         for i in range(1, len(df)):
+            prev = nvi[i - 1]
             if vol_change.iloc[i] < 0:
-                nvi[i] = nvi[i - 1] * (1.0 + float(pct.iloc[i]))
+                step = float(pct.iloc[i])
+                candidate = prev * (1.0 + step)
+                nvi[i] = candidate if np.isfinite(candidate) else prev
             else:
-                nvi[i] = nvi[i - 1]
+                nvi[i] = prev
         df["nvi"] = nvi
         return df
 

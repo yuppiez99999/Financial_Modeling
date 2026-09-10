@@ -21,7 +21,8 @@ class ModelEvaluator:
         self.results: dict[str, Any] = {}
 
     def evaluate(self, model, X_test: np.ndarray, y_test: np.ndarray,
-                 horizon_name: str = "short_term", horizon_days: int = 5) -> dict[str, Any]:
+                 horizon_name: str = "short_term", horizon_days: int = 5,
+                 fee: float = 0.0) -> dict[str, Any]:
         """
         评估模型性能
 
@@ -77,9 +78,9 @@ class ModelEvaluator:
         metrics["confusion_matrix"] = cm.tolist()
         metrics["classification_report"] = classification_report(y_test, y_pred, output_dict=True)
 
-        # 金融专用指标
+        # 金融专用指标（含扣费口径，便于与"毛收益"对照）
         financial_metrics = self._compute_financial_metrics(
-            y_test, y_pred, y_proba, horizon_days=horizon_days
+            y_test, y_pred, y_proba, horizon_days=horizon_days, fee=fee
         )
         metrics["financial"] = financial_metrics
 
@@ -126,15 +127,24 @@ class ModelEvaluator:
         return y_arr.drop if False else y_arr[drop:], np.asarray(X_test)[drop:]
 
     def _compute_financial_metrics(self, y_true: np.ndarray, y_pred: np.ndarray,
-                                   y_proba: np.ndarray, horizon_days: int = 5) -> dict[str, float]:
-        """计算金融专用指标。
+                                   y_proba: np.ndarray, horizon_days: int = 5,
+                                   fee: float = 0.0) -> dict[str, float]:
+        """计算金融专用指标（符号博弈口径，可选扣费）。
 
-        口径说明（重要）：
-        - 交易模拟为 ±1 等权符号博弈（预测涨做多 / 预测跌做空），未计交易成本与滑点；
-        - sharpe_ratio 为单标的、每 horizon_days 个交易日一笔的近似年化
-          （mean/std * sqrt(252/horizon_days)）；多标的拼接会高估该值；
+        口径说明（重要，防误读）：
+        - 交易模拟为 ±1 **等权符号博弈**（预测涨做多 / 预测跌做空），
+          收益单位是"1 次对赌"，**不是收益率、不是资金曲线**；
+        - 因此 sharpe_ratio 是"每 horizon_days 个交易日一次对赌"的近似年化
+          （mean/std * sqrt(252/horizon_days)），量级会明显大于真实资金夏普；
+          **它用于横向比较不同模型/周期的相对优劣，不能当作实盘夏普看**；
+        - profit_factor 为"毛盈亏比"（总盈利笔数 / 总亏损笔数，等权 1:1 下等于
+          胜笔数/败笔数），**该值有解析上限**：等权 ±1 口径下最大就是
+          `winning_trades / losing_trades`，全对时退化为 999 哨兵值，
+          切勿解读为"盈亏比 999"；
         - max_drawdown 单位为"笔"（±1 累计净胜局相对峰值的最深回落），
-          不是百分比，不可与资金回撤率混用。
+          恒为非正值，**不是百分比**，不可与资金回撤率混用；
+        - `fee` 给定时额外输出 `*_net` 扣费口径：按**双边**成本从每笔对赌收益中扣除
+          `2 × fee`（与 scripts/evaluate_models.py 的 --fee 口径一致）。
         """
         # 胜率：预测正确的比例
         win_rate = float(np.mean(y_pred == y_true))
@@ -144,7 +154,33 @@ class ModelEvaluator:
         actual_direction = np.where(y_true == 1, 1.0, -1.0)
         trade_returns = returns * actual_direction  # 对则+1，错则-1
 
-        # 盈亏比
+        gross = self._summarize_trade_returns(trade_returns, horizon_days, label="gross")
+        out: dict[str, Any] = dict(gross)
+        out["win_rate"] = win_rate
+        out["fee_per_trade"] = float(fee) * 2.0
+        out["fee_note"] = (
+            "fee 为单边费率，扣费口径按双边 2×fee 从每笔对赌收益中扣除"
+        )
+
+        if fee and fee > 0:
+            net = self._summarize_trade_returns(
+                trade_returns - float(fee) * 2.0, horizon_days, label="net"
+            )
+            for key, value in net.items():
+                out[f"{key}_net"] = value
+            out["breakeven_win_rate"] = round(
+                min(max((1.0 + 2.0 * float(fee)) / 2.0, 0.0), 1.0), 4
+            )
+        return out
+
+    @staticmethod
+    def _summarize_trade_returns(trade_returns: np.ndarray, horizon_days: int,
+                                 label: str = "gross") -> dict[str, float]:
+        """把逐笔对赌收益汇总为盈亏比 / 近似夏普 / 最大回撤（笔）。
+
+        `label` 仅用于日志可读性；返回键名与既有契约保持一致（不带后缀），
+        以便调用方与历史报告无缝对接。
+        """
         wins = trade_returns[trade_returns > 0]
         losses = trade_returns[trade_returns < 0]
         total_win = float(wins.sum()) if len(wins) > 0 else 0.0
@@ -153,22 +189,21 @@ class ModelEvaluator:
 
         # 夏普比率：按不重叠周期近似年化（每年约 252/horizon_days 笔）
         ann_factor = float(np.sqrt(252.0 / max(int(horizon_days), 1)))
-        if trade_returns.std() > 0:
-            sharpe_ratio = float(trade_returns.mean() / trade_returns.std() * ann_factor)
-        else:
-            sharpe_ratio = 0.0
+        std = float(trade_returns.std()) if len(trade_returns) else 0.0
+        sharpe_ratio = float(trade_returns.mean() / std * ann_factor) if std > 0 else 0.0
 
         # 最大回撤：±1 累计净胜局口径（单位：笔，恒为非正值）
-        cumulative = np.cumsum(trade_returns)
+        cumulative = np.cumsum(trade_returns) if len(trade_returns) else np.array([0.0])
         running_max = np.maximum.accumulate(cumulative)
-        drawdowns = cumulative - running_max
-        max_drawdown = float(drawdowns.min()) if len(drawdowns) > 0 else 0.0
+        max_drawdown = float((cumulative - running_max).min())
 
         return {
-            "win_rate": win_rate,
-            "profit_factor": profit_factor if profit_factor != float("inf") else 999.0,
-            "sharpe_ratio": sharpe_ratio,
-            "max_drawdown": max_drawdown,
+            "profit_factor": round(profit_factor, 4) if profit_factor != float("inf") else 999.0,
+            "profit_factor_is_capped": bool(profit_factor == float("inf")),
+            "sharpe_ratio": round(sharpe_ratio, 4),
+            "sharpe_is_notional": True,
+            "max_drawdown": round(max_drawdown, 4),
+            "max_drawdown_unit": "trades",
             "total_trades": int(len(trade_returns)),
             "winning_trades": int(len(wins)),
             "losing_trades": int(len(losses)),
@@ -198,10 +233,12 @@ class ModelEvaluator:
                 f"  F1 分数:  {m['f1']:.4f}",
                 f"  AUC:      {m['auc']:.4f}",
                 "",
-                "  --- 金融指标 ---",
+                "  --- 金融指标（等权符号博弈口径，非资金曲线）---",
                 f"  胜率:     {fm['win_rate']:.4f} ({fm['win_rate']*100:.2f}%)",
-                f"  盈亏比:   {fm['profit_factor']:.4f}",
-                f"  夏普比率(近似年化): {fm['sharpe_ratio']:.4f}",
+                f"  盈亏比(毛): {fm['profit_factor']:.4f}"
+                + ("（已达解析上限，请勿读作真实盈亏比）" if fm.get("profit_factor_is_capped") else ""),
+                f"  夏普比率(对赌口径近似年化): {fm['sharpe_ratio']:.4f}"
+                "（横向比较用，非资金夏普）",
                 f"  最大回撤(笔):       {fm['max_drawdown']:.1f}",
                 f"  总交易数: {fm['total_trades']}",
                 f"  盈利交易: {fm['winning_trades']}",
