@@ -1588,6 +1588,48 @@ CLI / 监控报表 / 日报 / API 的缺失与正常分支；配置段存在且�
 
 ---
 
+## 十八A、S11–S15 排期：高质量项目集成轮（G1~G5，已入 plan.json）
+
+> 承接 Issue #29「高质量项目集成」：S1~S14 轮次全部 completed、门禁仍 `readonly`
+> （三条提升路径已被证伪，见 §18）。本轮不再「再加一个模型」，而是按依赖顺序
+> 补齐地基件：**评估量尺 → 标签口径 → 因子库 → 数据源 → 调参/概率预测**。
+> 已写入 `schedule/plan.json`（新追加 5 个 stage，id S11~S15）。
+
+**排期总表**（沿用 `S<n>` + `T<n>.<m>` 结构，含 `auto_run` / `auto_acceptable` / `manual_checkpoint`）：
+
+| 阶段 | 时间 | 内容 | 依赖 | 人工检查点 | 集成来源 |
+|------|------|------|------|-----------|---------|
+| **S11** | 09-12 ~ 09-14 | G1 评估量尺：`src/eval/factor_metrics.py`（周期衰减/分层收益/换手/IC 置信区间）+ 成本敏感性三档扫描 + FinRL 结论补全 | 无 | T11.2 口径定稿 | machine-learning-for-trading / alphalens 理念 |
+| **S12** | 09-15 ~ 09-19 | G2 标签重构：`src/data/labeling.py` 三重障碍法（止盈/止损/时间，波动率自适应）替代固定 5/10/20 日窗口 + 无前视测试 + A/B 对比 | S11 | T12.3 A/B 结论如实入库 | machine-learning-for-trading 三重障碍法 |
+| **S13** | 09-20 ~ 09-26 | G3 qlib 接入：`integrations/qlib/` 数据层 → `src/factors/qlib_factor_provider.py` → Alpha158 vs 现有 15 因子增量验证 | S12 | T13.4 是否纳入主线 + THIRD_PARTY 登记 | microsoft/qlib（MIT） |
+| **S14** | 09-27 ~ 09-29 | G4 数据源升级：akshare 升 P1，回退链 `wind → akshare → tencent → simulation`，期货/外汇开启 | 无（可并行） | T14.3 回退链验收 ≥95% | akfamily/akshare（MIT） |
+| **S15** | 09-30 ~ 10-04 | G5 调参与概率预测：optuna 包裹 LightGBM/LSTM + neuralforecast 概率区间 → 置信度阈值（仅高置信样本给信号） | S13 | T15.3 是否提门禁 | optuna（MIT）/ neuralforecast（Apache-2.0） |
+
+**里程碑**：
+
+- **09-19（S12 结束）**：拿到「标签重构是否有效」的硬结论 —— 这是唯一能直接改变门禁判定的一步；
+- **09-29（S14 结束）**：数据侧不再是瓶颈，期货/外汇可开；
+- **10-04**：若 short/mid 命中率过 52% 且 IC 稳定，走**人工审批**切换 `strategy_gate`；
+  未过则以真实数字记入 `SALES_PLAN` §8.2 并说明原因。
+
+**明确不引入（本轮硬边界）**：
+
+- `mlfinlab`（NOASSERTION 许可证 + 停更 ≈3 年，`00_kickoff/mlfinlab_blockers.md` 已判暂不接入）；
+- `freqtrade`（GPL-3.0 传染性，维持「只阅读、不引代码」）；
+- `FinRL`（S5 已跑最小实验，本轮只补结论 + 及时止损，不扩实验）。
+
+**统一原则（与 S9~S14 同构）**：
+
+- 所有新模块默认 `report_only` / `affects_gate=false`，**不改门禁结论**；
+- G2/G3 即使证明「标签重构没用 / qlib 无增量」也是**有价值结论**，如实写入 `00_kickoff/`；
+- 许可证：qlib/optuna/akshare（MIT）、neuralforecast（Apache-2.0）与本项目「禁止商用」
+  对外授权限制**不冲突**（限制的是对外授权，不是内部使用），但引入时必须登记来源与版本（`docs/THIRD_PARTY.md`）。
+
+> ⚠️ **命名说明**：`plan.json` 中新追加的 S11~S14 与 §18 已完成的旧 S11~S14 阶段 id 复用，
+> 内容不同（旧轮为「口径变更决策收敛」，本轮为「高质量项目集成」），以 `source` 字段区分。
+
+---
+
 ## 十九、技术栈
 
 Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn · ONNX / onnxruntime · Wind MCP · 可选 TimesFM(PyTorch)
