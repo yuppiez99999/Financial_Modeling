@@ -355,6 +355,55 @@ class ModelMonitor:
             return out
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[monitor] 门禁诊断失败: {e}")
+
+    def _collect_ic_trend(self) -> Dict[str, Any]:
+        """IC 趋势 / 信号衰减状态（Q5，只读）。
+
+        只读 `reports/ic_trend.json`（由 `python main.py ic-trend` 落盘），
+        不重跑 walk-forward —— 监控报表必须随时可跑且零副作用。
+        """
+        report_dir = Path(
+            (self.config.get("ic_trend", {}) or {}).get("report_dir", "reports")
+        )
+        path = report_dir / "ic_trend.json"
+        if not path.exists():
+            return {
+                "available": False,
+                "reason": "no_ic_trend_report",
+                "hint": "先运行 `python main.py ic-trend` 生成 reports/ic_trend.json",
+            }
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            horizons = payload.get("horizons") or {}
+            rows = []
+            for name, item in sorted(horizons.items()):
+                if not isinstance(item, dict):
+                    continue
+                rows.append({
+                    "horizon": name,
+                    "status": item.get("status", "unknown"),
+                    "available": bool(item.get("available")),
+                    "latest_ic": item.get("latest_ic"),
+                    "slope_per_step": item.get("slope_per_step"),
+                    "decay_per_step_pct": item.get("decay_per_step_pct"),
+                    "latest_hit_rate": item.get("latest_hit_rate"),
+                    "steps_to_breach": item.get("steps_to_breach"),
+                    "anchors": item.get("anchors", 0),
+                })
+            return {
+                "available": True,
+                "source": str(path),
+                "generated_at": payload.get("generated_at"),
+                "window": payload.get("window"),
+                "step": payload.get("step"),
+                "min_ic": payload.get("min_ic"),
+                "near_breach_steps": payload.get("near_breach_steps"),
+                "decaying": payload.get("decaying") or [],
+                "near_breach": payload.get("near_breach") or [],
+                "rows": rows,
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取 IC 趋势失败: {e}")
             return {"available": False, "error": str(e)}
 
     def _collect_factor_model(self) -> Dict[str, Any]:
@@ -423,6 +472,7 @@ class ModelMonitor:
         streaming = self._collect_streaming()
         risk_advice = self._collect_risk_advice()
         gate_diagnosis = self._collect_gate_diagnosis(gate)
+        ic_trend = self._collect_ic_trend()
 
         issues: List[str] = []
         if audit.get("available") and audit.get("drift"):
@@ -467,6 +517,17 @@ class ModelMonitor:
                     f"风控建议全部未产出（{risk_advice.get('count')} 只标的）："
                     f"门禁 {risk_advice.get('gate_state')} 或行情缺失"
                 )
+        # IC 趋势（Q5）：衰减 / 临近跌破门禁线属于要提前处理的问题，
+        # 但它是**趋势预警**而非当前故障，因此只报 warning 级别的事项。
+        if ic_trend.get("available"):
+            for h in ic_trend.get("decaying") or []:
+                issues.append(f"{h} IC 持续衰减，信号有效性下滑")
+            near = ic_trend.get("near_breach") or []
+            if near:
+                steps = ic_trend.get("near_breach_steps", 3)
+                issues.append(
+                    f"{'、'.join(near)} 预计 {steps} 步内跌破门禁线（|IC| < {ic_trend.get('min_ic')}）"
+                )
         status = "ok" if not issues else ("warning" if len(issues) < 3 else "critical")
 
         payload = {
@@ -482,6 +543,7 @@ class ModelMonitor:
             "factors": factors,
             "streaming": streaming,
             "risk_advice": risk_advice,
+            "ic_trend": ic_trend,
         }
         return HealthReport(payload)
 
@@ -679,6 +741,57 @@ def render_markdown(payload: Dict[str, Any]) -> str:
         lines.append(
             f"- 不可用：{streaming.get('error') or streaming.get('reason') or '未启用'}"
             f"（{streaming.get('hint', '')}）"
+        )
+    lines.append("")
+
+    ic_trend = payload.get("ic_trend", {}) or {}
+    lines.extend(["## IC 趋势 / 信号衰减（Q5）", ""])
+    if ic_trend.get("available"):
+        lines.append(
+            f"- 判定口径：窗口 {ic_trend.get('window')} 样本 / 步长 {ic_trend.get('step')}"
+            f"（判定时间 {ic_trend.get('generated_at') or 'N/A'}）"
+        )
+        rows = ic_trend.get("rows") or []
+        if rows:
+            lines.extend([
+                "", "| 周期 | 当前 IC | 每步变化 | 每步衰减 | 命中率 | 状态 | 距跌破 |",
+                "|------|---------|----------|----------|--------|------|--------|",
+            ])
+            for r in rows:
+                ic_val = r.get("latest_ic")
+                slope = r.get("slope_per_step")
+                dec = r.get("decay_per_step_pct")
+                breach = r.get("steps_to_breach")
+                if not r.get("available"):
+                    lines.append(f"| {r['horizon']} | N/A | N/A | N/A | N/A | ❔ unknown | N/A |")
+                    continue
+                breach_txt = "N/A" if breach is None else (
+                    "已跌破" if breach == 0 else f"{breach} 步"
+                )
+                icon = {"decaying": "🔻", "improving": "🔺", "stable": "➡️"}.get(r["status"], "❔")
+                lines.append(
+                    f"| {r['horizon']} | {ic_val:+.4f} | {slope:+.6f} | "
+                    f"{'N/A' if dec is None else f'{dec:+.2f}%'} | "
+                    f"{_fmt_pct(r.get('latest_hit_rate'))} | {icon} {r['status']} | {breach_txt} |"
+                )
+        decaying = ic_trend.get("decaying") or []
+        near = ic_trend.get("near_breach") or []
+        if decaying or near:
+            lines.append("")
+            if decaying:
+                lines.append(f"- 🔻 衰减预警：{'、'.join(decaying)}")
+            if near:
+                lines.append(f"- ⏳ 临近跌破：{'、'.join(near)}"
+                             f"（{ic_trend.get('near_breach_steps', 3)} 步内）")
+        lines.append("")
+        lines.append(
+            "> 趋势是**预警**不是结论：门禁判定仍只看当前 IC/命中率"
+            "（见「策略门禁」章节），趋势用于提前安排重训练与特征迭代。"
+        )
+    else:
+        lines.append(
+            f"- 不可用：{ic_trend.get('error') or ic_trend.get('reason') or '未生成'}"
+            f"（{ic_trend.get('hint', '')}）"
         )
     lines.append("")
 

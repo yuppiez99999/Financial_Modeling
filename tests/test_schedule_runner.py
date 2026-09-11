@@ -119,3 +119,34 @@ class TestRunDayPersistsState:
             # load_plan 在进入 try 之前调用：调用方需保证 plan.json 合法，
             # 这正是 tests/test_plan_json_validity.py 守护的对象。
             module.run_day(str(plan_path), str(tmp_path / "logs"))
+
+
+# ---------------------------------------------------------------- PS1 路径
+def test_powershell_runner_defines_all_called_functions():
+    """daily_run.ps1 里被调用的自定义函数必须都有定义。
+
+    背景：该脚本曾调用未定义的 `Write-LogEntry` / `Try-RunFinRLSmokeTest`，
+    PowerShell 路径下必抛 CommandNotFoundException —— 而这条路径只在
+    Windows 计划任务里跑到，CI 的 Python 测试完全覆盖不到。
+    这里做静态检查，把「只在生产路径炸」的缺陷提前暴露。
+    """
+    import re
+
+    script = (PROJECT_ROOT / "schedule" / "daily_run.ps1").read_text(encoding="utf-8")
+    defined = set(re.findall(r"^\s*function\s+([A-Za-z][\w-]*)", script, re.M))
+    called = set(re.findall(r"^\s*([A-Z][\w]*)\s+\$", script, re.M))
+    # 系统 cmdlet 白名单：非自定义函数
+    builtin = {"Write-Host", "Get-Content", "Join-Path", "Test-Path", "New-Item",
+               "Split-Path", "ConvertFrom-Json", "ConvertTo-Json", "Select-Object"}
+    missing = {c for c in called if c not in defined and c not in builtin
+               and ("-" not in c or c.startswith("Try-"))}
+    assert not missing, f"daily_run.ps1 调用了未定义的函数: {sorted(missing)}"
+
+
+def test_powershell_runner_writes_log_file():
+    """日志函数必须真的写入 $logFile，而不是只存在定义。"""
+    script = (PROJECT_ROOT / "schedule" / "daily_run.ps1").read_text(encoding="utf-8")
+    assert "function Write-LogEntry" in script
+    body = script[script.index("function Write-LogEntry"):]
+    body = body[:body.index("\n}\n") + 3]
+    assert "$logFile" in body

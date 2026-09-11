@@ -627,6 +627,61 @@ def _summarize_per_symbol(per_symbol: dict) -> dict:
     return out
 
 
+def build_walkforward_sequences(
+    data: dict, config: dict, horizon_days: int, folds: int = 3
+) -> dict:
+    """构造 walk-forward 序列（供 `ic` 门禁与 `ic-trend` 衰减监控共用）。
+
+    两个命令的口径必须**完全同源**，否则会出现「监控说衰减、门禁说达标」的错位。
+    返回 {scores, returns, folds_used, dates}：
+      - scores  ：去中性化分数（概率 - 0.5，0 = 无观点），与因子/信号口径一致；
+      - returns ：对应的真实未来收益（含 `_fwd_ret`，未到期样本已被剔除）；
+      - dates   ：每个样本对应的交易日（透传给趋势监控做时间轴标注）。
+    """
+    import numpy as np
+    import scripts.evaluate_models as ev
+    from src.data.preprocessor import FeatureEngineer
+    from src.train.models.lightgbm_model import LightGBMModel
+
+    scores: list = []
+    returns: list = []
+    dates: list = []
+    folds_used = 0
+
+    combined = ev.build_supervised(data, config, int(horizon_days))
+    if combined.empty:
+        return {"scores": [], "returns": [], "dates": [], "folds_used": 0}
+
+    fe = FeatureEngineer(config)
+    cols = [c for c in fe.get_feature_columns(combined, int(horizon_days))
+            if not str(c).startswith("_")]
+    X = combined[cols].to_numpy(dtype=float)
+    y = combined[f"target_{int(horizon_days)}d"].to_numpy(dtype=float)
+    fwd = combined["_fwd_ret"].to_numpy(dtype=float)
+    if "date" in combined.columns:
+        dates_all = combined["date"].astype(str).tolist()
+    else:  # pragma: no cover - 数据管道异常时的兜底
+        dates_all = ["" for _ in range(len(combined))]
+
+    splits = ev.walk_forward_splits(len(X), folds)
+    for train_idx, test_idx in splits:
+        if len(np.unique(y[train_idx])) < 2:
+            continue
+        try:
+            model = LightGBMModel(config)
+            model.train(X[train_idx], y[train_idx])
+            proba = model.predict_proba(X[test_idx])[:, 1]
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[ic] {horizon_days}d 折训练失败: {e}")
+            continue
+        scores.extend([float(p) - 0.5 for p in proba])
+        returns.extend([float(r) for r in fwd[test_idx]])
+        dates.extend(dates_all[i] for i in test_idx)
+        folds_used += 1
+
+    return {"scores": scores, "returns": returns, "dates": dates, "folds_used": folds_used}
+
+
 def _config_symbols(config: dict) -> list[str]:
     """取配置中启用的标的（去重保序）。"""
     out: list[str] = []
@@ -691,6 +746,50 @@ def run_gate_diagnose(config: dict, ic_path: str | None = None) -> dict:
 
     result = diagnose(ic_payload, config.get("strategy_gate", {}), gate_decision)
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def run_ic_trend(config: dict, symbols: list[str] | None = None, folds: int = 3) -> dict:
+    """IC 趋势 / 信号衰减评估（Q5）：把门禁的静态 IC 快照变成 IC 时序。
+
+    与 `ic`（门禁口径）共用 `build_walkforward_sequences`，保证同源：
+    同一个 (分数, 未来收益) 序列，`ic` 回答「现在达不达标」，
+    `ic-trend` 回答「在变好还是变坏、还有多久跌破放行线」。
+
+    落盘 `reports/ic_trend.json`（监控报表与日报只读消费）。
+    """
+    import scripts.evaluate_models as ev
+    from src.monitor.ic_trend import ICTrendMonitor
+
+    logger.info("执行 IC 趋势 / 信号衰减评估")
+    horizons_cfg = config.get("data", {}).get("prediction_horizons", {})
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "horizons": {}}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    monitor = ICTrendMonitor(config)
+    per_horizon: dict = {}
+    for hname, days in horizons_cfg.items():
+        seq = build_walkforward_sequences(data, config, int(days), folds)
+        per_horizon[hname] = {
+            "horizon_days": int(days),
+            "scores": seq["scores"],
+            "returns": seq["returns"],
+        }
+
+    result = monitor.evaluate_aligned(per_horizon)
+    result["symbols_evaluated"] = len(data)
+    result["folds"] = folds
+
+    report_dir = (config.get("ic_trend", {}) or {}).get("report_dir", "reports")
+    out = Path(report_dir) / "ic_trend.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(f"\nIC 趋势报告已保存: {out}")
     return result
 
 
@@ -1017,6 +1116,7 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py ic                       # IC / 命中率门禁评估（全标的池）
   python main.py ic --stratify            # 额外按标的分解（定位拖后腿的标的）
   python main.py ic --derive-band         # 逐折用训练折推导中性带（过滤 ≈0.5 噪音）
+  python main.py ic-trend                 # IC 时序 / 信号衰减监控（Q5）
   python main.py gate                     # 策略门禁判定（IC + 审计命中率）
   python main.py gate-diagnose            # 门禁阻塞诊断（还差多少 / 哪条腿卡住）
   python main.py factors 600519.SH        # 多因子加权组合预测（推理期特征因子）
@@ -1034,7 +1134,7 @@ def build_parser() -> argparse.ArgumentParser:
         "serve", "schedule", "audit", "notify", "batch",
         "daily-report", "weekly-report", "adaptive",
         "signal", "orders", "trade", "backtest", "macro", "monitor",
-        "ic", "gate", "gate-diagnose", "factors", "factor-model",
+        "ic", "ic-trend", "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
     parser.add_argument("args", nargs="*", help="附加参数")
@@ -1164,6 +1264,8 @@ def main():
         run_ic(config, args.args or None,
                stratify=bool(getattr(args, "stratify", False)),
                derive_band=getattr(args, "derive_band", None))
+    elif args.command == "ic-trend":
+        run_ic_trend(config, args.args or None)
     elif args.command == "gate":
         run_gate(config, args.args[0] if args.args else None)
     elif args.command == "gate-diagnose":

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -56,6 +57,7 @@ class DailyReportGenerator:
             report_lines.extend(self._generate_detailed_predictions(predictions))
             report_lines.extend(self._generate_sentiment_section())
             report_lines.extend(self._generate_gate_section())
+            report_lines.extend(self._generate_ic_trend_section())
             report_lines.extend(self._generate_investment_advice(predictions))
         else:
             report_lines.append("**暂无预测数据**")
@@ -267,6 +269,83 @@ class DailyReportGenerator:
         lines.append("")
         return lines
 
+    def _generate_ic_trend_section(self) -> list[str]:
+        """生成 Q5 信号衰减趋势章节。
+
+        读取 ``reports/ic_trend.json``（由 ``python main.py ic-trend`` 产出）。
+        文件缺失时不臆测趋势，明确写「未评估」并给出生成命令。
+
+        为什么日报要放这个：门禁章节只说「现在只读」，
+        客户/研究员真正会追问的是「是不是在变差、要多久掉出去」——
+        趋势章节回答这个问题，且**不改变门禁判定**（两者口径同源、职责分离）。
+        """
+        lines = ["## 📉 信号衰减趋势（Q5）"]
+        report_dir = (self.config.get("ic_trend", {}) or {}).get("report_dir", self.report_dir)
+        path = Path(report_dir) / "ic_trend.json"
+        if not path.exists():
+            lines.extend([
+                "",
+                "- 状态：**未评估**（未找到 `ic_trend.json`，执行 `python main.py ic-trend` 生成）",
+                "- 说明：趋势监控用于提前安排重训练，不参与门禁放行判定",
+                "",
+            ])
+            return lines
+
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            lines.extend(["", f"- 趋势结果读取失败：{e}", ""])
+            return lines
+
+        horizons = payload.get("horizons") or {}
+        rows = [
+            (h, v) for h, v in sorted(horizons.items())
+            if isinstance(v, dict) and not str(h).startswith("_")
+        ]
+        lines.extend([
+            "",
+            f"- 判定口径：窗口 {payload.get('window')} 样本 / 步长 {payload.get('step')}"
+            f"（判定时间 {payload.get('generated_at') or 'N/A'}）",
+        ])
+        if any(v.get("available") for _h, v in rows):
+            lines.extend([
+                "",
+                "| 周期 | 当前 IC | 每步变化 | 命中率 | 趋势 | 距跌破门禁 |",
+                "|------|---------|----------|--------|------|------------|",
+            ])
+            for h, v in rows:
+                if not v.get("available"):
+                    lines.append(f"| {h} | N/A | N/A | N/A | ❔ unknown | N/A |")
+                    continue
+                slope = v.get("slope_per_step")
+                breach = v.get("steps_to_breach")
+                breach_txt = "N/A" if breach is None else ("已跌破" if breach == 0 else f"{breach} 步")
+                icon = {"decaying": "🔻", "improving": "🔺", "stable": "➡️"}.get(
+                    v.get("status", ""), "❔"
+                )
+                lines.append(
+                    f"| {h} | {v.get('latest_ic', 0):+.4f} | {slope:+.6f} | "
+                    f"{_fmt_pct(v.get('latest_hit_rate'))} | {icon} {v.get('status')} | {breach_txt} |"
+                )
+        decaying = payload.get("decaying") or []
+        near = payload.get("near_breach") or []
+        if decaying:
+            lines.append("")
+            lines.append(f"- 🔻 **衰减预警**：{'、'.join(decaying)} —— 建议提前安排重训练")
+        if near:
+            lines.append("")
+            lines.append(
+                f"- ⏳ **临近跌破**：{'、'.join(near)}"
+                f"（{payload.get('near_breach_steps', 3)} 步内）"
+            )
+        lines.extend([
+            "",
+            "> 趋势为**预警信号**，不改变门禁判定：放行与否仍只看当前 IC / 命中率"
+            "（见上方「策略门禁」）。两者**同源序列**，不会出现口径打架。",
+            "",
+        ])
+        return lines
+
     def _generate_investment_advice(self, predictions: list[dict]) -> list[str]:
         """生成投资建议"""
         lines = ["## 💡 投资建议"]
@@ -336,6 +415,8 @@ class WeeklyReportGenerator(DailyReportGenerator):
         if predictions:
             report_lines.extend(self._generate_market_overview(predictions))
             report_lines.extend(self._generate_detailed_predictions(predictions))
+            report_lines.extend(self._generate_gate_section())
+            report_lines.extend(self._generate_ic_trend_section())
             report_lines.extend(self._generate_weekly_summary())
         else:
             report_lines.append("**暂无预测数据**")

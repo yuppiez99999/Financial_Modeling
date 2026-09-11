@@ -125,7 +125,7 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 | `adaptive` | 运行自适应学习引擎 |
 | `all` | 训练 → 评估 → 导出 全流程 |
 | `macro` | 查看宏观指标（CPI/PMI/GDP/M2/LPR）数据源状态 |
-| `monitor` | 生成模型监控报表（审计命中率 / 漂移 / 数据源 / 模型产物 / 实时流） |
+| `monitor` | 生成模型监控报表（审计命中率 / 漂移 / 数据源 / 模型产物 / 实时流 / IC 趋势） |
 | `ic` | 前视 IC / ICIR / 命中率评估（walk-forward 口径，门禁数据源） |
 | `gate` | 策略门禁判定（IC + 可选审计命中率），输出 `reports/strategy_gate.json` |
 | `factors <symbol>` | 多因子加权组合预测（模型因子 + 技术特征因子） |
@@ -133,6 +133,7 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 | `stream [--once] [--symbols A,B]` | 盘中实时流：快照轮询 + 分钟级观点失真预警（Q3） |
 | `intraday <symbol>` | 单只标的盘中信号更新（baseline vs live） |
 | `consistency <symbol>` | 信号一致性校验（跨周期 / 跨模型 / 跨口径，Q3） |
+| `ic-trend` | IC 时序 / 信号衰减监控：斜率 + 预计跌破门禁步数（Q5） |
 
 常用参数：`--horizon {short_term,mid_term,long_term,all}`、`--config <path>`、
 `--model-type {lightgbm,pytorch_lstm,timesfm,ensemble,factor_model,multifactor}`、
@@ -575,6 +576,9 @@ python -m pytest tests/ -q     # 230 passed（Q1 基线 159 → Q2 230）
 |---------|------|------|
 | `test_q2_roadmap.py` | 25 | IC 计算 / 策略门禁 / 因子组合（同批 Q2 交付） |
 | `test_roadmap_q2.py` | 35 | 因子库 / 因子模型 / 类级融合 / 模型注册表 / LSTM 上线 / 质量门控 / 适配层门禁强制 |
+| `test_roadmap_q3.py` | 34 | 实时快照 / 盘中观点失真 / 信号一致性 / 非法行情防护 |
+| `test_roadmap_q4.py` | 34 | ATR 止损 / 结构位 / 盈亏比约束 / 门禁 withhold 分支 |
+| `test_roadmap_q5.py` | 33 | IC 时序 / 斜率与趋势判定 / 跌破外推 / 四个消费口分支 |
 
 另修复 3 处**跨用例模块全局污染**（`test_predictor_minimal`/`test_ensemble_integration`/`test_predictor_integration`
 直接给模块属性赋值 → 改为 `monkeypatch.setattr`）：原先会污染 `src.inference.predictor` 的
@@ -724,6 +728,10 @@ python -m pytest tests/ -q     # 260 passed（Q2 基线 230 → Q3 260）
 
 > **Q3 剩余 / Q4 展望**：分钟级行情源（需付费数据商）、盘中信号需积累样本后再评估门禁口径；
 > Q4 智能风控模块（自动生成止损止盈建议）→ 已落地，见「十三、Q4 路线进展」。
+>
+> **Q4 遗留 / Q5 承接**：风控建议建立在门禁信号之上，而门禁长期为 `readonly`；
+> 本轮 Q5 补齐「信号是否在衰减」的运维视角（见「十四、Q5 路线进展」），
+> 使「要不要提前重训练、什么时候可能达标」变成可回答的问题。
 
 ---
 
@@ -951,13 +959,131 @@ python -m pytest tests/ -q                     # 334 passed, 2 failed, 2 skipped
 2 例失败是**既有问题**（`test_predictor_utils.py` 依赖被 `.gitignore` 忽略的 `models/`
 占位 pickle），改动前后各跑一次做对照，结果完全一致，与 S7 无关。
 
-## 十五、技术栈
+---
+
+## 十五、Q5 路线进展（信号衰减监控 · 定期报告升级）
+
+对照 `SALES_PLAN.md` §8.2 路线图 Q5「信号衰减监控，IC 时序与重训练预警」。
+
+### 15.1 先说清楚它解决什么问题
+
+Q2 的策略门禁（`python main.py gate`）回答的是**静态**问题：*此刻*的 IC / 命中率是否达标？
+结论只有 `gated` / `readonly` 两种。
+
+但运维上真正要命的是**动态**问题。看两个例子：
+
+| 门禁看到的 | 实际含义 A | 实际含义 B |
+|-----------|-----------|-----------|
+| `|IC| = 0.031`（刚过线） | 稳定在 0.031，可用 | 从 0.09 一路衰减到 0.031，**下周就掉出放行线** |
+| `|IC| = 0.028`（差一点） | 一直在 0.01 附近，信号本就弱 | 正从 0.01 回升，**即将达标** |
+
+这两种情况在门禁看来**完全一样**，对使用者的含义却相反。
+Q5 就是把「IC 快照」变成「IC 时序」：
+
+```bash
+python main.py ic-trend          # 全标的池，落盘 reports/ic_trend.json
+```
+
+### 15.2 怎么算的
+
+1. 复用 `ic` 命令的**同一套** walk-forward 序列（`build_walkforward_sequences`），
+   保证门禁与趋势**同源** —— 不会出现「监控说衰减、门禁说达标」的口径打架；
+2. 在序列上按 `window`（默认 250 样本）切片、`step`（默认 40 样本）滑动，
+   每个锚点算一段 IC，得到 IC 时序；
+3. 对 IC 时序做最小二乘拟合，得到斜率（`slope_per_step`），并折算为
+   `decay_per_step_pct`（以当前 |IC| 为基准的每步百分比变化）；
+4. 按当前斜率外推，预估还有几个步长跌破 `strategy_gate.min_ic`（`steps_to_breach`）。
+
+**关键设计**：为什么走 `evaluate_aligned` 而不是自己按收盘价算收益 ——
+walk-forward 的**折与折之间时间不连续**，用相邻两行收盘价算 forward return 会跨折错位，
+产出「看着像衰减、其实是折缝」的伪趋势。因此趋势监控直接消费门禁算好的
+（分数，未来收益）对齐序列。
+
+### 15.3 三种状态与「不外推永远安全」
+
+| 状态 | 判定 | 含义 |
+|------|------|------|
+| `decaying` | 斜率 ≤ −`min_decay`（默认 0.001/步） | 显著衰减，建议提前安排重训练 |
+| `improving` | 斜率 ≥ +`min_decay` | 信号在变强 |
+| `stable` | 落在阈值带内 | 无明显趋势（**噪声抖动不算趋势**） |
+| `unknown` | 锚点不足 / 样本不足 | 数据不足以判定，**如实沉默，绝不猜** |
+
+`steps_to_breach` 有明确的语义边界：
+
+- 已跌破 → `0`（就是现在）
+- 斜率为负且尚未跌破 → 正步数（按线性外推，仅供参考）
+- **斜率非负 → `None`**（不外推「永远安全」这种结论）
+- 锚点不足 → `None`，且状态为 `unknown`
+
+### 15.4 四个消费口
+
+| 消费口 | 内容 |
+|--------|------|
+| CLI | `python main.py ic-trend`（JSON 输出 + 落盘 `reports/ic_trend.json`） |
+| 监控报表 | `python main.py monitor` 新增「IC 趋势 / 信号衰减（Q5）」章节 + 待处理事项 |
+| 日报 / 周报 | `daily-report` / `weekly-report` 新增「📉 信号衰减趋势（Q5）」明细表 |
+| API | `GET /api/v1/monitor/ic-trend`（只读，报告缺失时返回 `available=false` 而非臆测） |
+
+监控/日报中的预警分两档：`decaying`（衰减中）与 `near_breach`（预计 N 步内跌破，
+N 由 `ic_trend.near_breach_steps` 配置）。两者都是 `warning` 级**趋势预警**，
+不是当前故障。
+
+### 15.5 与门禁的职责边界（重要）
+
+> **趋势不改变门禁判定。** 放行与否仍然只看当前 IC / 命中率（`strategy_gate`）；
+> 趋势章节只用于**提前安排重训练与特征迭代**，不参与 fail-close 判定。
+
+这样分工的理由：门禁是**准入闸**，必须严进严出、只看可验证的当前指标；
+趋势是**运维雷达**，用于提前几周发现退化。把趋势塞进门禁会让放行条件变得
+不可解释（「斜率」不是风险指标，而「当前 IC」是）。
+
+### 15.6 配置
+
+```yaml
+ic_trend:
+  window: 250            # 每个锚点的 IC 观察窗（样本数）
+  step: 40               # 锚点之间的步长（样本数）
+  min_anchors: 5         # 判定趋势所需的最少锚点数（不足则 unknown，不臆测）
+  min_obs: 50            # 单锚点最少有效样本
+  min_decay: 0.001       # 显著衰减判定：每步 |IC| 下滑超过该值才算 decaying
+  neutral_band: 0.0      # 命中率观望带（与门禁口径保持一致）
+  report_dir: "reports"  # 趋势报告输出目录（ic_trend.json）
+  near_breach_steps: 3   # 「预计 N 步内跌破门禁线」告警阈值
+```
+
+### 15.7 测试
+
+```bash
+python -m pytest tests/test_roadmap_q5.py -q   # 33 passed
+```
+
+新增 `tests/test_roadmap_q5.py`（33 项）：斜率工具、样本不足/未到期样本沉默、
+锚点不足保留 IC 快照但不给斜率、衰减/改善/噪声三分支、`steps_to_breach`
+三种语义（0 / 正数 / None）、最近锚点 IC 与直接 `spearman_ic` 可复算、
+`evaluate_aligned` 不跨折错位、`min_ic` 取自门禁配置、汇总与契约可序列化
+（无 NaN/Infinity）、配置段与取值合理性、CLI 命令与无数据时不落假报告、
+监控报表三种分支（正常 / 衰减告警 / 报告缺失）、日报与周报章节、
+API 两种状态码分支。
+
+### 15.8 顺带修复的两个遗留卫生问题
+
+这两个是上一轮如实标注、**本轮才处理**的既有问题（与 Q5 功能无关）：
+
+1. `tests/test_predictor_utils.py` 有 2 例依赖 `models/` 下的占位 pickle，
+   而该目录被 `.gitignore` 忽略、从未入库 → **干净克隆必然失败**。
+   改为用例内调 `scripts.create_timesfm_placeholders.create_placeholders(tmp_path)`
+   生成到临时目录（同时把该脚本的生成逻辑抽成可复用函数）。
+2. `schedule/daily_run.ps1` 调用了**未定义**的 `Write-LogEntry`（PowerShell 路径下
+   「按排期计划自动开发」必抛 `CommandNotFoundException`，日志文件从不落盘）。
+   已补上函数定义 —— 与 `run_daily.py` 的日志契约（`run_<date>.json`）保持一致。
+
+## 十六、技术栈
 
 Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn · ONNX / onnxruntime · Wind MCP · 可选 TimesFM(PyTorch)
 
 ---
 
-## 十六、免责声明
+## 十七、免责声明
 
 > **本项目仅供学习、交流、研究使用，不构成任何投资建议。**
 
@@ -973,7 +1099,7 @@ Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn 
 
 ---
 
-## 十七、许可证与版权
+## 十八、许可证与版权
 
 > **著作权归作者所有，禁止商用。**
 

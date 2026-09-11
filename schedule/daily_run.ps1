@@ -28,6 +28,19 @@ $logEntry = @{
   blockers = @()
 }
 
+function Write-LogEntry {
+    param($logEntry)
+    # 上一版漏定义该函数：PowerShell 路径下走到这里必抛 CommandNotFoundException，
+    # 结果是 plan.json / run_<date>.json 都不落盘（与 run_daily.py 的日志契约一致）。
+    try {
+        if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+        $logEntry | ConvertTo-Json -Depth 6 | Set-Content -Path $logFile -Encoding UTF8
+    }
+    catch {
+        Write-Host "[daily] 日志写入失败：$_"
+    }
+}
+
 function Try-RunVectorbtSmokeTest {
     param($proj, $logEntry)
     $vbtDir = Join-Path $proj "libs" "vectorbt"
@@ -56,6 +69,23 @@ function Try-RunTsaiSmokeTest {
     $hasReadme = (Test-Path (Join-Path $tsaiDir "README.md"))
     $hasNotebooks = (Test-Path (Join-Path $tsaiDir "notebooks"))
     return ($hasReadme -or $hasNotebooks)
+}
+
+function Try-RunFinRLSmokeTest {
+    param($proj, $logEntry)
+    # 与 Try-RunVectorbtSmokeTest / Try-RunTsaiSmokeTest 同构；
+    # 上一版 T5.1 分支调用了未定义的本函数，PowerShell 路径同样会中断。
+    $dir = Join-Path $proj "libs" "FinRL"
+    if (-not (Test-Path $dir)) {
+        try {
+            git clone --depth 1 https://github.com/AI4Finance-Foundation/FinRL.git $dir 2>&1 | Out-Null
+        } catch {
+            return $false
+        }
+    }
+    $hasReadme = (Test-Path (Join-Path $dir "README.md"))
+    $hasExamples = (Test-Path (Join-Path $dir "examples"))
+    return ($hasReadme -or $hasExamples)
 }
 
 try {

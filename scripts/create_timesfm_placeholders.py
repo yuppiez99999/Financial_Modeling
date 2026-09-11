@@ -32,23 +32,29 @@ HORIZONS = {
 }
 
 
-def main() -> None:
-    models_dir = PROJECT_ROOT / "models"
+def create_placeholders(models_dir: Path) -> list:
+    """在指定目录生成占位模型，返回落盘路径列表。
+
+    抽成函数是为了让测试可生成到临时目录 —— 该脚本产物被 .gitignore 忽略，
+    因此**不能假设** `models/` 下一定存在这些文件。
+    """
+    models_dir = Path(models_dir)
     models_dir.mkdir(parents=True, exist_ok=True)
+    written = []
 
     for name, days in HORIZONS.items():
         path = models_dir / f"timesfm_{name}_{days}d.pkl"
-        data = {"model": DummyModel(), "scaler": DummyScaler()}
-        joblib.dump(data, path)
-        print(f"written {path}")
+        joblib.dump({"model": DummyModel(), "scaler": DummyScaler()}, path)
+        written.append(path)
 
     # 为 ensemble 场景同时准备 lightgbm 占位（可选）
     for name, days in HORIZONS.items():
         path = models_dir / f"lightgbm_{name}_{days}d.pkl"
-        data = {"model": DummyModel(), "scaler": DummyScaler()}
-        joblib.dump(data, path)
+        joblib.dump({"model": DummyModel(), "scaler": DummyScaler()}, path)
+        written.append(path)
+    return written
+
+
+def main() -> None:
+    for path in create_placeholders(PROJECT_ROOT / "models"):
         print(f"written {path}")
-
-
-if __name__ == "__main__":
-    main()

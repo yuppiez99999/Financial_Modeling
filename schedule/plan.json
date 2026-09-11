@@ -329,6 +329,59 @@
       "manual_checkpoint": [
         "T7.3"
       ]
+    },
+    {
+            "id": "Q5",
+      "name": "Q5 信号衰减监控与定期报告",
+      "status": "completed",
+      "started_at": "2026-09-10T14:30:00+00:00",
+      "completed_at": "2026-09-10T14:30:00+00:00",
+      "tasks": [
+        {
+          "id": "T8.1",
+          "name": "Q5 路线目标拆解与验收口径",
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-10T14:30:00+00:00"
+        },
+        {
+          "id": "T8.2",
+          "name": "IC 时序 / 斜率 / 预计跌破步数计算",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-10T14:30:00+00:00"
+        },
+        {
+          "id": "T8.3",
+          "name": "日报接入信号衰减章节",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-10T14:30:00+00:00"
+        },
+        {
+          "id": "T8.4",
+          "name": "周报接入门禁与衰减章节",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-10T14:30:00+00:00"
+        },
+        {
+          "id": "T8.5",
+          "name": "趋势监控测试与文档",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-10T14:30:00+00:00"
+        }
+      ],
+      "auto_acceptable": [
+        "T8.2",
+        "T8.3",
+        "T8.4",
+        "T8.5"
+      ],
+      "manual_checkpoint": [
+        "T8.1"
+      ]
     }
   ],
   "current_stage_index": 6,
