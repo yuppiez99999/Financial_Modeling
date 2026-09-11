@@ -392,3 +392,16 @@ strategy_gate:
   min_audit_verified: 10    # 审计交叉验证所需最少已验证样本
   min_audit_hit_rate: 0.5   # 审计命中率下限
   report_dir: "reports"     # 判定结果输出目录（strategy_gate.json）
+
+# IC 趋势 / 信号衰减监控（src/monitor/ic_trend.py，Q5）
+# 门禁只看「此刻 IC 是否达标」；本段决定「IC 在变好还是变坏」的判定口径
+ic_trend:
+  window: 250          # 每个锚点的 IC 观察窗（样本数）
+  step: 40             # 锚点之间的步长（样本数）
+  min_anchors: 5       # 判定趋势所需的最少锚点数（不足则 unknown，不臆测）
+  min_obs: 50          # 单锚点最少有效样本（低于则不参与趋势）
+  min_decay: 0.001     # 显著衰减判定：每步 |IC| 下滑超过该值才算 decaying
+  neutral_band: 0.0    # 命中率观望带（与门禁口径保持一致）
+  report_dir: "reports"  # 趋势报告输出目录（ic_trend.json）
+  # 监控/日报中「预计 N 步内跌破门禁线」告警的步数阈值
+  near_breach_steps: 3

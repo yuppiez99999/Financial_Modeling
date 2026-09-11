@@ -298,6 +298,32 @@ async def get_monitor_report():
         raise HTTPException(500, f"监控报表生成失败: {e}")
 
 
+# ==================== Q5 路线：信号衰减监控 ====================
+
+@app.get("/api/v1/monitor/ic-trend")
+async def get_ic_trend():
+    """IC 趋势 / 信号衰减状态（只读，不触发训练）。
+
+    读取 ``reports/ic_trend.json``（由 ``python main.py ic-trend`` 产出）；
+    文件缺失时如实返回 ``available=false`` + 生成提示，**不臆测趋势**。
+    """
+    report_dir = (_config or {}).get("ic_trend", {}).get("report_dir", "reports")
+    path = Path(report_dir) / "ic_trend.json"
+    if not path.exists():
+        return {
+            "available": False,
+            "reason": "no_ic_trend_report",
+            "hint": "先运行 `python main.py ic-trend` 生成 reports/ic_trend.json",
+        }
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"IC 趋势报告读取失败: {e}")
+    payload["available"] = True
+    payload["source"] = str(path)
+    return payload
+
+
 # ==================== Q2 路线：门禁与多因子 ====================
 
 @app.get("/api/v1/strategy/gate")
