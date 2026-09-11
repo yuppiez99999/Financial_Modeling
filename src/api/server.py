@@ -20,6 +20,8 @@ from typing import Any, Dict, List
 
 import yaml
 
+from src.factors import FACTOR_FAMILIES
+
 try:  # FastAPI 为可选依赖：未安装时本模块仍可导入，仅无法启动服务
     from fastapi import FastAPI, HTTPException, Query
     from fastapi.middleware.cors import CORSMiddleware
@@ -296,6 +298,159 @@ async def get_monitor_report():
         raise HTTPException(500, f"监控报表生成失败: {e}")
 
 
+# ==================== Q5 路线：信号衰减监控 ====================
+
+@app.get("/api/v1/monitor/ic-trend")
+async def get_ic_trend():
+    """IC 趋势 / 信号衰减状态（只读，不触发训练）。
+
+    读取 ``reports/ic_trend.json``（由 ``python main.py ic-trend`` 产出）；
+    文件缺失时如实返回 ``available=false`` + 生成提示，**不臆测趋势**。
+    """
+    report_dir = (_config or {}).get("ic_trend", {}).get("report_dir", "reports")
+    path = Path(report_dir) / "ic_trend.json"
+    if not path.exists():
+        return {
+            "available": False,
+            "reason": "no_ic_trend_report",
+            "hint": "先运行 `python main.py ic-trend` 生成 reports/ic_trend.json",
+        }
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"IC 趋势报告读取失败: {e}")
+    payload["available"] = True
+    payload["source"] = str(path)
+    return payload
+
+
+# ==================== S9：按资产类别分池 ====================
+
+@app.get("/api/v1/strategy/pool-gate")
+async def get_pool_gate():
+    """分池门禁状态（只读，不触发训练）。
+
+    读取 ``reports/stratified_gate.json``（由 ``python main.py ic-pool`` 产出）；
+    文件缺失时如实返回 ``available=false`` + 生成提示，**不臆测分池结论**。
+    """
+    from src.eval.stratified import StratifiedEvaluator
+
+    try:
+        return StratifiedEvaluator(_config or {}).load()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"分池门禁报告读取失败: {e}")
+
+
+@app.get("/api/v1/strategy/pool-train")
+async def get_pool_train():
+    """分池训练产物状态（只读）。
+
+    读取 ``models/pools/pool_manifest.json``（由 ``python main.py pool-train`` 产出）。
+    """
+    from src.train.stratified_train import StratifiedTrainer, summarize_manifest
+
+    try:
+        manifest = StratifiedTrainer(_config or {}).load_manifest()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"分池模型清单读取失败: {e}")
+    if manifest.get("available"):
+        manifest["rows"] = summarize_manifest(manifest)
+    return manifest
+
+
+@app.get("/api/v1/strategy/horizon-scan")
+async def get_horizon_scan():
+    """多周期口径探索扫描（只读，不触发训练）。
+
+    读取 ``reports/horizon_scan.json``（由 ``python main.py horizon-scan`` 产出）；
+    文件缺失时如实返回 ``available=false`` + 生成提示，**不臆测周期结论**。
+
+    ⚠️ 结果只作口径敏感性证据（``affects_gate=false``），
+    不改变现行 ``strategy_gate`` 放行结论。
+    """
+    from src.eval.horizon_scan import HorizonScanner, compare_with_current
+
+    try:
+        scanner = HorizonScanner(_config or {})
+        payload = scanner.load()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"多周期扫描报告读取失败: {e}")
+    if payload.get("available"):
+        payload["rows"] = scanner.summarize_rows(payload)
+        payload["vs_current"] = compare_with_current(payload)
+    return payload
+
+
+@app.get("/api/v1/strategy/horizon-decision")
+async def get_horizon_decision():
+    """预测周期切换决策单（只读，不触发训练/不重跑扫描）。
+
+    读取 ``reports/horizon_decision.json``（由 ``python main.py horizon-decision`` 产出）；
+    文件缺失时如实返回 ``available=false`` + 生成提示，**不臆测结论**。
+
+    返回内容包括：多重比较校正后的逐候选显著性、verdict（approve/reject/defer）、
+    status（pending/confirmed/stale）与阻塞项。
+
+    ⚠️ 决策单不改变门禁口径（``affects_gate`` 恒为 ``False``），
+    也不代表可直接切换 —— ``approve`` 仍需人工修改配置并重做泄漏/偏差审查。
+    """
+    try:
+        from src.eval import horizon_decision as hd
+
+        record = hd.load(_config or {})
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"周期切换决策单读取失败: {e}")
+    if not record:
+        return {
+            "available": False,
+            "reason": "no_horizon_decision",
+            "hint": "先运行 `python main.py horizon-scan` 再跑 `python main.py horizon-decision`",
+            "affects_gate": False,
+        }
+    record["available"] = True
+    return record
+
+
+@app.get("/api/v1/eval/feature-experiment")
+async def get_feature_experiment():
+    """特征扩充正交对照实验结果（只读，不重跑实验）。
+
+    读取 ``reports/feature_experiment.json``（由 ``python main.py feature-experiment`` 产出）；
+    文件缺失时如实返回 ``available=false`` + 生成提示，**不臆测结论**。
+
+    ⚠️ 实验结论**不改变生产特征集**（``affects_features`` 恒为 ``False``），
+    也不是放行依据：``adopt`` 仍需人工确认并重跑全量门禁。
+    """
+    try:
+        from src.eval.feature_experiment import load
+
+        payload = load(_config or {})
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"特征扩充实验报告读取失败: {e}")
+    if not payload:
+        return {
+            "available": False,
+            "reason": "no_feature_experiment",
+            "hint": "先运行 `python main.py feature-experiment`",
+            "affects_features": False,
+        }
+    payload["available"] = True
+    return payload
+
+
+@app.get("/api/v1/strategy/asset-class/{symbol}")
+async def get_asset_class(symbol: str):
+    """单标的资产类别识别（只读、零网络）。
+
+    用于解释「为什么这只标的被分到 ETF 分池」——分池口径必须可解释。
+    """
+    from src.eval.asset_class import classify, label
+
+    res = classify(symbol)
+    res["label"] = label(res["asset_class"])
+    return res
+
+
 # ==================== Q2 路线：门禁与多因子 ====================
 
 @app.get("/api/v1/strategy/gate")
@@ -337,6 +492,38 @@ async def get_factors(symbol: str):
         return {"symbol": symbol, "weighter": combiner.weighter, "horizons": horizons_out}
     except Exception as e:
         raise HTTPException(500, f"多因子组合失败: {e}")
+
+
+@app.get("/api/v1/factor-model")
+async def get_factor_model():
+    """可训练多因子模型信息：因子/族权重与 IC 排名（Q2 多因子模型）。
+
+    与 `/api/v1/factors/{symbol}`（推理期特征因子组合）互补：本端点读取
+    `python main.py train --model-type factor_model` 训练出的持久化因子模型。
+    """
+    _init_engine()
+    try:
+        save_dir = Path((_config or {}).get("training", {}).get("save_dir", "models"))
+        path = save_dir / "factor_model_short_term_5d.pkl"
+        if not path.exists():
+            raise HTTPException(
+                404, "多因子模型未训练，请先执行 python main.py train --model-type factor_model"
+            )
+        from src.factors.factor_model import FactorModel
+
+        model = FactorModel(_config or {})
+        model.load(str(path))
+        explain = model.explain(10)
+        explain.update({
+            "available": True,
+            "model_path": str(path),
+            "families": dict(FACTOR_FAMILIES),
+        })
+        return explain
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"多因子模型查询失败: {e}")
 
 
 @app.get("/api/v1/config/markets")
@@ -432,6 +619,158 @@ def build_portfolio_summary(engine: Any, config: dict, symbol_list: list[str]) -
             "error_symbols": error_symbols,
         },
     }
+
+
+# ==================== Q3 实时流 与 一致性接口 ====================
+
+@app.get("/api/v1/stream/status")
+async def get_stream_status():
+    """实时流状态（只读）：今日快照覆盖 / 新鲜度 / 是否交易时段。"""
+    _init_engine()
+    try:
+        from src.monitor.health_report import ModelMonitor
+
+        return ModelMonitor(_config)._collect_streaming()
+    except Exception as e:
+        raise HTTPException(500, f"实时流状态获取失败: {e}")
+
+
+@app.get("/api/v1/stream/{symbol}")
+async def get_stream_signal(symbol: str):
+    """单标的盘中信号更新（T-1 baseline vs 盘中快照 → intact/stale）。
+
+    需要 `streaming.enabled: true`；未启用或快照不可用时返回 `available: false`，
+    不做任何估算（观测路径 fail-open，不阻断调用方主流程）。
+    """
+    _init_engine()
+    try:
+        from src.inference.intraday import IntradayPredictor
+        from src.data.collector import DataCollector
+
+        predictor = IntradayPredictor(_config)
+        if not predictor.enabled:
+            return {"symbol": symbol, "available": False,
+                    "reason": "实时流未启用（configs: streaming.enabled=false）"}
+        daily_df = DataCollector(_config).load_cached(symbol)
+        snapshot = predictor.quote_client.fetch_quotes([symbol]).get(symbol)
+        return predictor.build(symbol, daily_df, snapshot).to_dict()
+    except Exception as e:
+        raise HTTPException(500, f"盘中信号生成失败: {e}")
+
+
+@app.get("/api/v1/consistency/{symbol}")
+async def get_consistency(symbol: str):
+    """信号一致性校验：跨周期 / 跨模型 / 跨口径是否自相矛盾（观测项，不参与门禁）。"""
+    _init_engine()
+    if not _engine or not _engine.models:
+        raise HTTPException(503, "模型未加载，请先训练模型")
+    try:
+        from src.monitor.signal_consistency import SignalConsistencyChecker
+
+        predicted = _engine.predict_all_horizons(symbol)
+        probs = [
+            float(p.get("probability", 0.5))
+            for p in (predicted.get("predictions") or {}).values()
+            if isinstance(p, dict) and "error" not in p
+        ]
+        components = predicted.get("components") or {}
+        factor_score = None
+        for key, value in components.items():
+            if str(key).startswith("factor"):
+                factor_score = float(value)
+                break
+        return SignalConsistencyChecker(_config).check(
+            symbol,
+            predictions=predicted,
+            components=components,
+            model_probability=(sum(probs) / len(probs)) if probs else None,
+            factor_score=factor_score,
+        ).to_dict()
+    except Exception as e:
+        raise HTTPException(500, f"一致性校验失败: {e}")
+
+
+# ==================== Q4 智能风控建议接口 ====================
+
+from src.trading.signal import SignalEngine  # noqa: E402  (Q4 风控建议用信号聚合)
+
+
+@app.get("/api/v1/risk/advice/{symbol}")
+async def get_risk_advice(symbol: str):
+    """单标的智能风控建议（止损/止盈）。
+
+    契约要点：
+      - **建议，不是下单指令**（`not_trade_instruction: true`）；
+      - 门禁未放行（`readonly`/`unknown`）时返回 `status=withheld` 且价位为 `null`，
+        fail-close —— 未过门禁的信号不配"可直接使用的止损价"；
+      - 数据不足返回 `status=unavailable` 与原因，绝不用默认比例兜底。
+    """
+    _init_engine()
+    if not _engine or not _engine.models:
+        raise HTTPException(503, "模型未加载，请先训练模型")
+    try:
+        from src.data.collector import DataCollector
+        from src.trading.risk import RiskManager
+        from src.trading.risk_advice import RiskAdvisor
+
+        payload = _engine.predict_all_horizons(symbol)
+        advisor = RiskAdvisor(_config)
+        df = DataCollector(_config).load_cached(symbol)
+        plan = advisor.advise_payload(symbol, payload, df=df)
+        if plan.action != "HOLD" and plan.available:
+            sig = SignalEngine(_config).build_signal(symbol, payload)
+            price = next((b.get("latest_close") for b in (payload.get("predictions") or {}).values()
+                          if isinstance(b, dict) and b.get("latest_close")), None)
+            budget = RiskManager(_config).budget(sig, price=price)
+            plan.position_pct = budget.position_pct
+            plan.position_amount = budget.position_amount
+            plan.risk_amount = budget.risk_per_trade
+            plan.suggested_qty = budget.suggested_qty
+        return plan.to_dict()
+    except Exception as e:
+        raise HTTPException(500, f"风控建议生成失败: {e}")
+
+
+@app.get("/api/v1/risk/advice")
+async def get_risk_advice_batch(
+    symbols: str = Query(None, description="逗号分隔的标的列表，缺省用 config 启用的 markets 标的"),
+):
+    """标的池批量风控建议（只读；门禁未放行时统一 withheld）。"""
+    _init_engine()
+    if not _engine or not _engine.models:
+        raise HTTPException(503, "模型未加载，请先训练模型")
+    if symbols:
+        symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    else:
+        symbol_list = []
+        for name, cfg in (_config.get("data", {}).get("markets", {}) or {}).items():
+            if cfg.get("enabled"):
+                symbol_list.extend(cfg.get("symbols", []))
+    symbol_list = list(dict.fromkeys(symbol_list))
+    try:
+        from src.data.collector import DataCollector
+        from src.trading.risk_advice import RiskAdvisor
+
+        advisor = RiskAdvisor(_config)
+        collector = DataCollector(_config)
+        items = []
+        for sym in symbol_list:
+            try:
+                payload = _engine.predict_all_horizons(sym)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[risk/advice] {sym} 预测失败: {e}")
+                payload = {}
+            items.append({
+                "symbol": sym,
+                "signal": SignalEngine(_config).build_signal(sym, payload),
+                "df": collector.load_cached(sym),
+                "price": next((b.get("latest_close")
+                               for b in (payload.get("predictions") or {}).values()
+                               if isinstance(b, dict) and b.get("latest_close")), None),
+            })
+        return advisor.advise_portfolio(items)
+    except Exception as e:
+        raise HTTPException(500, f"风控建议批量生成失败: {e}")
 
 
 @app.get("/api/v1/portfolio/summary")

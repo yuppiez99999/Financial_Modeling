@@ -67,7 +67,9 @@ def run_day(plan_path, log_dir):
         if idx >= len(stages):
             entry["result"] = "done_all_stages"
             entry["actions"].append("所有阶段已完成")
-            log()
+            plan["result"] = entry["result"]
+            plan["last_run_date"] = today_iso()
+            plan["next_run_date"] = None
             save_plan(plan_path, plan)
             return
 
@@ -82,7 +84,9 @@ def run_day(plan_path, log_dir):
             if next_idx is None:
                 entry["result"] = "done_all_stages"
                 entry["actions"].append("所有阶段已完成")
-                log()
+                plan["result"] = entry["result"]
+                plan["last_run_date"] = today_iso()
+                plan["next_run_date"] = None
                 save_plan(plan_path, plan)
                 return
             plan["current_stage_index"] = next_idx
@@ -163,7 +167,27 @@ def run_day(plan_path, log_dir):
 
         plan["last_run_date"] = today_iso()
         plan["next_run_date"] = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+        plan["result"] = entry["result"]
         plan["blockers"] = list(dict.fromkeys(plan.get("blockers", [])))
+
+        save_plan(plan_path, plan)
+    except Exception as e:  # noqa: BLE001 — 计划推进失败不得中断每日任务
+        entry["result"] = "error"
+        entry["actions"].append(f"异常：{e}")
+        entry["blockers"].append(f"runtime_error: {e}")
+        plan.setdefault("blockers", []).append(f"runtime_error: {e}")
+        try:
+            save_plan(plan_path, plan)
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        try:
+            log_dir_path = Path(log_dir)
+            log_dir_path.mkdir(parents=True, exist_ok=True)
+            with open(log_file, "w", encoding="utf-8") as f:
+                json.dump(entry, f, indent=2, ensure_ascii=False)
+        except Exception as e:  # noqa: BLE001
+            print(f"[daily] 日志写入失败：{e}")
 
 if __name__ == "__main__":
     root = Path(__file__).resolve().parent
@@ -171,3 +195,4 @@ if __name__ == "__main__":
     log_dir = root / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     run_day(str(plan_path), str(log_dir))
+

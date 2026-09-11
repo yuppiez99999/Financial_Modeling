@@ -3,3 +3,8 @@ akshare>=1.12.0
 pandas>=2.0.0
 numpy>=1.24.0
 pyarrow>=12.0.0
+
+# 可选依赖（缺省不安装，缺失时对应命令明确报错不静默）
+# lightgbm>=4.0.0      # 训练/评估/tune/confidence（sklearn 降级可用）
+# optuna>=3.0.0        # S15/G5 超参搜索（python main.py tune）
+# neuralforecast>=1.0.0 # S15/G5 概率区间（接入时解注释，见 docs/THIRD_PARTY.md）

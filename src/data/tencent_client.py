@@ -129,10 +129,34 @@ class TencentClient:
 
     @staticmethod
     def _parse_rows(rows: List[list]) -> pd.DataFrame:
-        """腾讯原始行 [date, open, close, high, low, volume] → 标准 OHLCV 列序。"""
+        """腾讯原始行 [date, open, close, high, low, volume] → 标准 OHLCV 列序。
+
+        **必须剔除非正价格行（真实踩过的坑，2026-09-10）**：
+        腾讯 `qfq`（前复权）接口在**分页向历史翻页时**，越早的页复权基准越不同，
+        返回的"前复权价"会退化甚至变成负数（如中国神华 2013 年段出现 close=-0.32 的 912 行）。
+        这些行本身无经济含义，但会：
+          1. 让 `pct_change()` 除零产生 `-inf`（`ret_1`/`roc_*`/`pvt` 特征污染）；
+          2. 让 LightGBM 直接抛 `Input X contains infinity`，**整只标的预测全挂**；
+          3. 在训练集里混入分布外的极端值，静默拉低模型质量。
+        因此这里只保留 `close > 0` 的行；同时把 `high < low` 之类的自相矛盾行一并剔除。
+        剔除后行数会少于请求量，属预期行为（宁可少数据，不可脏数据）。
+        """
         df = pd.DataFrame(rows, columns=["date", "open", "close", "high", "low", "volume"])
         for col in ("open", "close", "high", "low", "volume"):
             df[col] = pd.to_numeric(df[col], errors="coerce")
-        df = df.dropna().reset_index(drop=True)
+        df = df.dropna().reset_index(drop=True).copy()
         df["date"] = df["date"].astype(str)
+
+        before = len(df)
+        # 非正价格：前复权退化值，无经济含义
+        invalid = (df["close"] <= 0) | (df["high"] <= 0) | (df["low"] <= 0)
+        # 自相矛盾的 K 线：最高价低于最低价
+        invalid |= df["high"] < df["low"]
+        df = df.loc[~invalid].reset_index(drop=True)
+        dropped = before - len(df)
+        if dropped:
+            logger.warning(
+                f"[tencent] 剔除 {dropped}/{before} 行非法行情（非正价格或 high<low，"
+                "前复权分页退化所致），保留 " + str(len(df)) + " 行"
+            )
         return df[["date", "open", "high", "low", "close", "volume"]]

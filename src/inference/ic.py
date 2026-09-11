@@ -81,6 +81,61 @@ def hit_rate(scores: Sequence[float], returns: Sequence[float], neutral_band: fl
     return hits / total if total else 0.0
 
 
+def derive_neutral_band(scores: Sequence[float], returns: Sequence[float],
+                        min_keep_ratio: float = 0.5,
+                        grid: Optional[Sequence[float]] = None) -> float:
+    """**仅用训练折**推导中性带：低于该绝对分的信号视为"无观点"，不进命中率分母。
+
+    动机（S7 门禁解锁攻坚）：
+      既有门禁把 0.5 概率硬编码为决策边界 —— 概率恰好≈0.5 的样本被强行算作
+      一个方向，噪声直接稀释命中率。但用一个**在测试折上挑出来的**阈值去抬命中率
+      是典型的数据泄漏，指标会虚高且不可复现。
+
+      本函数只在训练折上按网格搜索"保留比例不低于 ``min_keep_ratio`` 时命中率最高"
+      的中性带，返回的是**训练折口径**的常数，由调用方原样施加到测试折。
+      训练折里学到的常数用在测试折上不构成前视。
+
+    Args:
+        scores        : 训练折信号分（已去中性，0 = 无观点）；
+        returns       : 训练折未来收益（已到期）；
+        min_keep_ratio: 至少保留多少比例的样本，防止"只留 1 个样本 → 命中率 100%"的
+                        退化解。默认 0.5，即最多丢弃一半样本；
+        grid          : 候选中性带网格；缺省按样本 |score| 分位数生成。
+
+    Returns:
+        训练折最优中性带（float）。样本不足 / 无有效解时返回 0.0（= 不退化为门槛，
+        保持与既有门禁口径一致，绝不用训练折硬凑出一个"好看"的值）。
+    """
+    pairs = [
+        (abs(float(s)), (float(s) > 0) == (float(r) > 0))
+        for s, r in zip(scores, returns)
+        if r is not None and s is not None and not _isnan(s) and not _isnan(r) and float(r) != 0.0
+    ]
+    if len(pairs) < 10:
+        return 0.0
+
+    min_keep = max(int(len(pairs) * float(min_keep_ratio)), 1)
+    if grid is None:
+        vals = sorted({p[0] for p in pairs})
+        # 候选 = 若干分位点（含 0，保证"不设门槛"也是候选之一）
+        picks = {0.0}
+        for q in (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7):
+            idx = min(int(len(vals) * q), len(vals) - 1)
+            picks.add(vals[idx])
+        grid = sorted(picks)
+
+    best_band, best_rate = 0.0, -1.0
+    for band in grid:
+        kept = [ok for a, ok in pairs if a > band]
+        if len(kept) < min_keep:
+            continue
+        rate = sum(kept) / len(kept)
+        # 命中率并列时取更小的带：更小 = 更少丢弃样本 = 更保守
+        if rate > best_rate + 1e-12:
+            best_band, best_rate = float(band), rate
+    return best_band
+
+
 def forward_returns(closes: Sequence[float], horizon_days: int) -> List[Optional[float]]:
     """由收盘价序列计算未来 horizon_days 的收益率。
 
@@ -113,6 +168,10 @@ class ICResult:
     reason: str = ""
     passed: bool = False
     thresholds: Dict[str, float] = field(default_factory=dict)
+    # S7 门禁解锁：训练折推导的中性带；0.0 = 未启用（保持既有 0.5 边界口径）
+    neutral_band: float = 0.0
+    # 未施加中性带的原始命中率（硬编码 0.5 边界），保留用于对照，不参与门禁
+    hit_rate_raw: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -122,6 +181,8 @@ class ICResult:
             "ic": round(self.ic, 4),
             "icir": round(self.icir, 4),
             "hit_rate": round(self.hit_rate, 4),
+            "hit_rate_raw": round(self.hit_rate_raw, 4),
+            "neutral_band": round(self.neutral_band, 6),
             "windows": self.windows,
             "available": self.available,
             "passed": self.passed,
@@ -146,13 +207,18 @@ class ICCalculator:
 
     def evaluate(self, horizon: str, horizon_days: int,
                  scores: Sequence[float], returns: Sequence[Optional[float]],
-                 window_size: Optional[int] = None) -> ICResult:
+                 window_size: Optional[int] = None,
+                 neutral_band: float = 0.0) -> ICResult:
         """评估单周期。
 
         Args:
-            scores     : 与 returns 对齐的信号分数（概率或综合得分）
-            returns    : 未来收益（None = 未到期，自动跳过）
-            window_size: 滚动窗口大小；给定时额外计算 ICIR（各窗口 IC 的均值/标准差）
+            scores       : 与 returns 对齐的信号分数（概率或综合得分）
+            returns      : 未来收益（None = 未到期，自动跳过）
+            window_size  : 滚动窗口大小；给定时额外计算 ICIR（各窗口 IC 的均值/标准差）
+            neutral_band : 由**训练折**推导的中性带（见 ``derive_neutral_band``）。
+                           给定后 ``hit_rate`` 按该带统计（|score| <= band 视为观望），
+                           原始命中率存入 ``hit_rate_raw``。缺省 0.0 = 不启用，
+                           与既有门禁口径完全一致（向后兼容）。
         """
         pairs: List[Tuple[float, float]] = [
             (float(s), float(r))
@@ -168,6 +234,7 @@ class ICCalculator:
                 "min_ic": self.min_ic,
                 "min_hit_rate": self.min_hit_rate,
                 "min_windows": self.min_windows,
+                "neutral_band": float(neutral_band or 0.0),
             },
         )
         if len(pairs) < self.min_samples:
@@ -179,7 +246,10 @@ class ICCalculator:
         rr = [p[1] for p in pairs]
         res.available = True
         res.ic = spearman_ic(ss, rr)
-        res.hit_rate = hit_rate(ss, rr)
+        # 原始命中率：硬编码 0.5 边界口径，始终计算以便对照与追溯
+        res.hit_rate_raw = hit_rate(ss, rr)
+        res.neutral_band = float(neutral_band or 0.0)
+        res.hit_rate = hit_rate(ss, rr, neutral_band=res.neutral_band)
 
         if window_size and window_size >= self.min_windows and len(pairs) >= window_size * self.min_windows:
             ics = [
@@ -228,6 +298,7 @@ class ICCalculator:
                 payload.get("scores", []),
                 payload.get("returns", []),
                 window_size=payload.get("window_size"),
+                neutral_band=payload.get("neutral_band", 0.0) or 0.0,
             ).to_dict()
         return {
             "horizons": results,

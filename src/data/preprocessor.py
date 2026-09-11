@@ -28,6 +28,21 @@ class FeatureEngineer:
         self.macro_enabled = bool(feat_cfg.get("macro_enabled", False))
         self._macro_client = None
 
+        # 多因子特征开关（config.model.factors.enabled）。
+        # 开启后追加 factor_* 列：训练侧供 FactorModel / LightGBM 消费，
+        # 推理侧供 FactorPredictor 对齐。关闭时行为与 Q1 完全一致（零回归）。
+        model_cfg = (config.get("model", {}) if config else {}) or {}
+        self.factors_enabled = bool((model_cfg.get("factors", {}) or {}).get("enabled", False))
+        self._factor_library = None
+
+    def _get_factor_library(self):
+        """懒加载因子库（仅在 factors_enabled 时实例化）。"""
+        if self._factor_library is None:
+            from src.factors import FactorLibrary
+
+            self._factor_library = FactorLibrary(self.config)
+        return self._factor_library
+
     def _get_macro_client(self):
         """懒加载宏观指标客户端（仅在 macro_enabled 时实例化）。"""
         if self._macro_client is None:
@@ -86,12 +101,32 @@ class FeatureEngineer:
     def transform(self, df: pd.DataFrame, horizon_days: int = 5) -> pd.DataFrame:
         """输入原始行情 DataFrame，输出带特征的 DataFrame。"""
         out = self._compute_indicators(df)
+        # 扩展指标库（专业版 50+ 指标）：失败静默降级，不影响基础特征
+        if bool((self.config.get("features", {}) or {}).get("extended_indicators", False)):
+            try:
+                from src.data.indicators import TechnicalIndicators
+
+                out = TechnicalIndicators.compute_all(out)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[indicators] 扩展指标计算失败，跳过: {e}")
+        # 多因子特征（Q2）：统一的正向因子，供多因子模型与树模型共同消费
+        if self.factors_enabled:
+            try:
+                out = self._get_factor_library().compute(out)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[factors] 因子计算失败，跳过: {e}")
         # 宏观特征注入（按发布日期 asof 对齐，无前视）；失败时静默降级
         if self.macro_enabled:
             try:
                 out = self._get_macro_client().attach_features(out, date_col="date")
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"[macro] 宏观特征注入失败，跳过: {e}")
+        # 清洗非有限值（防未来函数之外的另一类"静默污染"）：
+        # 上游数据里任何 0 价格 / 前复权退化值都会让 pct_change 产生 ±inf，进而在
+        # 特征集里留下 inf，LightGBM 遇到 inf 直接抛
+        # `Input X contains infinity`，**整只标的预测全挂**（2026-09-10 实测）。
+        # 这里统一把 ±inf 视为缺失，交给后续 ffill/fillna 处理，保证特征矩阵有限。
+        out = out.replace([np.inf, -np.inf], np.nan)
         # 填充 NaN，避免推理行丢失
         out = out.ffill().fillna(0)
         return out

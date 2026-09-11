@@ -1,10 +1,11 @@
 """模型监控报表生成器（ModelMonitor / HealthReport）。
 
-汇总四类运行态信息为一份报告：
+汇总五类运行态信息为一份报告：
   1. **预测审计**：命中率（整体 / 分周期 / 近 30 天）、待验证数、漂移信号；
   2. **自适应学习**：各周期近期准确率、漂移检测状态；
-  3. **数据源健康**：宏观指标可用性、行情缓存覆盖；
-  4. **模型产物**：已训练模型文件与更新时间。
+  3. **数据源健康**：宏观指标可用性、行情缓存覆盖、实时流状态（Q3）；
+  4. **模型产物**：已训练模型文件与更新时间；
+  5. **实时流（Q3）**：盘中快照覆盖、快照新鲜度、盘中观点失真预警。
 
 设计约束：
 - **纯读操作**：不写审计记录、不触发重训练、不触网（宏观为读缓存态）；
@@ -203,16 +204,374 @@ class ModelMonitor:
                 "cached_symbols": len(files),
                 "latest_update": latest,
             }
+            # 持仓池覆盖度（Q2-4）：配置里的启用标的有多少已落地行情缓存
+            markets = ((self.config.get("data", {}) or {}).get("markets", {}) or {})
+            wanted: List[str] = []
+            for mcfg in markets.values():
+                if (mcfg or {}).get("enabled"):
+                    wanted.extend((mcfg or {}).get("symbols", []) or [])
+            cached = {f.stem for f in files}
+            missing = [s for s in wanted if s not in cached]
+            result["holdings_pool"] = {
+                "configured": len(wanted),
+                "cached": len([s for s in wanted if s in cached]),
+                "coverage": round(
+                    len([s for s in wanted if s in cached]) / len(wanted), 4
+                ) if wanted else 0.0,
+                "missing": missing[:20],
+                "missing_count": len(missing),
+            }
+            result["quality_gate"] = {
+                "enabled": bool((self.config.get("data", {}) or {}).get("quality_gate", False)),
+            }
         except Exception as e:  # noqa: BLE001
             result["market_cache"] = {"cached_symbols": 0, "error": str(e)}
 
         return result
+
+    def _collect_streaming(self) -> Dict[str, Any]:
+        """实时数据流状态（Q3，只读）：盘中快照覆盖 / 新鲜度 / 观点失真预警。
+
+        只读本地快照文件，不触网、不主动拉行情 —— 监控报表必须随时可跑且零副作用。
+        """
+        cfg = (self.config.get("streaming", {}) or {})
+        if not bool(cfg.get("enabled", False)):
+            return {"available": False, "reason": "streaming_disabled",
+                    "hint": "在配置中开启 streaming.enabled 后启用分钟级更新"}
+
+        try:
+            from src.data.streaming import IntradayStore, MarketClock
+
+            store = IntradayStore(self.config)
+            today = datetime.now().strftime("%Y-%m-%d")
+            snaps = store.load(day=today)
+            symbols = sorted({s.symbol for s in snaps})
+            last_ts = max((s.ts for s in snaps), default="")
+            stale_minutes = 0
+            if last_ts:
+                try:
+                    stale_minutes = int(
+                        (datetime.now() - datetime.fromisoformat(last_ts)).total_seconds() // 60
+                    )
+                except ValueError:
+                    stale_minutes = 0
+
+            files = sorted(store.dir.glob("snapshots_*.jsonl"))
+            return {
+                "available": bool(snaps),
+                "reason": "" if snaps else "no_snapshot_today",
+                "dir": str(store.dir),
+                "poll_seconds": int(cfg.get("poll_seconds", 60)),
+                "retention_days": store.retention_days,
+                "is_trading_hours": MarketClock.is_trading_hours(),
+                "symbols_today": len(symbols),
+                "snapshots_today": len(snaps),
+                "last_snapshot_at": last_ts,
+                "snapshot_age_minutes": stale_minutes,
+                "history_files": len(files),
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 实时流状态采集失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_risk_advice(self) -> Dict[str, Any]:
+        """智能风控建议状态（Q4，只读）：门禁是否放行 + 最近一次建议摘要。
+
+        只读 `reports/risk_advice.json`（由 `python main.py risk-advice --json` 落盘），
+        不触网、不跑模型 —— 监控报表必须随时可跑且零副作用。
+        """
+        path = Path((self.config.get("report", {}) or {}).get("output_dir", "reports")) / \
+            "risk_advice.json"
+        if not path.exists():
+            return {
+                "available": False,
+                "reason": "no_risk_advice_report",
+                "hint": "先运行 `python main.py risk-advice --all --json`（或指定标的）生成建议",
+            }
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            items = payload.get("items") or []
+            withheld = [i for i in items if i.get("status") == "withheld"]
+            return {
+                "available": True,
+                "source": str(path),
+                "gate_state": payload.get("gate_state", "unknown"),
+                "count": payload.get("count", len(items)),
+                "advised": payload.get("available", 0),
+                "withheld": payload.get("withheld", len(withheld)),
+                "unavailable": payload.get("unavailable", 0),
+                "avg_risk_reward": payload.get("avg_risk_reward"),
+                "not_trade_instruction": True,
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取风控建议失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_gate(self) -> Dict[str, Any]:
+        """信号准入闸门状态（只读）。
+
+        优先读最近一次评估报告（logs/eval_report.json）里的 gate 结果；
+        无报告时如实标注 unavailable，绝不用估算值冒充判定。
+        """
+        try:
+            gate_dir = Path(
+                (self.config.get("strategy_gate", {}) or {}).get("report_dir", "reports")
+            )
+            path = gate_dir / "strategy_gate.json"
+            if not path.exists():
+                return {
+                    "available": False,
+                    "reason": "no_gate_report",
+                    "hint": "先运行 `python main.py gate` 生成 reports/strategy_gate.json",
+                }
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            gate = dict(payload) if isinstance(payload, dict) else {}
+            gate.update({"available": True, "source": str(path)})
+            return gate
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取策略门禁状态失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_gate_diagnosis(self, gate: Dict[str, Any]) -> Dict[str, Any]:
+        """门禁阻塞诊断（S7，只读）：还差多少 / 哪条腿卡住。
+
+        仅当门禁存在且**未放行**时才诊断，且只读既有产物（IC 评估 + 门禁判定），
+        不重跑评估、不触网 —— 监控报表必须随时可跑且零副作用。
+        """
+        if not gate.get("available") or gate.get("passed"):
+            return {"available": False, "reason": "gate_not_blocked"}
+        try:
+            from src.inference.gate_diagnosis import diagnose
+
+            gate_dir = Path(
+                (self.config.get("strategy_gate", {}) or {}).get("report_dir", "reports")
+            )
+            ic_payload: Dict[str, Any] = {}
+            ic_path = gate_dir / "ic_report.json"
+            if ic_path.exists():
+                ic_payload = json.loads(ic_path.read_text(encoding="utf-8"))
+            out = diagnose(ic_payload, self.config.get("strategy_gate", {}), gate)
+            out["available"] = bool(out.get("total_count"))
+            return out
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 门禁诊断失败: {e}")
+
+    def _collect_ic_trend(self) -> Dict[str, Any]:
+        """IC 趋势 / 信号衰减状态（Q5，只读）。
+
+        只读 `reports/ic_trend.json`（由 `python main.py ic-trend` 落盘），
+        不重跑 walk-forward —— 监控报表必须随时可跑且零副作用。
+        """
+        report_dir = Path(
+            (self.config.get("ic_trend", {}) or {}).get("report_dir", "reports")
+        )
+        path = report_dir / "ic_trend.json"
+        if not path.exists():
+            return {
+                "available": False,
+                "reason": "no_ic_trend_report",
+                "hint": "先运行 `python main.py ic-trend` 生成 reports/ic_trend.json",
+            }
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            horizons = payload.get("horizons") or {}
+            rows = []
+            for name, item in sorted(horizons.items()):
+                if not isinstance(item, dict):
+                    continue
+                rows.append({
+                    "horizon": name,
+                    "status": item.get("status", "unknown"),
+                    "available": bool(item.get("available")),
+                    "latest_ic": item.get("latest_ic"),
+                    "slope_per_step": item.get("slope_per_step"),
+                    "decay_per_step_pct": item.get("decay_per_step_pct"),
+                    "latest_hit_rate": item.get("latest_hit_rate"),
+                    "steps_to_breach": item.get("steps_to_breach"),
+                    "anchors": item.get("anchors", 0),
+                })
+            return {
+                "available": True,
+                "source": str(path),
+                "generated_at": payload.get("generated_at"),
+                "window": payload.get("window"),
+                "step": payload.get("step"),
+                "min_ic": payload.get("min_ic"),
+                "near_breach_steps": payload.get("near_breach_steps"),
+                "decaying": payload.get("decaying") or [],
+                "near_breach": payload.get("near_breach") or [],
+                "rows": rows,
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取 IC 趋势失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_pool_gate(self) -> Dict[str, Any]:
+        """分池门禁状态（S9，只读）。
+
+        只读 `reports/stratified_gate.json`（由 `python main.py ic-pool` 落盘），
+        不重跑 walk-forward —— 监控报表必须随时可跑且零副作用。
+        """
+        try:
+            from src.eval.stratified import StratifiedEvaluator
+
+            return StratifiedEvaluator(self.config).load()
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取分池门禁失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_horizon_scan(self) -> Dict[str, Any]:
+        """多周期口径探索状态（S10，只读）。
+
+        只读 `reports/horizon_scan.json`（由 `python main.py horizon-scan` 落盘），
+        不重跑 walk-forward —— 监控报表必须随时可跑且零副作用。
+        """
+        try:
+            from src.eval.horizon_scan import HorizonScanner, compare_with_current
+
+            payload = HorizonScanner(self.config).load()
+            if not payload.get("available"):
+                return payload
+            payload["rows"] = HorizonScanner(self.config).summarize_rows(payload)
+            payload["vs_current"] = compare_with_current(payload)
+            return payload
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取多周期扫描失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_horizon_decision(self) -> Dict[str, Any]:
+        """预测周期切换决策单（S11，只读）。
+
+        只读 `reports/horizon_decision.json`（由 `python main.py horizon-decision` 落盘）。
+        监控报表**不重新做显著性检验**，也不把决策单当放行依据：
+        决策单的 `affects_gate` 恒为 False，这里只做状态展示与阻塞项提示。
+        """
+        try:
+            from src.eval import horizon_decision as hd
+
+            record = hd.load(self.config)
+            if not record:
+                return {
+                    "available": False,
+                    "reason": "no_horizon_decision",
+                    "hint": "先运行 `python main.py horizon-scan` 再跑 `python main.py horizon-decision`",
+                }
+            record["available"] = True
+            return record
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取周期切换决策单失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_release_check(self) -> Dict[str, Any]:
+        """发布态健康检查（S14，只读）。
+
+        只读 `reports/release_check.json`（由 `python main.py release-check` 落盘）。
+        **不在报表里重跑检查**：检查会读多个产物，报表应当零副作用、随时可跑。
+        """
+        try:
+            path = Path((self.config.get("release_check", {}) or {}).get(
+                "report_dir", "reports")) / "release_check.json"
+            if not path.exists():
+                return {
+                    "available": False,
+                    "reason": "no_release_check",
+                    "hint": "运行 `python main.py release-check` 生成发布态检查",
+                }
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["available"] = True
+            return payload
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取发布态检查失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_trial_registry(self) -> Dict[str, Any]:
+        """评估试验登记汇总（S13，只读）。
+
+        把「试了多少次」摆到报表上：校正的强度取决于这个数字，
+        而它过去只存在于人的记忆里。
+        """
+        try:
+            from src.eval.trial_registry import summary
+
+            return summary(self.config)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取试验登记失败: {e}")
+            return {"available": False, "error": str(e), "count": 0, "total": 0}
+
+    def _collect_feature_experiment(self) -> Dict[str, Any]:
+        """特征扩充正交对照实验（S12，只读）。
+
+        只读 `reports/feature_experiment.json`（由 `python main.py feature-experiment` 落盘）。
+        监控报表**不重跑实验**（重训代价高且会让报表有副作用），只做状态展示。
+        """
+        try:
+            from src.eval.feature_experiment import load
+
+            payload = load(self.config)
+            if not payload:
+                return {
+                    "available": False,
+                    "reason": "no_feature_experiment",
+                    "hint": "先运行 `python main.py feature-experiment` 生成对照实验结果",
+                }
+            payload["available"] = True
+            return payload
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取特征扩充实验失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_pool_train(self) -> Dict[str, Any]:
+        """分池训练产物状态（S9，只读）。"""
+        try:
+            from src.train.stratified_train import StratifiedTrainer, summarize_manifest
+
+            trainer = StratifiedTrainer(self.config)
+            manifest = trainer.load_manifest()
+            if not manifest.get("available"):
+                return {
+                    "available": False,
+                    "reason": manifest.get("reason", "no_pool_manifest"),
+                    "hint": "先运行 `python main.py pool-train` 生成 models/pools/pool_manifest.json",
+                }
+            manifest["rows"] = summarize_manifest(manifest)
+            return manifest
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取分池模型清单失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_factor_model(self) -> Dict[str, Any]:
+        """多因子模型状态（只读）：因子权重 / 族权重 / IC 排名。"""
+        save_dir = Path((self.config.get("training", {}) or {}).get("save_dir", "models"))
+        path = save_dir / "factor_model_short_term_5d.pkl"
+        if not path.exists():
+            return {
+                "available": False,
+                "reason": "no_factor_model",
+                "hint": "先运行 `python main.py train --model-type factor_model`",
+            }
+        try:
+            from src.factors.factor_model import FactorModel
+
+            model = FactorModel(self.config)
+            model.load(str(path))
+            explain = model.explain(8)
+            explain.update({"available": True, "path": str(path)})
+            return explain
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取多因子模型失败: {e}")
+            return {"available": False, "error": str(e)}
 
     def _collect_models(self) -> Dict[str, Any]:
         """已训练模型产物清单（只读）。"""
         save_dir = Path((self.config.get("training", {}) or {}).get("save_dir", "models"))
         horizons = (self.config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
         expected = [f"lightgbm_{name}_{days}d.pkl" for name, days in horizons.items()]
+        model_type = str((self.config.get("model", {}) or {}).get("type", "lightgbm"))
+        # 按当前配置的模型类型补充期望产物（避免把"未启用 LSTM"误判为缺失）
+        if model_type == "pytorch_lstm":
+            expected = [f"pytorch_lstm_{name}_{days}d.pt" for name, days in horizons.items()]
+        elif model_type in ("factor_model", "multifactor"):
+            expected = [f"factor_model_{name}_{days}d.pkl" for name, days in horizons.items()]
 
         found: List[Dict[str, Any]] = []
         if save_dir.exists():
@@ -241,6 +600,19 @@ class ModelMonitor:
         adaptive = self._collect_adaptive()
         sources = self._collect_data_sources()
         models = self._collect_models()
+        gate = self._collect_gate()
+        factors = self._collect_factor_model()
+        streaming = self._collect_streaming()
+        risk_advice = self._collect_risk_advice()
+        gate_diagnosis = self._collect_gate_diagnosis(gate)
+        ic_trend = self._collect_ic_trend()
+        pool_gate = self._collect_pool_gate()
+        pool_train = self._collect_pool_train()
+        horizon_scan = self._collect_horizon_scan()
+        horizon_decision = self._collect_horizon_decision()
+        feature_experiment = self._collect_feature_experiment()
+        trial_registry = self._collect_trial_registry()
+        release_state = self._collect_release_check()
 
         issues: List[str] = []
         if audit.get("available") and audit.get("drift"):
@@ -255,6 +627,63 @@ class ModelMonitor:
             issues.append("宏观指标全部不可用（CPI/PMI/GDP 等）")
         if not sources.get("market_cache", {}).get("cached_symbols"):
             issues.append("无行情缓存（data/raw 为空）")
+        if gate.get("available") and not gate.get("passed"):
+            issues.append(
+                f"策略门禁为 {gate.get('state', 'readonly')}（信号只读），未达打分因子放行条件"
+            )
+            # S7：把"未放行"具体到"还差多少 / 哪条腿"，避免只剩一句"命中率不够"
+            if gate_diagnosis.get("available") and gate_diagnosis.get("binding_horizon"):
+                short = gate_diagnosis.get("binding_shortfall") or {}
+                detail = "；".join(f"{k} 还差 {v}" for k, v in short.items())
+                issues.append(
+                    f"门禁约束在 {gate_diagnosis['binding_horizon']}"
+                    f"（{gate_diagnosis.get('binding_metric')}）：{detail}"
+                )
+        # 实时流（Q3）：启用后盘中应有新鲜快照；交易时段内超过 3 个轮询周期即告警
+        if streaming.get("available") or streaming.get("reason") == "no_snapshot_today":
+            if streaming.get("is_trading_hours"):
+                age = int(streaming.get("snapshot_age_minutes", 0) or 0)
+                max_age = max(int(streaming.get("poll_seconds", 60) / 60 * 3), 3)
+                if not streaming.get("available") or age > max_age:
+                    issues.append(f"实时流盘中无新鲜快照（最近快照 {age} 分钟前，阈值 {max_age} 分钟）")
+            elif not streaming.get("available"):
+                issues.append("实时流启用但今日无快照（休市或实时源不可用）")
+
+        # 智能风控建议（Q4）：门禁未放行时建议必然 withheld，这是预期行为而非故障，
+        # 只有「报告存在却一条建议都没产出」才提示（可能全池行情缺失）
+        if risk_advice.get("available"):
+            if risk_advice.get("advised", 0) == 0 and risk_advice.get("count", 0) > 0:
+                issues.append(
+                    f"风控建议全部未产出（{risk_advice.get('count')} 只标的）："
+                    f"门禁 {risk_advice.get('gate_state')} 或行情缺失"
+                )
+        # IC 趋势（Q5）：衰减 / 临近跌破门禁线属于要提前处理的问题，
+        # 但它是**趋势预警**而非当前故障，因此只报 warning 级别的事项。
+        if ic_trend.get("available"):
+            for h in ic_trend.get("decaying") or []:
+                issues.append(f"{h} IC 持续衰减，信号有效性下滑")
+            near = ic_trend.get("near_breach") or []
+            if near:
+                steps = ic_trend.get("near_breach_steps", 3)
+                issues.append(
+                    f"{'、'.join(near)} 预计 {steps} 步内跌破门禁线（|IC| < {ic_trend.get('min_ic')}）"
+                )
+        # 分池门禁（S9）：整池未过但某些分池过关 = 木桶短板稀释，属**结构问题**而非故障
+        if pool_gate.get("available") and passed_pools_of(pool_gate):
+            if gate.get("available") and not gate.get("passed"):
+                names = "、".join(
+                    (pool_gate.get("pools", {}).get(c, {}) or {}).get("label", c)
+                    for c in passed_pools_of(pool_gate)
+                )
+                issues.append(
+                    f"整池未放行但分池已过关（{names}）：整池口径被拖后腿分池稀释，"
+                    "可考虑按资产类别分别建池（默认不改变放行结论）"
+                )
+        # 分池训练（S9）：配置启用却一个池都没训出来 → 值得看一眼
+        if pool_train.get("available") and not any(
+            (r.get("status") == "trained") for r in (pool_train.get("rows") or [])
+        ):
+            issues.append("分池训练启用但没有任何分池产出模型，请检查各池样本量")
 
         status = "ok" if not issues else ("warning" if len(issues) < 3 else "critical")
 
@@ -266,8 +695,28 @@ class ModelMonitor:
             "adaptive": adaptive,
             "data_sources": sources,
             "models": models,
+            "gate": gate,
+            "gate_diagnosis": gate_diagnosis,
+            "factors": factors,
+            "streaming": streaming,
+            "risk_advice": risk_advice,
+            "ic_trend": ic_trend,
+            "pool_gate": pool_gate,
+            "pool_train": pool_train,
+            "horizon_scan": horizon_scan,
+            "horizon_decision": horizon_decision,
+            "feature_experiment": feature_experiment,
+            "trial_registry": trial_registry,
+            "release_check": release_state,
         }
         return HealthReport(payload)
+
+
+def passed_pools_of(pool_gate: Dict[str, Any]) -> List[str]:
+    """从分池门禁 payload 里取「已过线的分池」列表（缺字段时返回空，不猜）。"""
+    if not isinstance(pool_gate, dict):
+        return []
+    return [str(c) for c in (pool_gate.get("passed_pools") or [])]
 
 
 # ----------------------------------------------------------------------
@@ -365,6 +814,399 @@ def render_markdown(payload: Dict[str, Any]) -> str:
         f"- 行情缓存：{cache.get('cached_symbols', 0)} 个标的"
         f"（最近更新 {cache.get('latest_update') or 'N/A'}）"
     )
+    pool = sources.get("holdings_pool", {}) or {}
+    if pool:
+        lines.append(
+            f"- 持仓池覆盖：{pool.get('cached', 0)}/{pool.get('configured', 0)}"
+            f"（{_fmt_pct(pool.get('coverage'))}）"
+            + (f"，缺 {pool.get('missing_count')} 个" if pool.get("missing_count") else "")
+        )
+    qg = sources.get("quality_gate", {}) or {}
+    if qg:
+        lines.append(f"- 数据质量门控：{'已启用' if qg.get('enabled') else '未启用'}")
+    lines.append("")
+
+    gate = payload.get("gate", {}) or {}
+    lines.extend(["## 策略门禁（Q2）", ""])
+    if gate.get("available"):
+        state = str(gate.get("state", "readonly"))
+        icon = "🟢" if state == "gated" else "🔒"
+        lines.append(f"- 状态：{icon} **{state}**（{gate.get('reason', '')}）")
+        lines.append(f"- 来源：`{gate.get('source', '')}`"
+                     f"（判定时间 {gate.get('generated_at') or 'N/A'}）")
+        blocked = gate.get("blocked_by") or []
+        if blocked:
+            lines.append(f"- 未放行原因：{'；'.join(str(b) for b in blocked)}")
+        horizons = gate.get("horizons") or {}
+        if isinstance(horizons, dict) and horizons:
+            lines.extend([
+                "", "| 周期 | IC | ICIR | 命中率 | 样本 | 通过 |",
+                "|------|----|------|--------|------|------|",
+            ])
+            for name, h in sorted(horizons.items()):
+                if not isinstance(h, dict):
+                    continue
+                try:
+                    ic = float(h.get("ic", 0.0) or 0.0)
+                    icir = float(h.get("icir", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    ic, icir = 0.0, 0.0
+                lines.append(
+                    f"| {name} | {ic:+.4f} | {icir:+.4f} | "
+                    f"{_fmt_pct(h.get('hit_rate'))} | {h.get('samples', 0)} | "
+                    f"{'✅' if h.get('passed') else '❌'} |"
+                )
+        diag = payload.get("gate_diagnosis", {}) or {}
+        if diag.get("available") and diag.get("binding_horizon"):
+            short = diag.get("binding_shortfall") or {}
+            detail = "；".join(f"{k} 还差 {v}" for k, v in short.items())
+            lines.append("")
+            lines.append(
+                f"- 🔧 阻塞诊断：约束在 `{diag['binding_horizon']}`"
+                f"（{diag.get('binding_metric')}）—— {detail}"
+            )
+            lines.append(f"- {diag.get('note', '')}")
+        lines.append("")
+    else:
+        lines.append(
+            f"- 不可用：{gate.get('error') or gate.get('reason') or '无门禁报告'}"
+            f"（{gate.get('hint', '')}）"
+        )
+        lines.append("")
+
+    factors = payload.get("factors", {}) or {}
+    lines.extend(["## 多因子模型（Q2）", ""])
+    if factors.get("available"):
+        fw = factors.get("family_weights") or {}
+        if fw:
+            lines.append("族权重：" + " · ".join(f"{k}={v}" for k, v in fw.items()))
+        rows = factors.get("top_factors") or []
+        if rows:
+            lines.extend([
+                "", "| 因子 | 族 | 权重 | IC |", "|------|-----|------|-----|",
+            ])
+            for r in rows:
+                lines.append(
+                    f"| {r['factor']} | {r['family']} | {r['weight']:.4f} | {r['ic']:+.4f} |"
+                )
+        lines.append("")
+    else:
+        lines.append(
+            f"- 不可用：{factors.get('error') or factors.get('reason') or '无因子模型'}"
+            f"（{factors.get('hint', '')}）"
+        )
+        lines.append("")
+
+    streaming = payload.get("streaming", {}) or {}
+    lines.extend(["## 实时数据流（Q3）", ""])
+    if streaming.get("available"):
+        lines.extend([
+            f"- 快照目录：`{streaming.get('dir', '')}`（历史文件 {streaming.get('history_files', 0)} 个）",
+            f"- 轮询间隔：{streaming.get('poll_seconds', 0)} 秒；保留期 {streaming.get('retention_days', 0)} 天",
+            f"- 今日快照：{streaming.get('snapshots_today', 0)} 条 / {streaming.get('symbols_today', 0)} 个标的",
+            f"- 最近快照：{streaming.get('last_snapshot_at') or 'N/A'}"
+            f"（{streaming.get('snapshot_age_minutes', 0)} 分钟前）",
+            f"- 当前{'处于' if streaming.get('is_trading_hours') else '不处于'}交易时段",
+        ])
+    else:
+        lines.append(
+            f"- 不可用：{streaming.get('error') or streaming.get('reason') or '未启用'}"
+            f"（{streaming.get('hint', '')}）"
+        )
+    lines.append("")
+
+    ic_trend = payload.get("ic_trend", {}) or {}
+    lines.extend(["## IC 趋势 / 信号衰减（Q5）", ""])
+    if ic_trend.get("available"):
+        lines.append(
+            f"- 判定口径：窗口 {ic_trend.get('window')} 样本 / 步长 {ic_trend.get('step')}"
+            f"（判定时间 {ic_trend.get('generated_at') or 'N/A'}）"
+        )
+        rows = ic_trend.get("rows") or []
+        if rows:
+            lines.extend([
+                "", "| 周期 | 当前 IC | 每步变化 | 每步衰减 | 命中率 | 状态 | 距跌破 |",
+                "|------|---------|----------|----------|--------|------|--------|",
+            ])
+            for r in rows:
+                ic_val = r.get("latest_ic")
+                slope = r.get("slope_per_step")
+                dec = r.get("decay_per_step_pct")
+                breach = r.get("steps_to_breach")
+                if not r.get("available"):
+                    lines.append(f"| {r['horizon']} | N/A | N/A | N/A | N/A | ❔ unknown | N/A |")
+                    continue
+                breach_txt = "N/A" if breach is None else (
+                    "已跌破" if breach == 0 else f"{breach} 步"
+                )
+                icon = {"decaying": "🔻", "improving": "🔺", "stable": "➡️"}.get(r["status"], "❔")
+                lines.append(
+                    f"| {r['horizon']} | {ic_val:+.4f} | {slope:+.6f} | "
+                    f"{'N/A' if dec is None else f'{dec:+.2f}%'} | "
+                    f"{_fmt_pct(r.get('latest_hit_rate'))} | {icon} {r['status']} | {breach_txt} |"
+                )
+        decaying = ic_trend.get("decaying") or []
+        near = ic_trend.get("near_breach") or []
+        if decaying or near:
+            lines.append("")
+            if decaying:
+                lines.append(f"- 🔻 衰减预警：{'、'.join(decaying)}")
+            if near:
+                lines.append(f"- ⏳ 临近跌破：{'、'.join(near)}"
+                             f"（{ic_trend.get('near_breach_steps', 3)} 步内）")
+        lines.append("")
+        lines.append(
+            "> 趋势是**预警**不是结论：门禁判定仍只看当前 IC/命中率"
+            "（见「策略门禁」章节），趋势用于提前安排重训练与特征迭代。"
+        )
+    else:
+        lines.append(
+            f"- 不可用：{ic_trend.get('error') or ic_trend.get('reason') or '未生成'}"
+            f"（{ic_trend.get('hint', '')}）"
+        )
+    lines.append("")
+
+    pool_gate = payload.get("pool_gate", {}) or {}
+    pool_train = payload.get("pool_train", {}) or {}
+    lines.extend(["## 分池评估（S9：按资产类别分池）", ""])
+    if pool_gate.get("available"):
+        pools = pool_gate.get("pools") or {}
+        lines.extend([
+            f"- 判定范围：共 {len(pools)} 个分池"
+            f"（最少标的数 {pool_gate.get('min_symbols')}，最少样本 {pool_gate.get('min_samples')}）",
+            f"- 是否影响放行结论：{'是' if pool_gate.get('affects_gate') else '否（report_only，仅作补充证据）'}",
+            f"- 判定时间：{pool_gate.get('generated_at') or 'N/A'}",
+            "",
+            "| 分池 | 标的 | 样本 | 短期 IC/命中 | 中期 IC/命中 | 长期 IC/命中 | 状态 |",
+            "|------|------|------|--------------|--------------|--------------|------|",
+        ])
+        for cls, pool in pools.items():
+            ics = pool.get("ic") or {}
+            hrs = pool.get("hit_rate") or {}
+
+            def _cell(h: str) -> str:
+                if h not in (pool.get("horizons") or {}):
+                    return "—"
+                ic_v = ics.get(h)
+                hr_v = hrs.get(h)
+                ic_txt = "N/A" if ic_v is None else f"{float(ic_v):+.4f}"
+                hr_txt = "N/A" if hr_v is None else _fmt_pct(hr_v)
+                return f"{ic_txt} / {hr_txt}"
+
+            icon = "✅" if pool.get("passed") else ("❔" if not pool.get("available") else "❌")
+            lines.append(
+                f"| {pool.get('label') or cls} | {pool.get('symbol_count', 0)} | "
+                f"{pool.get('samples', 0)} | {_cell('short_term')} | {_cell('mid_term')} | "
+                f"{_cell('long_term')} | {icon} {pool.get('state', 'readonly')} |"
+            )
+        failed = pool_gate.get("failed_pools") or []
+        unavailable = pool_gate.get("unavailable_pools") or []
+        lines.append("")
+        if failed:
+            names = "、".join((pools.get(c, {}) or {}).get("label", c) for c in failed)
+            lines.append(f"- ❌ 未过关分池：{names}")
+        if unavailable:
+            names = "、".join((pools.get(c, {}) or {}).get("label", c) for c in unavailable)
+            lines.append(f"- ❔ 样本不足未判定：{names}")
+        if pool_train.get("available"):
+            trained = [r for r in (pool_train.get("rows") or []) if r.get("status") == "trained"]
+            lines.append(
+                f"- 分池模型产物：{len(trained)}/{len(pool_train.get('rows') or [])} 个分池已产出模型"
+                f"（`models/pools/pool_manifest.json`）"
+            )
+        lines.append("")
+        lines.append(
+            "> 分池是**结构诊断**：说明整池指标被哪些标的稀释。默认不改变 `strategy_gate` 的"
+            "放行结论（信号仍只读观测）。"
+        )
+    else:
+        lines.append(
+            f"- 不可用：{pool_gate.get('error') or pool_gate.get('reason') or '未生成'}"
+            f"（{pool_gate.get('hint', '')}）"
+        )
+    lines.append("")
+
+    hscan = payload.get("horizon_scan", {}) or {}
+    lines.extend(["## 多周期口径探索（S10：换周期有没有用）", ""])
+    if hscan.get("available"):
+        rows = hscan.get("rows") or []
+        currents = hscan.get("current_horizon_days") or []
+        lines.extend([
+            f"- 候选周期：{hscan.get('candidates')} 交易日"
+            f"（现行门禁口径：{currents} 日）",
+            "- 是否影响放行结论：否（`affects_gate=false`，只作口径敏感性证据）",
+            "",
+            "| 周期 | 现行口径 | 样本 | IC | 命中率 | 结论 |",
+            "|------|---------|------|-----|--------|------|",
+        ])
+        for row in rows:
+            ic_v = row.get("ic")
+            hr_v = row.get("hit_rate")
+            ic_txt = "N/A" if ic_v is None else f"{float(ic_v):+.4f}"
+            hr_txt = "N/A" if hr_v is None else _fmt_pct(hr_v)
+            if not row.get("available"):
+                icon = "❔"
+            else:
+                icon = "✅" if row.get("passed") else "❌"
+            mark = "是" if row.get("is_current") else "—"
+            lines.append(
+                f"| {row.get('horizon_days')} 日 | {mark} | {row.get('samples', 0)} | "
+                f"{ic_txt} | {hr_txt} | {icon} |"
+            )
+        lines.append("")
+        vs = hscan.get("vs_current") or {}
+        if vs.get("narrative"):
+            lines.append(f"- 对照结论：{vs['narrative']}")
+        lines.append("")
+        lines.append(
+            "> ⚠️ 扫描是**决策输入**而非解锁手段：切换门禁周期属于产品口径变更，"
+            "须人工决策并重做泄漏与偏差审查；`strategy_gate` 放行结论不变。"
+        )
+    else:
+        lines.append(
+            f"- 不可用：{hscan.get('error') or hscan.get('reason') or '未生成'}"
+            f"（{hscan.get('hint', '')}）"
+        )
+    lines.append("")
+
+    rel = payload.get("release_check", {}) or {}
+    lines.extend(["## 发布态健康检查（S14：现在能不能继续往下跑）", ""])
+    if rel.get("available"):
+        lines.append(f"- 发布态：**{rel.get('status')}**"
+                     f"（blocking {len(rel.get('blocking') or [])} / "
+                     f"action {len(rel.get('actions') or [])}）")
+        for item in rel.get("blocking") or []:
+            lines.append(f"- ⛔ [{item.get('code')}] {item.get('message')}"
+                         f" → {item.get('next_step', '')}")
+        for item in rel.get("actions") or []:
+            lines.append(f"- ⚠️ [{item.get('code')}] {item.get('message')}"
+                         f" → {item.get('next_step', '')}")
+        lines.append("")
+        lines.append("> 检查只做汇总与排序：**产物可用性优先于指标好坏**"
+                     "（过期的判定比不达标更危险）；不重算指标、不自动修复。")
+    else:
+        lines.append(
+            f"- 不可用：{rel.get('error') or rel.get('reason') or '未生成'}"
+            f"（{rel.get('hint', '')}）"
+        )
+    lines.append("")
+
+    trials = payload.get("trial_registry", {}) or {}
+    lines.extend(["## 评估试验登记（S13：多重比较校正的分母）", ""])
+    if trials.get("available"):
+        lines.extend([
+            f"- 累计试验次数：**{trials.get('count')}**（登记总数 {trials.get('total')}）",
+            f"- 口径指纹：`{trials.get('fingerprint_hash')}`"
+            f"（最近一次登记：{trials.get('latest_at') or '—'}）",
+            f"- 按命令计数：{trials.get('by_command')}",
+            "- 用途：校正时用它作为比较次数，而不是只数本次扫描的候选数",
+        ])
+    else:
+        lines.append(
+            f"- ⚠️ 登记不可用：{trials.get('error') or trials.get('reason') or '未登记'}"
+            "（**未按 0 次处理** —— 0 次会让校正失效）"
+        )
+    lines.append("")
+
+    fexp = payload.get("feature_experiment", {}) or {}
+    lines.extend(["## 特征扩充正交对照（S12：横截面/宏观/情感到底有没有用）", ""])
+    if fexp.get("available"):
+        lines.extend([
+            f"- 结论：`{fexp.get('verdict')}`｜比较次数：{fexp.get('n_trials')}",
+            "- 是否改变生产特征集：否（`affects_features=false`，只产出证据）",
+            f"- 说明：{fexp.get('narrative')}",
+        ])
+        rows = (fexp.get("comparisons") or [])[:12]
+        if rows:
+            lines.extend([
+                "",
+                "| 周期 | 特征族 | 新增列 | IC 增量 | 命中率增量 | 显著性(校正后) |",
+                "|------|--------|--------|---------|------------|---------------|",
+            ])
+            for row in rows:
+                lines.append(
+                    f"| {row.get('horizon')} | {row.get('arm')} | "
+                    f"{len(row.get('features_added') or [])} | "
+                    f"{row.get('ic_delta', 0):+.4f} | {row.get('hit_delta', 0):+.2%} | "
+                    f"{row.get('p_family')}（{'显著' if row.get('significant') else '不显著'}） |"
+                )
+        lines.extend([
+            "",
+            "> ⚠️ `adopt` 是**证据**不是落地：接入生产特征集需人工确认并重跑全量门禁。",
+        ])
+    else:
+        lines.append(
+            f"- 不可用：{fexp.get('error') or fexp.get('reason') or '未生成'}"
+            f"（{fexp.get('hint', '')}）"
+        )
+    lines.append("")
+
+    hdec = payload.get("horizon_decision", {}) or {}
+    lines.extend(["## 预测周期切换决策单（S11：多重比较校正后还站得住吗）", ""])
+    if hdec.get("available"):
+        ev = hdec.get("evidence") or {}
+        lines.extend([
+            f"- 结论：`{hdec.get('verdict')}` / 状态：`{hdec.get('status')}`",
+            f"- 现行口径：{ev.get('current_horizons')} 日 → 拟切换：{ev.get('proposed_horizons')} 日",
+            f"- 候选数（比较次数）：{ev.get('n_trials')}｜族错误率下限：{ev.get('min_p_floor')}",
+            "- 是否影响放行结论：否（`affects_gate=false`，决策单不改变门禁）",
+        ])
+        if hdec.get("confirmed_by"):
+            lines.append(f"- 人工确认人：{hdec.get('confirmed_by')}")
+        rows = ev.get("candidates") or []
+        if rows:
+            lines.extend([
+                "",
+                "| 周期 | 现行 | IC | 命中率 | 显著性(校正后) | 结论 |",
+                "|------|------|-----|--------|---------------|------|",
+            ])
+            for row in rows:
+                ic_v = row.get("ic")
+                hr_v = row.get("hit_rate")
+                ic_txt = "N/A" if ic_v is None else f"{float(ic_v):+.4f}"
+                hr_txt = "N/A" if hr_v is None else _fmt_pct(hr_v)
+                if not row.get("available"):
+                    sig = "不可用"
+                else:
+                    sig = f"{row.get('p_family')}（{'显著' if row.get('significant') else '不显著'}）"
+                mark = "是" if row.get("is_current_horizon") else "—"
+                lines.append(
+                    f"| {row.get('horizon_days')} 日 | {mark} | {ic_txt} | {hr_txt} | {sig} | "
+                    f"{'✅' if row.get('passed_scan_gate') else '❌'} |"
+                )
+        if ev.get("narrative"):
+            lines.extend(["", f"- 证据结论：{ev['narrative']}"])
+        blockers = hdec.get("blockers") or []
+        if blockers:
+            lines.append("- 阻塞项：")
+            lines.extend([f"  - {b}" for b in blockers])
+        lines.extend([
+            "",
+            "> ⚠️ 决策单**不改变**门禁口径与放行结论；即使 `status=confirmed`，"
+            "切换仍须人工修改 `data.prediction_horizons` 并重做泄漏/偏差审查。",
+        ])
+    else:
+        lines.append(
+            f"- 不可用：{hdec.get('error') or hdec.get('reason') or '未生成'}"
+            f"（{hdec.get('hint', '')}）"
+        )
+    lines.append("")
+
+    risk_advice = payload.get("risk_advice", {}) or {}
+    lines.extend(["## 智能风控建议（Q4）", ""])
+    if risk_advice.get("available"):
+        lines.extend([
+            f"- 门禁状态：`{risk_advice.get('gate_state', 'unknown')}`",
+            f"- 建议产出：{risk_advice.get('advised', 0)}/{risk_advice.get('count', 0)} 条"
+            f"（暂缓 {risk_advice.get('withheld', 0)}｜数据不足 {risk_advice.get('unavailable', 0)}）",
+            f"- 平均盈亏比：{risk_advice.get('avg_risk_reward')}",
+            "- 定位：**建议而非下单指令**；门禁未放行时不产出可直接使用的止损止盈价位",
+        ])
+    else:
+        lines.append(
+            f"- 不可用：{risk_advice.get('error') or risk_advice.get('reason') or '未生成'}"
+            f"（{risk_advice.get('hint', '')}）"
+        )
     lines.append("")
 
     models = payload.get("models", {}) or {}

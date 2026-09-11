@@ -39,9 +39,51 @@ class TradingAdapter:
         self.risk_manager = RiskManager(config)
         self.order_generator = OrderGenerator(config)
         self.allow_short = self.signal_engine.allow_short
+        # 信号准入闸门（Q2）：未达 score 等级时信号只读、不下单（防"未验证信号"进实盘）
+        self._gate_decision = self._load_gate()
+        self.export_blocked = False
         # 最新行情价：RiskManager 需要当前价算 qty/SL/TP
         # 若调用方不提供，则从预测结果中的 latest_close 读取
         self._prices: dict[str, float] = {}
+
+    def _load_gate(self) -> dict[str, Any] | None:
+        """读取策略门禁判定（缺省 None = 未启用/无判定，保持向后兼容）。
+
+        复用 `src/trading/gate.py` 的 `StrategyGate`（Q2 已交付的门禁实现），
+        不重复造判定逻辑；只负责"是否强制"与"读取结果"两件事。
+        """
+        cfg = (self.config.get("strategy_gate", {}) or {})
+        # 必须显式开启 enforce_trading：门禁判定不应默认改变下单行为，
+        # 否则历史的判定结果会静默地"关掉"交易适配层（难以排查的隐式耦合）。
+        if not cfg.get("enforce_trading", False):
+            return None
+        try:
+            from src.trading.gate import StrategyGate
+
+            gate_dir = Path(cfg.get("report_dir", "reports"))
+            path = gate_dir / "strategy_gate.json"
+            if not path.exists():
+                # 无判定结果：不阻塞下单（未评估 ≠ 未通过），但留日志便于排查
+                logger.info("[gate] 未找到 %s，跳过门禁强制", path)
+                return None
+            decision = json.loads(path.read_text(encoding="utf-8"))
+            # 用当前配置重新判定（阈值调整必须立即生效，不得沿用旧结论）
+            if isinstance(decision, dict) and decision.get("state") is not None:
+                return decision
+            return StrategyGate(self.config).decide().to_dict()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[gate] 读取策略门禁失败，按未判定处理: %s", e)
+            return None
+
+    @property
+    def signal_readonly(self) -> bool:
+        """信号是否仅允许观测（未过门禁）。无判定时不限制（向后兼容）。"""
+        if self._gate_decision is None:
+            return False
+        # StrategyGate: state = gated/readonly/disabled；仅 gated 才放行订单
+        if self._gate_decision.get("state") == "disabled":
+            return False
+        return not bool(self._gate_decision.get("passed"))
 
     @property
     def predictor(self):
@@ -73,6 +115,21 @@ class TradingAdapter:
 
         price = self._latest_price(symbol, pred)
         sig = self.signal_engine.build_signal(symbol, pred)
+
+        # 闸门未过：本次信号只读（保留信号与风控预算，但不产出可执行订单）
+        if self.signal_readonly:
+            return {
+                "symbol": symbol,
+                "signal": sig.to_dict(),
+                "risk_budget": self.risk_manager.budget(sig, price=price).to_dict(),
+                "orders": [],
+                "gate_blocked": True,
+                "gate_level": (self._gate_decision or {}).get("state", "readonly"),
+                "gate_reason": "信号未过策略门禁（IC/命中率），本轮只读观测",
+                "latest_price": price,
+                "processed_at": datetime.now().isoformat(timespec="seconds"),
+            }
+
         budget = self.risk_manager.budget(sig, price=price)
         orders = self.order_generator.generate(budget)
 
@@ -81,6 +138,8 @@ class TradingAdapter:
             "signal": sig.to_dict(),
             "risk_budget": budget.to_dict(),
             "orders": [o.to_dict() for o in orders],
+            "gate_blocked": False,
+            "gate_level": (self._gate_decision or {}).get("state", "ungated"),
             "latest_price": price,
             "processed_at": datetime.now().isoformat(timespec="seconds"),
         }

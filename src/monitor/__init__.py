@@ -1,8 +1,18 @@
-"""模型监控报表：统一汇总审计命中率、自适应漂移、数据源可用性。
+"""模型监控报表：统一汇总审计命中率、自适应漂移、数据源可用性、信号一致性。
 
 面向 Q1 排期「定期报告」增强：把分散在审计 / 自适应学习 / 宏观 / 新闻
 各模块的运行态信息汇总为一份可读的监控报表，便于日常巡检与对外汇报。
+Q3 追加信号一致性校验（跨周期 / 跨模型 / 跨口径）。
 """
 from src.monitor.health_report import HealthReport, ModelMonitor
+from src.monitor.signal_consistency import (
+    SignalConsistencyChecker,
+    check_from_engine,
+)
 
-__all__ = ["ModelMonitor", "HealthReport"]
+__all__ = [
+    "ModelMonitor",
+    "HealthReport",
+    "SignalConsistencyChecker",
+    "check_from_engine",
+]

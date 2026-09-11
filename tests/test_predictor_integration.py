@@ -46,10 +46,11 @@ def test_ensemble_with_placeholders(tmp_path, monkeypatch):
     cfg = yaml.safe_load(open(cfg_path, "r", encoding="utf-8"))
 
     # 让引擎使用测试替身的数据管道
+    # （用 monkeypatch.setattr 保证用例结束后恢复模块全局，避免跨用例污染）
     import src.inference.predictor as predmod
 
-    predmod.DataCollector = DummyCollector
-    predmod.FeatureEngineer = DummyFeatureEngineer
+    monkeypatch.setattr(predmod, "DataCollector", DummyCollector)
+    monkeypatch.setattr(predmod, "FeatureEngineer", DummyFeatureEngineer)
 
     cfg["model"]["type"] = "ensemble"
     engine = PredictionEngine(cfg)
