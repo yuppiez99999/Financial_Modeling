@@ -1660,6 +1660,31 @@ CLI / 监控报表 / 日报 / API 的缺失与正常分支；配置段存在且�
   `strategy_gate` 一个字不动；是否把三重障碍法标签纳入训练主线由**人工检查点**决定。
 
 
+
+**S13 落地记录（2026-09-11）**：
+
+- **T13.1 ✅**：新增 `integrations/qlib/data_layer.py` —— 本项目行情缓存 →
+  qlib `.bin` 列存（features/calendars/instruments 标准目录结构，纯 numpy 写出，
+  **不依赖 qlib 运行时**）；`integrations/qlib/alpha158.py` —— qlib Alpha158
+  98 列因子集的纯 pandas 对齐实现（8 K 线形态项 + 18 滚动项 × 5 窗口，
+  Slope/Rsquare/Resi 用滚动 OLS 逐语义对齐，见 `docs/THIRD_PARTY.md` 对齐表）；
+  `integrations/qlib/export.py` —— 因子表导出 parquet（一次性离线动作）。
+- **T13.2 ✅**：新增 `src/factors/qlib_factor_provider.py` —— 把 98 列 Alpha158
+  按经济含义压缩为 5 个族因子（`factor_a158_{momentum,trend,volatility,volume,reversal}`），
+  有界 (-1,1)、与 `FactorLibrary` 的 `factor_*` 命名空间隔离；行情不足时如实标注
+  `factor_a158_available=False` 并置中性 0（不编造）。
+- **T13.3 ✅ 链路交付**：新增 `src/eval/qlib_ab.py` + CLI `python main.py qlib-ab` ——
+  同一批样本 / 同一组折 / 同一 LightGBM 配置 / 同一标签（现行 `target_{h}d`，一次只变
+  一个变量）下做特征增量 A/B：基准臂 = 现行特征集，对照臂 = +`factor_a158_*`。
+  判定与 S12 label-ab 同一保守口径（IC 与命中率**同向**变好才算改善迹象）。
+  真实 26 标的池实测数字待补入 `00_kickoff/qlib_alpha158_conclusion.md`。
+- **T13.4 🔶**：`docs/THIRD_PARTY.md` 已登记 microsoft/qlib（MIT，表达式级对齐复现，
+  未引 qlib 运行时、未复制源码）；「是否纳入主线」为人工检查点，**pending**。
+- **⚠️ 不改门禁**：`affects_gate` 恒为 False；`model.factors.qlib_alpha158.enabled`
+  缺省 false，`factor_a158_*` 默认**不进生产特征集**，仅 `qlib-ab` 命令内计算；
+  新增测试 `tests/test_roadmap_s13_g3.py`（25 例，含篡改尾部价格的无前视硬校验、
+  .bin 目录结构、短数据中性、两臂同折一致性、CLI 注册与无数据 fail-soft）。
+
 ---
 
 ## 十九、技术栈

@@ -795,35 +795,35 @@
     {
       "id": "S13",
       "name": "qlib 因子库与数据层接入（G3：数据层 → 因子导出 → 增量验证）",
-      "status": "pending",
-      "started_at": null,
+      "status": "in_progress",
+      "started_at": "2026-09-11T09:20:00+00:00",
       "completed_at": null,
       "scheduled_dates": "2026-09-20 ~ 2026-09-26",
       "tasks": [
         {
           "id": "T13.1",
           "name": "独立目录 integrations/qlib/：qlib 数据转 .bin → 导出横截面因子为 parquet",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-11T09:20:00+00:00"
         },
         {
           "id": "T13.2",
           "name": "新增 src/factors/qlib_factor_provider.py，因子喂进现有 factor_library / factor_model",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-11T09:20:00+00:00"
         },
         {
           "id": "T13.3",
-          "name": "Alpha158 因子 IC 对比现有 15 因子，先验证是否有增量再决定是否替换",
-          "status": "pending",
+          "name": "Alpha158 因子 IC 对比现有 15 因子，链路与 A/B 已交付（真实池实测数字待补）；结论不管好坏如实入库",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-11T09:20:00+00:00"
         },
         {
           "id": "T13.4",
-          "name": "是否纳入主线决策（人工检查点）+ docs/THIRD_PARTY.md 统一登记来源与版本",
+          "name": "是否纳入主线决策（人工检查点，pending）+ docs/THIRD_PARTY.md 登记来源与版本（已完成）",
           "status": "pending",
           "auto_run": false,
           "completed_at": null

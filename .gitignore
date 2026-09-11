@@ -46,6 +46,9 @@ venv/
 logs/
 reports/
 data/raw/
+# S13/G3：qlib .bin 列存与导出因子（离线生成物，不入 git）
+data/qlib_bin/
+data/qlib_factors/
 data/processed/
 data/news/
 # 盘中实时快照（Q3）：分钟级数据绝不入 git，也绝不混入 data/raw 日K缓存
