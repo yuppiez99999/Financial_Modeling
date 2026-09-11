@@ -424,6 +424,14 @@ pool_train:
   save_dir: ""            # 留空 = 跟随 training.save_dir，产物落在 <save_dir>/pools/
 
 
+horizon_scan:
+  # 候选周期（交易日）。5/10/20 = 现行门禁口径；40/60 = S9 实测发现的强势区间。
+  # 仅扫描并报告，**不改变** data.prediction_horizons 与门禁放行结论。
+  candidates: [5, 10, 20, 40, 60]
+  min_samples: 30         # 单周期最少有效样本（低于则不给结论）
+  report_dir: "reports"   # 扫描报告输出目录（horizon_scan.json）
+
+
 ic_trend:
   window: 250          # 每个锚点的 IC 观察窗（样本数）
   step: 40             # 锚点之间的步长（样本数）

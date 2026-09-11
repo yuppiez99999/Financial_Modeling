@@ -358,6 +358,29 @@ async def get_pool_train():
     return manifest
 
 
+@app.get("/api/v1/strategy/horizon-scan")
+async def get_horizon_scan():
+    """多周期口径探索扫描（只读，不触发训练）。
+
+    读取 ``reports/horizon_scan.json``（由 ``python main.py horizon-scan`` 产出）；
+    文件缺失时如实返回 ``available=false`` + 生成提示，**不臆测周期结论**。
+
+    ⚠️ 结果只作口径敏感性证据（``affects_gate=false``），
+    不改变现行 ``strategy_gate`` 放行结论。
+    """
+    from src.eval.horizon_scan import HorizonScanner, compare_with_current
+
+    try:
+        scanner = HorizonScanner(_config or {})
+        payload = scanner.load()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"多周期扫描报告读取失败: {e}")
+    if payload.get("available"):
+        payload["rows"] = scanner.summarize_rows(payload)
+        payload["vs_current"] = compare_with_current(payload)
+    return payload
+
+
 @app.get("/api/v1/strategy/asset-class/{symbol}")
 async def get_asset_class(symbol: str):
     """单标的资产类别识别（只读、零网络）。

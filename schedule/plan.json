@@ -434,9 +434,54 @@
         "T9.5"
       ],
       "manual_checkpoint": []
+    },
+    {
+      "id": "S10",
+      "name": "多周期口径探索扫描",
+      "status": "completed",
+      "started_at": "2026-09-11T01:51:37.101303+00:00",
+      "completed_at": "2026-09-11T01:51:37.101303+00:00",
+      "tasks": [
+        {
+          "id": "T10.1",
+          "name": "候选周期扫描模块（src/eval/horizon_scan.py）",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T01:51:37.101303+00:00"
+        },
+        {
+          "id": "T10.2",
+          "name": "CLI / 监控报表 / API 接入",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T01:51:37.101303+00:00"
+        },
+        {
+          "id": "T10.3",
+          "name": "真实 26 标的池实测复现 S9 结论",
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-11T01:51:37.101303+00:00"
+        },
+        {
+          "id": "T10.4",
+          "name": "测试与文档（README §17 / SALES_PLAN）",
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-11T01:51:37.101303+00:00"
+        }
+      ],
+      "auto_acceptable": [
+        "T10.1",
+        "T10.2"
+      ],
+      "manual_checkpoint": [
+        "T10.3",
+        "T10.4"
+      ]
     }
   ],
-  "current_stage_index": 8,
+  "current_stage_index": 9,
   "current_task_index": 0,
   "last_run_date": "2026-09-11",
   "next_run_date": null,

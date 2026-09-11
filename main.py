@@ -917,6 +917,111 @@ def run_ic_trend(config: dict, symbols: list[str] | None = None, folds: int = 3)
     return result
 
 
+def run_horizon_scan(config: dict, symbols: list[str] | None = None, folds: int = 3,
+                     candidates: list[int] | None = None, include_pools: bool = True) -> dict:
+    """多周期口径探索（S10）：把「门禁卡在周期选择上」变成可复算的证据。
+
+    S9 实测发现：现行口径 5/10/20 日中长期卡线，而 40/60 日整池与分池全部达标
+    —— 信号真实存在，只是 5/10/20 日这个尺度上模型没有优势。
+    S9 把这条结论留作「产品口径变更，须人工决策」，本命令提供**该决策所需的证据**：
+
+      - 对候选周期各自独立跑同一套 walk-forward 口径（与 `ic` 门禁同源）；
+      - 输出每周期 / 每分池的 IC、命中率、样本、达标情况；
+      - 给出「换周期有没有用」的对照叙述。
+
+    ⚠️ **不改变现行门禁口径**，`affects_gate` 恒为 False：
+    `data.prediction_horizons` 一个字不动，`strategy_gate` 放行结论逐字段不变。
+    切换周期属于产品口径变更，须人工决策并重做泄漏与偏差审查。
+
+    落盘 `reports/horizon_scan.json`（监控报表 / API 只读消费）。
+    """
+    import scripts.evaluate_models as ev
+    from src.eval.horizon_scan import HorizonScanner, compare_with_current
+    from src.eval.stratified import StratifiedEvaluator
+
+    logger.info("执行多周期口径探索扫描")
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "pooled": {}}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    scanner = HorizonScanner(config)
+    # CLI 显式给了候选周期 → 以 CLI 为准（覆盖配置，而非追加）；
+    # 避免"用户想只扫 3 个周期，实际扫了配置里的 5 个"这种不可解释行为。
+    if candidates:
+        scanner.candidates = scanner._normalize_candidates(list(candidates))
+    days_list = [int(d) for d in scanner.candidates]
+
+    # 覆盖度前置检查：样本不够的周期如实标注
+    coverage = scanner.assess_coverage(data)
+
+    def _build_one(one_data: dict, days: int) -> dict:
+        """单周期 → walk-forward 序列（与 `ic` 门禁完全同源）。"""
+        combined = ev.build_supervised(one_data, config, int(days))
+        if combined.empty:
+            return {"horizon_days": int(days), "scores": [], "returns": [], "window_size": 0}
+        scores, returns, band = _ic_scores_for_horizon(
+            config, combined, int(days), folds, None)
+        return {
+            "horizon_days": int(days),
+            "scores": scores,
+            "returns": returns,
+            "window_size": 20 if len(scores) >= 60 else None,
+            "neutral_band": band,
+        }
+
+    pooled_seqs: dict = {}
+    for days in days_list:
+        cov = (coverage.get("per_horizon") or {}).get(str(days), {})
+        if cov and not cov.get("available", True):
+            # 样本覆盖不住：不跑、不猜，留空序列让 decide 如实标注不可用
+            logger.warning(f"[horizon-scan] {days}d 覆盖度不足，跳过：{cov.get('reason')}")
+            pooled_seqs[str(days)] = {"horizon_days": int(days), "scores": [], "returns": []}
+            continue
+        try:
+            pooled_seqs[str(days)] = _build_one(data, days)
+        except Exception as e:  # noqa: BLE001 - 单周期失败不得拖垮整次扫描
+            logger.warning(f"[horizon-scan] {days}d 序列构造失败: {e}")
+            pooled_seqs[str(days)] = {"horizon_days": int(days), "scores": [], "returns": []}
+
+    # 分池口径（可选，与 `ic-pool` 同源）
+    pools_seqs: dict = {}
+    if include_pools:
+        evaluator = StratifiedEvaluator(config)
+        splits = evaluator.split(data)
+        for cls, pool_data in splits.items():
+            if not pool_data:
+                continue
+            rows: dict = {}
+            for days in days_list:
+                cov = (coverage.get("per_horizon") or {}).get(str(days), {})
+                if cov and not cov.get("available", True):
+                    rows[str(days)] = {"horizon_days": int(days), "scores": [], "returns": []}
+                    continue
+                try:
+                    rows[str(days)] = _build_one(pool_data, days)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"[horizon-scan] 分池 {cls} {days}d 构造失败: {e}")
+                    rows[str(days)] = {"horizon_days": int(days), "scores": [], "returns": []}
+            if rows:
+                pools_seqs[cls] = rows
+
+    result = scanner.decide(pooled_seqs, coverage=coverage, pools=pools_seqs,
+                            symbol_count=len(data))
+    result["folds"] = folds
+    result["symbols_evaluated"] = len(data)
+    result["vs_current"] = compare_with_current(result)
+
+    saved = scanner.save(result)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(f"\n多周期扫描报告已保存: {saved}")
+    print(f"\n对照结论: {result['vs_current'].get('narrative')}")
+    return result
+
+
 def run_factor_model(config: dict, symbol: str | None = None, top_n: int = 10) -> dict:
     """多因子模型诊断：因子权重 / 族权重 / IC 排名 / 当前因子值。
 
@@ -1243,6 +1348,8 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py ic-trend                 # IC 时序 / 信号衰减监控（Q5）
   python main.py ic-pool                  # 按资产类别分池门禁（个股 / ETF 分开判定，S9）
   python main.py pool-train               # 按资产类别分层训练（每池一套模型，S9）
+  python main.py horizon-scan             # 多周期口径探索扫描（换周期有没有用，S10）
+  python main.py horizon-scan --days 5,20,40   # 自定义候选周期
   python main.py gate                     # 策略门禁判定（IC + 审计命中率）
   python main.py gate-diagnose            # 门禁阻塞诊断（还差多少 / 哪条腿卡住）
   python main.py factors 600519.SH        # 多因子加权组合预测（推理期特征因子）
@@ -1260,7 +1367,7 @@ def build_parser() -> argparse.ArgumentParser:
         "serve", "schedule", "audit", "notify", "batch",
         "daily-report", "weekly-report", "adaptive",
         "signal", "orders", "trade", "backtest", "macro", "monitor",
-        "ic", "ic-trend", "ic-pool", "pool-train", "gate", "gate-diagnose", "factors", "factor-model",
+        "ic", "ic-trend", "ic-pool", "pool-train", "horizon-scan", "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
     parser.add_argument("args", nargs="*", help="附加参数")
@@ -1284,6 +1391,11 @@ def build_parser() -> argparse.ArgumentParser:
                         help="ic 命令：额外按标的分层评估，定位拖后腿的标的")
     parser.add_argument("--derive-band", dest="derive_band", action="store_true", default=None,
                         help="ic 命令：逐折用训练折推导中性带，过滤 ≈0.5 噪音样本（缺省跟随配置）")
+    parser.add_argument("--no-pools", dest="no_pools", action="store_true",
+                        help="horizon-scan 命令：只扫整池口径，跳过分池（更快）")
+    parser.add_argument("--days", default=None,
+                        help="horizon-scan 命令：逗号分隔的候选周期（交易日），如 5,20,40；"
+                             "缺省用配置 horizon_scan.candidates。位置参数仍是标的列表")
     parser.add_argument("--host", default=None, help="API 服务地址")
     parser.add_argument("--port", type=int, default=None, help="API 服务端口")
     return parser
@@ -1397,6 +1509,18 @@ def main():
         run_pool_train(config, args.args or _cli_symbols(args))
     elif args.command == "ic-trend":
         run_ic_trend(config, args.args or None)
+    elif args.command == "horizon-scan":
+        _cand = None
+        _raw_days = getattr(args, "days", None)
+        if _raw_days:
+            try:
+                _cand = [int(x) for x in str(_raw_days).replace(" ", "").split(",") if x]
+            except ValueError:
+                logger.warning(f"--days 解析失败，改用配置候选周期: {_raw_days}")
+                _cand = None
+        run_horizon_scan(config, symbols=_cli_symbols(args),
+                         candidates=_cand or None,
+                         include_pools=not getattr(args, "no_pools", False))
     elif args.command == "gate":
         run_gate(config, args.args[0] if args.args else None)
     elif args.command == "gate-diagnose":

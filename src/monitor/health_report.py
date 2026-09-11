@@ -420,6 +420,25 @@ class ModelMonitor:
             logger.warning(f"[monitor] 读取分池门禁失败: {e}")
             return {"available": False, "error": str(e)}
 
+    def _collect_horizon_scan(self) -> Dict[str, Any]:
+        """多周期口径探索状态（S10，只读）。
+
+        只读 `reports/horizon_scan.json`（由 `python main.py horizon-scan` 落盘），
+        不重跑 walk-forward —— 监控报表必须随时可跑且零副作用。
+        """
+        try:
+            from src.eval.horizon_scan import HorizonScanner, compare_with_current
+
+            payload = HorizonScanner(self.config).load()
+            if not payload.get("available"):
+                return payload
+            payload["rows"] = HorizonScanner(self.config).summarize_rows(payload)
+            payload["vs_current"] = compare_with_current(payload)
+            return payload
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取多周期扫描失败: {e}")
+            return {"available": False, "error": str(e)}
+
     def _collect_pool_train(self) -> Dict[str, Any]:
         """分池训练产物状态（S9，只读）。"""
         try:
@@ -508,6 +527,7 @@ class ModelMonitor:
         ic_trend = self._collect_ic_trend()
         pool_gate = self._collect_pool_gate()
         pool_train = self._collect_pool_train()
+        horizon_scan = self._collect_horizon_scan()
 
         issues: List[str] = []
         if audit.get("available") and audit.get("drift"):
@@ -598,6 +618,7 @@ class ModelMonitor:
             "ic_trend": ic_trend,
             "pool_gate": pool_gate,
             "pool_train": pool_train,
+            "horizon_scan": horizon_scan,
         }
         return HealthReport(payload)
 
@@ -913,6 +934,49 @@ def render_markdown(payload: Dict[str, Any]) -> str:
         lines.append(
             f"- 不可用：{pool_gate.get('error') or pool_gate.get('reason') or '未生成'}"
             f"（{pool_gate.get('hint', '')}）"
+        )
+    lines.append("")
+
+    hscan = payload.get("horizon_scan", {}) or {}
+    lines.extend(["## 多周期口径探索（S10：换周期有没有用）", ""])
+    if hscan.get("available"):
+        rows = hscan.get("rows") or []
+        currents = hscan.get("current_horizon_days") or []
+        lines.extend([
+            f"- 候选周期：{hscan.get('candidates')} 交易日"
+            f"（现行门禁口径：{currents} 日）",
+            "- 是否影响放行结论：否（`affects_gate=false`，只作口径敏感性证据）",
+            "",
+            "| 周期 | 现行口径 | 样本 | IC | 命中率 | 结论 |",
+            "|------|---------|------|-----|--------|------|",
+        ])
+        for row in rows:
+            ic_v = row.get("ic")
+            hr_v = row.get("hit_rate")
+            ic_txt = "N/A" if ic_v is None else f"{float(ic_v):+.4f}"
+            hr_txt = "N/A" if hr_v is None else _fmt_pct(hr_v)
+            if not row.get("available"):
+                icon = "❔"
+            else:
+                icon = "✅" if row.get("passed") else "❌"
+            mark = "是" if row.get("is_current") else "—"
+            lines.append(
+                f"| {row.get('horizon_days')} 日 | {mark} | {row.get('samples', 0)} | "
+                f"{ic_txt} | {hr_txt} | {icon} |"
+            )
+        lines.append("")
+        vs = hscan.get("vs_current") or {}
+        if vs.get("narrative"):
+            lines.append(f"- 对照结论：{vs['narrative']}")
+        lines.append("")
+        lines.append(
+            "> ⚠️ 扫描是**决策输入**而非解锁手段：切换门禁周期属于产品口径变更，"
+            "须人工决策并重做泄漏与偏差审查；`strategy_gate` 放行结论不变。"
+        )
+    else:
+        lines.append(
+            f"- 不可用：{hscan.get('error') or hscan.get('reason') or '未生成'}"
+            f"（{hscan.get('hint', '')}）"
         )
     lines.append("")
 

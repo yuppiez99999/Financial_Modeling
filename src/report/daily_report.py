@@ -59,6 +59,7 @@ class DailyReportGenerator:
             report_lines.extend(self._generate_gate_section())
             report_lines.extend(self._generate_ic_trend_section())
             report_lines.extend(self._generate_pool_section())
+            report_lines.extend(self._generate_horizon_scan_section())
             report_lines.extend(self._generate_investment_advice(predictions))
         else:
             report_lines.append("**暂无预测数据**")
@@ -268,6 +269,77 @@ class DailyReportGenerator:
             lines.append("")
             lines.append("> 未过门禁 → 信号保持**只读观测**，不作为调仓打分因子（fail-close）。")
         lines.append("")
+        return lines
+
+    def _generate_horizon_scan_section(self) -> list[str]:
+        """生成 S10 多周期口径探索章节（换预测周期有没有用）。
+
+        读取 ``reports/horizon_scan.json``（由 ``python main.py horizon-scan`` 产出）。
+        文件缺失时明确写「未扫描」并给出命令，**绝不臆测周期结论**。
+
+        为什么报告要放：门禁章节只说「当前周期未放行」。研究员会追问
+        「那换个周期呢」——本章节回答这个问题，且**不改变放行结论**。
+        """
+        lines = ["## 📐 多周期口径探索（S10）"]
+        report_dir = (self.config.get("horizon_scan", {}) or {}).get(
+            "report_dir", self.report_dir)
+        path = Path(report_dir) / "horizon_scan.json"
+        if not path.exists():
+            lines.extend([
+                "",
+                "- 状态：**未扫描**（未找到 `horizon_scan.json`，"
+                "执行 `python main.py horizon-scan` 生成）",
+                "- 说明：扫描用于回答「换预测周期有没有用」，默认不改变门禁口径",
+                "",
+            ])
+            return lines
+
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            lines.extend(["", f"- 扫描结果读取失败：{e}", ""])
+            return lines
+
+        rows = []
+        currents = set(payload.get("current_horizon_days") or [])
+        for key in sorted((payload.get("pooled") or {}).keys(), key=lambda k: int(k)):
+            e = (payload.get("pooled") or {})[key]
+            if e.get("available"):
+                icon = "✅" if e.get("passed") else "❌"
+            else:
+                icon = "❔"
+            ic_v = e.get("ic")
+            hr_v = e.get("hit_rate")
+            rows.append(
+                f"| {key} 日 | {'是' if int(key) in currents else '—'} | "
+                f"{e.get('samples', 0)} | "
+                f"{'N/A' if ic_v is None else f'{float(ic_v):+.4f}'} | "
+                f"{_fmt_pct(hr_v)} | {icon} |"
+            )
+        if not rows:
+            lines.extend(["", "- 状态：无可用周期数据", ""])
+            return lines
+
+        lines.extend([
+            "",
+            f"- 候选周期：{payload.get('candidates')} 交易日"
+            f"（现行门禁口径：{sorted(currents)} 日）",
+            f"- 是否影响放行结论："
+            f"{'是' if payload.get('affects_gate') else '否（仅作口径敏感性证据）'}",
+            "",
+            "| 周期 | 现行口径 | 样本 | IC | 命中率 | 结论 |",
+            "|------|---------|------|-----|--------|------|",
+        ])
+        lines.extend(rows)
+        vs = payload.get("vs_current") or {}
+        if vs.get("narrative"):
+            lines.extend(["", f"- 对照结论：{vs['narrative']}"])
+        lines.extend([
+            "",
+            "> 扫描是**决策输入**而非解锁手段：切换门禁周期属产品口径变更，"
+            "须人工决策并重做泄漏审查；`strategy_gate` 放行结论不变。",
+            "",
+        ])
         return lines
 
     def _generate_pool_section(self) -> list[str]:
@@ -487,6 +559,7 @@ class WeeklyReportGenerator(DailyReportGenerator):
             report_lines.extend(self._generate_gate_section())
             report_lines.extend(self._generate_ic_trend_section())
             report_lines.extend(self._generate_pool_section())
+            report_lines.extend(self._generate_horizon_scan_section())
             report_lines.extend(self._generate_weekly_summary())
         else:
             report_lines.append("**暂无预测数据**")
