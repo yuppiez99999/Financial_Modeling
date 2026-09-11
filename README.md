@@ -139,6 +139,7 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 | `horizon-scan` | 多周期口径探索：换预测周期有没有用（S10，见 §17） |
 | `horizon-decision [--days] [--decided-by] [--reason]` | 周期切换决策单：多重比较校正后还站得住吗（S11，见 §18.1） |
 | `feature-experiment [--arms]` | 特征扩充正交对照：横截面/宏观/情感有没有增量（S12，见 §18.2） |
+| `label-ab [--horizons 5,10]` | 标签口径 A/B 对比：三重障碍法 vs 固定窗口，同折同样本（S12/G2，见 §18A） |
 | `trials [--note] [--asof] [--command-filter]` | 评估试验登记：累计比较次数与口径指纹（S13，见 §18.3） |
 | `release-check [--notify] [--json]` | 发布态健康检查：现在能不能继续往下跑（S14，见 §18.4） |
 
@@ -146,7 +147,7 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 `--model-type {lightgbm,pytorch_lstm,timesfm,ensemble,factor_model,multifactor}`、
 `--symbols <A,B>`（stream / ic / ic-pool / pool-train / horizon-scan）、`--once`（stream）、
 `--no-pools`（horizon-scan）、`--days`（horizon-scan / horizon-decision）、
-`--arms`（feature-experiment）、`--note` / `--asof`（trials）、
+`--arms`（feature-experiment）、`--horizons`（label-ab）、`--note` / `--asof`（trials）、
 `--decided-by` / `--reason`（horizon-decision 人工签字）、`--notify`（release-check）、
 `--host` / `--port`。
 
@@ -1585,6 +1586,79 @@ CLI / 监控报表 / 日报 / API 的缺失与正常分支；配置段存在且�
 - **不得**把"未测"（情感臂）表述为"已证明无用"；
 - 扫描/对照/决策单结论均为**证据**，不是业绩或信号质量结论；
 - 免责声明与许可证约定不变（见 §二十、§二十一）。
+
+---
+
+## 十八A、S11–S15 排期：高质量项目集成轮（G1~G5，已入 plan.json）
+
+> 承接 Issue #29「高质量项目集成」：S1~S14 轮次全部 completed、门禁仍 `readonly`
+> （三条提升路径已被证伪，见 §18）。本轮不再「再加一个模型」，而是按依赖顺序
+> 补齐地基件：**评估量尺 → 标签口径 → 因子库 → 数据源 → 调参/概率预测**。
+> 已写入 `schedule/plan.json`（新追加 5 个 stage，id S11~S15）。
+
+**排期总表**（沿用 `S<n>` + `T<n>.<m>` 结构，含 `auto_run` / `auto_acceptable` / `manual_checkpoint`）：
+
+| 阶段 | 时间 | 内容 | 依赖 | 人工检查点 | 集成来源 |
+|------|------|------|------|-----------|---------|
+| **S11** | 09-12 ~ 09-14 | G1 评估量尺：`src/eval/factor_metrics.py`（周期衰减/分层收益/换手/IC 置信区间）+ 成本敏感性三档扫描 + FinRL 结论补全 | 无 | T11.2 口径定稿 | machine-learning-for-trading / alphalens 理念 |
+| **S12** | 09-15 ~ 09-19 | G2 标签重构：`src/data/labeling.py` 三重障碍法（止盈/止损/时间，波动率自适应）替代固定 5/10/20 日窗口 + 无前视测试 + A/B 对比 | S11 | T12.3 A/B 结论如实入库 | machine-learning-for-trading 三重障碍法 |
+| **S13** | 09-20 ~ 09-26 | G3 qlib 接入：`integrations/qlib/` 数据层 → `src/factors/qlib_factor_provider.py` → Alpha158 vs 现有 15 因子增量验证 | S12 | T13.4 是否纳入主线 + THIRD_PARTY 登记 | microsoft/qlib（MIT） |
+| **S14** | 09-27 ~ 09-29 | G4 数据源升级：akshare 升 P1，回退链 `wind → akshare → tencent → simulation`，期货/外汇开启 | 无（可并行） | T14.3 回退链验收 ≥95% | akfamily/akshare（MIT） |
+| **S15** | 09-30 ~ 10-04 | G5 调参与概率预测：optuna 包裹 LightGBM/LSTM + neuralforecast 概率区间 → 置信度阈值（仅高置信样本给信号） | S13 | T15.3 是否提门禁 | optuna（MIT）/ neuralforecast（Apache-2.0） |
+
+**里程碑**：
+
+- **09-19（S12 结束）**：拿到「标签重构是否有效」的硬结论 —— 这是唯一能直接改变门禁判定的一步；
+- **09-29（S14 结束）**：数据侧不再是瓶颈，期货/外汇可开；
+- **10-04**：若 short/mid 命中率过 52% 且 IC 稳定，走**人工审批**切换 `strategy_gate`；
+  未过则以真实数字记入 `SALES_PLAN` §8.2 并说明原因。
+
+**明确不引入（本轮硬边界）**：
+
+- `mlfinlab`（NOASSERTION 许可证 + 停更 ≈3 年，`00_kickoff/mlfinlab_blockers.md` 已判暂不接入）；
+- `freqtrade`（GPL-3.0 传染性，维持「只阅读、不引代码」）；
+- `FinRL`（S5 已跑最小实验，本轮只补结论 + 及时止损，不扩实验）。
+
+**统一原则（与 S9~S14 同构）**：
+
+- 所有新模块默认 `report_only` / `affects_gate=false`，**不改门禁结论**；
+- G2/G3 即使证明「标签重构没用 / qlib 无增量」也是**有价值结论**，如实写入 `00_kickoff/`；
+- 许可证：qlib/optuna/akshare（MIT）、neuralforecast（Apache-2.0）与本项目「禁止商用」
+  对外授权限制**不冲突**（限制的是对外授权，不是内部使用），但引入时必须登记来源与版本（`docs/THIRD_PARTY.md`）。
+
+> ⚠️ **命名说明**：`plan.json` 中新追加的 S11~S14 与 §18 已完成的旧 S11~S14 阶段 id 复用，
+> 内容不同（旧轮为「口径变更决策收敛」，本轮为「高质量项目集成」），以 `source` 字段区分。
+
+**S11 落地记录（2026-09-11）**：
+
+- **T11.1 ✅**：新增 `src/eval/factor_metrics.py`（零新依赖，复用 `src/inference/ic.py`
+  同源实现）—— IC 置信区间（Fisher 变换 95% CI）/ 五分位分层收益（含 Q5-Q1 spread
+  与单调性判定）/ 信号换手率 / 多周期 IC 衰减曲线；CLI 入口 `python main.py ic --detail`，
+  落盘 `reports/factor_metrics.json`。全部 `report_only`（`affects_gate=false`）。
+- **T11.2 🔶 草案**：成交成本敏感性三档扫描（conservative 0.125% / base 0.075% /
+  aggressive 0.030% 单边），净收益 = spread − 2×单边成本×(turnover×days) 保守线性
+  上界。**口径为草案**：三档参数在定稿前为常量、不允许配置覆盖（防选择自由度回流），
+  人工定稿前不作为任何决策依据。
+
+
+**S12 落地记录（2026-09-11）**：
+
+- **T12.1 ✅**：新增 `src/data/labeling.py` —— 三重障碍法（止盈/止损/时间三重障碍，
+  上下障碍 = `k × σ_t`，σ_t 由**截至 t** 的滚动波动率估计，随波动率自适应），
+  替代写死的 5/10/20 日窗口；支持日内高低价判定触碰（路径不被收盘价抹平）；
+  三分类可折叠为二分类（`to_binary`）与现有 `target_{h}d` 语义对齐。
+- **T12.2 ✅**：新增 `tests/test_roadmap_s12_g2.py`（22 例）—— 含**无前视硬测试**
+  （篡改 i 之后价格，σ_i 不变）、优先序（止盈/止损/时间障碍）、同日双向触发给中性、
+  尾部未到期返回 None 等。
+- **T12.3 ✅ 结论入库**：新增 `src/eval/label_ab.py` + CLI `python main.py label-ab`，
+  同一批样本 / 同一组折 / 同一模型配置下对比新旧标签；结论写入
+  `00_kickoff/label_ab_conclusion.md`。**26 标的 / 3 折实测**：
+  - 10 日：新标签 IC **+0.061**（旧 +0.027）、命中率 **52.88%**（旧 49.28%），
+    首次跨过 52% 门禁线；
+  - 5 日：结论**混合**（IC 微降、命中率微升），不构成明确改善。
+- **⚠️ 不改门禁**：`affects_gate` 恒为 `False`，`data.prediction_horizons` 与
+  `strategy_gate` 一个字不动；是否把三重障碍法标签纳入训练主线由**人工检查点**决定。
+
 
 ---
 

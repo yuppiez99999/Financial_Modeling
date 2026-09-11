@@ -361,7 +361,16 @@ horizon_scan:
   # 仅扫描并报告，**不改变** data.prediction_horizons 与门禁放行结论。
   candidates: [5, 10, 20, 40, 60]
   min_samples: 30         # 单周期最少有效样本（低于则不给结论）
-  report_dir: "reports"   # 扫描报告输出目录（horizon_scan.json）
+
+
+# 标签口径（src/data/labeling.py，S12/G2）—— 三重障碍法
+# 替代写死的 5/10/20 日固定窗口：上下障碍 = k × σ_t（σ_t 为截至 t 的滚动波动率），
+# 谁先触发（止盈/止损/时间）谁胜出。**默认 report_only**，是否纳入训练主线由人工决定。
+labeling:
+  k_up: 1.0               # 上障碍（止盈）倍数：profit_target = k_up × σ_t
+  k_down: 1.0             # 下障碍（止损）倍数：stop_loss = k_down × σ_t
+  vol_window: 20          # 波动率滚动窗口（交易日）
+  horizon: 5              # 时间障碍（交易日），A/B 时按周期覆盖
 
 
 # 预测周期切换的决策前置（src/eval/horizon_decision.py，S11）
