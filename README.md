@@ -1628,6 +1628,21 @@ CLI / 监控报表 / 日报 / API 的缺失与正常分支；配置段存在且�
 > ⚠️ **命名说明**：`plan.json` 中新追加的 S11~S14 与 §18 已完成的旧 S11~S14 阶段 id 复用，
 > 内容不同（旧轮为「口径变更决策收敛」，本轮为「高质量项目集成」），以 `source` 字段区分。
 
+**S11 落地记录（2026-09-11）**：
+
+- **T11.1 ✅**：新增 `src/eval/factor_metrics.py`（零新依赖，复用 `src/inference/ic.py`
+  同源实现）—— IC 置信区间（Fisher 变换 95% CI）/ 五分位分层收益（含 Q5-Q1 spread
+  与单调性判定）/ 信号换手率 / 多周期 IC 衰减曲线；CLI 入口 `python main.py ic --detail`，
+  落盘 `reports/factor_metrics.json`。全部 `report_only`（`affects_gate=false`）。
+- **T11.2 🔶 草案**：成交成本敏感性三档扫描（conservative 0.125% / base 0.075% /
+  aggressive 0.030% 单边），净收益 = spread − 2×单边成本×(turnover×days) 保守线性
+  上界。**口径为草案**：三档参数在定稿前为常量、不允许配置覆盖（防选择自由度回流），
+  人工定稿前不作为任何决策依据。
+- **T11.3 ✅**：`00_kickoff/finrl_comparison_conclusion.md` 升 v2 —— 如实记录
+  S5 最小实验**只验证了 toy 环境管线可运行**（无真实训练、无对比数字），
+  并依据样本量不足 + 当前卡点不在模型族的判断**封存 FinRL，不扩大实验**。
+
+
 ---
 
 ## 十九、技术栈

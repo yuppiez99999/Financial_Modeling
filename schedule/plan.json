@@ -711,17 +711,17 @@
     {
       "id": "S11",
       "name": "评估量尺先行（G1：因子诊断 / 成本敏感性 / FinRL 结论补全）",
-      "status": "pending",
-      "started_at": null,
+      "status": "in_progress",
+      "started_at": "2026-09-11T07:00:24.658860+00:00",
       "completed_at": null,
       "scheduled_dates": "2026-09-12 ~ 2026-09-14",
       "tasks": [
         {
           "id": "T11.1",
           "name": "新增 src/eval/factor_metrics.py：按周期衰减 / 分层收益 / 换手 / IC 置信区间",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-11T07:00:24.658860+00:00"
         },
         {
           "id": "T11.2",
@@ -733,9 +733,9 @@
         {
           "id": "T11.3",
           "name": "补全 00_kickoff/finrl_comparison_conclusion.md 状态字段",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-11T07:00:24.658860+00:00"
         }
       ],
       "auto_acceptable": [
@@ -745,7 +745,7 @@
       "manual_checkpoint": [
         "T11.2"
       ],
-      "note": "统一评估量尺：没有统一量尺，后续所有改动无法判断是否变好。本轮所有新模块默认 report_only，不改门禁结论。",
+      "note": "统一评估量尺：没有统一量尺，后续所有改动无法判断是否变好。本轮所有新模块默认 report_only，不改门禁结论。 进展（2026-09-11）：T11.1 因子健康度量尺（src/eval/factor_metrics.py + main.py ic --detail）与 T11.3 FinRL 结论补全已完成；T11.2 成本敏感性三档口径以草案形式落地（参数为常量，待人工定稿）。",
       "source": "Issue #29 高质量项目集成 · G1（machine-learning-for-trading 三重障碍法 / alphalens 因子诊断理念）"
     },
     {

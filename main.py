@@ -514,7 +514,8 @@ def _ic_scores_for_horizon(config: dict, combined, horizon_days: int, folds: int
 
 
 def run_ic(config: dict, symbols: list[str] | None = None, folds: int = 3,
-           stratify: bool = False, derive_band: bool | None = None) -> dict:
+           stratify: bool = False, derive_band: bool | None = None,
+           detail: bool = False) -> dict:
     """IC / 命中率门禁评估（walk-forward 时序回测，口径与 scripts/evaluate_models.py 一致）。
 
     复用评估脚本的 ``build_supervised`` / ``walk_forward_splits`` / ``compute_metrics``，
@@ -528,6 +529,12 @@ def run_ic(config: dict, symbols: list[str] | None = None, folds: int = 3,
       - ``derive_band``      ：逐折用训练折推导中性带，过滤 ≈0.5 的噪音样本。
         ``True``/``False`` = 显式开关；``None`` = 跟随
         ``strategy_gate.neutral_band.enabled``（缺省 false）。
+
+    S11（G1）新增：
+      - ``detail=True``      ：追加统一评估量尺报告（src/eval/factor_metrics.py）：
+        IC 置信区间 / 分位数分层收益 / 信号换手率 / 多周期衰减曲线 /
+        成交成本敏感性三档扫描。全部 report_only，不影响门禁判定，
+        落盘 ``reports/factor_metrics.json``。
     """
     import scripts.evaluate_models as ev
     from src.inference.ic import ICCalculator
@@ -581,6 +588,51 @@ def run_ic(config: dict, symbols: list[str] | None = None, folds: int = 3,
     })
     if stratify:
         result["per_symbol"] = _summarize_per_symbol(per_symbol or {})
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if detail:
+        result["factor_metrics"] = _run_factor_metrics(
+            config, data, horizons_cfg, per_horizon)
+    return result
+
+
+def _run_factor_metrics(config: dict, data: dict, horizons_cfg: dict,
+                        per_horizon: dict) -> dict:
+    """S11（G1）统一评估量尺：对同一批 walk-forward 序列出因子健康度报告。
+
+    与 `ic` 门禁**同一条序列**（per_horizon 里已含 scores/returns），
+    额外由收盘价构造多周期前视收益做衰减曲线。report_only，不改门禁。
+    """
+    import scripts.evaluate_models as ev
+    from src.eval.factor_metrics import FactorMetricsCalculator
+    from src.inference.ic import forward_returns
+
+    calculator = FactorMetricsCalculator(config)
+    sequences: dict = {}
+    # 整池收盘价拼接：按时间拼接去重，仅用于构造前视收益（衰减曲线）
+    for hname, payload in per_horizon.items():
+        returns_by_days: dict = {}
+        try:
+            combined = ev.build_supervised(data, config, int(payload["horizon_days"]))
+        except Exception as e:  # noqa: BLE001 - 诊断失败不得影响门禁输出
+            logger.warning(f"[factor-metrics] {hname} 数据集构造失败: {e}")
+            combined = None
+        if combined is not None and not combined.empty and "close" in combined.columns:
+            closes = combined["close"].astype(float).tolist()
+            for cand_days in sorted({int(d) for d in horizons_cfg.values()}):
+                returns_by_days[cand_days] = forward_returns(closes, cand_days)
+        sequences[hname] = {
+            "horizon_days": int(payload["horizon_days"]),
+            "scores": payload.get("scores", []),
+            "returns": payload.get("returns", []),
+            "returns_by_days": returns_by_days or None,
+        }
+    result = calculator.evaluate_all(sequences)
+    try:
+        saved = calculator.save(result)
+        print(f"\n因子健康度报告已保存: {saved}")
+        result["report_path"] = str(saved)
+    except Exception as e:  # noqa: BLE001 - 落盘失败不影响诊断结果返回
+        logger.warning(f"[factor-metrics] 报告落盘失败: {e}")
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return result
 
@@ -1615,6 +1667,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="risk-advice 命令：对配置内全部启用标的产出建议")
     parser.add_argument("--json", dest="as_json", action="store_true",
                         help="risk-advice 命令：输出 JSON（缺省输出 Markdown）")
+    parser.add_argument("--detail", action="store_true",
+                        help="ic 评估追加统一评估量尺报告（因子健康度，report_only）")
     parser.add_argument("--stratify", action="store_true",
                         help="ic 命令：额外按标的分层评估，定位拖后腿的标的")
     parser.add_argument("--derive-band", dest="derive_band", action="store_true", default=None,
@@ -1744,7 +1798,8 @@ def main():
     elif args.command == "ic":
         run_ic(config, args.args or None,
                stratify=bool(getattr(args, "stratify", False)),
-               derive_band=getattr(args, "derive_band", None))
+               derive_band=getattr(args, "derive_band", None),
+               detail=bool(getattr(args, "detail", False)))
     elif args.command == "ic-pool":
         run_pool_ic(config, args.args or _cli_symbols(args),
                     derive_band=getattr(args, "derive_band", None))
