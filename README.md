@@ -142,6 +142,14 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 | `label-ab [--horizons 5,10]` | 标签口径 A/B 对比：三重障碍法 vs 固定窗口，同折同样本（S12/G2，见 §18A） |
 | `trials [--note] [--asof] [--command-filter]` | 评估试验登记：累计比较次数与口径指纹（S13，见 §18.3） |
 | `release-check [--notify] [--json]` | 发布态健康检查：现在能不能继续往下跑（S14，见 §18.4） |
+| `qlib-ab` | qlib Alpha158 因子增量 A/B：同折同样本只换特征（S13/G3，见 §18A） |
+| `macro` | 宏观指标数据源状态：CPI/PMI/GDP/M2/LPR 可用性（S14/G4） |
+
+数据源验收脚本（非 CLI 命令，独立入口）：
+
+| 脚本 | 用途 |
+|------|------|
+| `python scripts/verify_data_sources.py [--source akshare] [--offline]` | S14/G4 数据源回退链验收：跑全量标的池 + 宏观，统计成功率并落盘 `reports/s14_data_source_acceptance.json`（≥95% 达标） |
 
 常用参数：`--horizon {short_term,mid_term,long_term,all}`、`--config <path>`、
 `--model-type {lightgbm,pytorch_lstm,timesfm,ensemble,factor_model,multifactor}`、
@@ -1684,6 +1692,37 @@ CLI / 监控报表 / 日报 / API 的缺失与正常分支；配置段存在且�
   缺省 false，`factor_a158_*` 默认**不进生产特征集**，仅 `qlib-ab` 命令内计算；
   新增测试 `tests/test_roadmap_s13_g3.py`（25 例，含篡改尾部价格的无前视硬校验、
   .bin 目录结构、短数据中性、两臂同折一致性、CLI 注册与无数据 fail-soft）。
+
+**S14 落地记录（2026-09-11）**：
+
+- **T14.1 ✅ akshare 升为 P1**：新增 `src/data/akshare_client.py` —— 免费多市场
+  日K客户端，按代码形态分派（A股/ETF → 新浪日K与场内基金；国内期货 → 新浪主连；
+  外汇 → 新浪外汇日K），输出统一为 `date/open/high/low/close/volume`。
+  `DataCollector` 回退链升级为
+  **`wind → akshare → tencent → simulation`**（akshare 为链路中**唯一覆盖期货与外汇的免费档**）。
+- **T14.2 ✅ 测试与开启**：新增 `tests/test_akshare_client.py`（38 例，全部离线 mock）；
+  `configs/config_pro.yaml` 中 `futures.enabled` / `forex.enabled` **由 false 置为 true**
+  （此前注释明确「腾讯源不支持期货/外汇代码」），并补上 forex 的 symbols 列表。
+- **T14.3 ✅ 验收数字（实测）**：新增 `scripts/verify_data_sources.py` —— 一键跑全量标的池
+  与宏观指标，产出可机器校对的验收报告。**实测结果**：
+
+  | 项目 | 成功 / 总数 | 成功率 | 验收线 |
+  |------|------------|--------|--------|
+  | 标的池（全量） | **38 / 38** | **100.0%** | 95% |
+  | ├ stock（A股 12 + ETF 14） | 26 / 26 | 100.0% | |
+  | ├ futures（国内期货主连） | 10 / 10 | 100.0% | |
+  | └ forex（外汇） | 2 / 2 | 100.0% | |
+  | 宏观（CPI/PMI/GDP/M2/LPR） | **5 / 5** | **100.0%** | 95% |
+
+  宏观 **LPR 由长期 unavailable 修复为可用**（akshare 列名为英文
+  `TRADE_DATE`/`LPR1Y`，补显式取值列声明）。结论与踩坑详见
+  `00_kickoff/akshare_data_source_conclusion.md`。
+- **⚠️ 不改门禁**：本次只影响**取数**，`strategy_gate` / `prediction_horizons`
+  **一个字未改**，不产生任何"信号可用/门禁解锁"含义；外汇无成交量时如实填
+  `volume=1.0` 占位（**价格一律来自真实源，绝不用模拟值顶替**）；未安装 akshare
+  时静默跳过（`ImportError`），链路行为与升级前完全一致，CI 离线可跑。
+- **待人工决策**：① 回退链顺序（akshare 是否维持在腾讯之前）；
+  ② 期货/外汇是否正式纳入**训练主线**（当前 `enabled: true` 会进 `collect_all()`）。
 
 ---
 

@@ -66,6 +66,9 @@ INDICATOR_REGISTRY: Dict[str, Dict[str, Any]] = {
         "freq": "M",
         "akshare": "macro_china_lpr",
         "unit": "%",
+        # S14/G4：akshare 该接口列名为英文（TRADE_DATE / LPR1Y / …），
+        # 显式声明取值列，避免通用列名识别把 LPR5Y 误当 LPR1Y。
+        "value_column": "LPR1Y",
     },
 }
 
@@ -164,7 +167,7 @@ class MacroClient:
             return None
         try:
             raw = func()
-            series = self._normalize_akshare(raw)
+            series = self._normalize_akshare(raw, value_column=meta.get("value_column"))
             if series is not None and len(series) > 0:
                 logger.info(f"[macro] akshare 获取 {indicator}: {len(series)} 期")
                 return series
@@ -173,12 +176,16 @@ class MacroClient:
         return None
 
     @staticmethod
-    def _normalize_akshare(raw: Any) -> Optional[pd.Series]:
+    def _normalize_akshare(raw: Any, value_column: Optional[str] = None) -> Optional[pd.Series]:
         """把 akshare 返回的 DataFrame 归一化为 date->value 的 Series。
 
         akshare 各接口列名不统一（日期/月份/季度、今值/数值/值 等），
         这里做宽松识别：优先匹配含"日期/月份/时间/季度"的列作索引，
         含"值/数值/今值/同比/指数"的列作数值。
+
+        某些接口带多值列（如 LPR 同时有 LPR1Y/LPR5Y），通用识别可能取错列，
+        故支持 `value_column` **显式指定取值列**（注册表中按指标声明），
+        显式优先于通用识别；显式列不存在时回落通用识别（fail-soft）。
         """
         if raw is None:
             return None
@@ -189,15 +196,18 @@ class MacroClient:
         date_col = None
         for col in df.columns:
             text = str(col)
-            if any(k in text for k in ("日期", "月份", "时间", "季度", "date", "Date")):
+            if any(k in text for k in ("日期", "月份", "时间", "季度", "date", "Date", "TRADE_DATE")):
                 date_col = col
                 break
         value_col = None
-        for col in df.columns:
-            text = str(col)
-            if any(k in text for k in ("今值", "数值", "值", "同比", "指数", "value")):
-                value_col = col
-                break
+        if value_column and value_column in df.columns:
+            value_col = value_column
+        if value_col is None:
+            for col in df.columns:
+                text = str(col)
+                if any(k in text for k in ("今值", "数值", "值", "同比", "指数", "value")):
+                    value_col = col
+                    break
         if date_col is None or value_col is None:
             logger.debug(f"[macro] 无法识别 akshare 列: {list(df.columns)}")
             return None
