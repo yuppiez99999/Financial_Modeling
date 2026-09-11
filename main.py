@@ -34,6 +34,7 @@ from pathlib import Path
 
 import yaml
 
+import numpy as np  # noqa: E402（tune/confidence 数组处理用）
 import pandas as pd  # noqa: E402（qlib-ab 序列对齐用）
 
 # 项目根目录
@@ -1489,6 +1490,200 @@ def run_qlib_ab(config: dict, symbols: list[str] | None = None,
     return report
 
 
+def run_tune(config: dict, symbols: list[str] | None = None,
+             horizons: list[int] | None = None, n_trials: int = 20,
+             folds: int = 3, model_type: str = "lightgbm") -> dict:
+    """optuna 超参搜索（S15 / G5，T15.1）：包裹 LightGBM 训练。
+
+    为什么需要：此前所有 A/B（label-ab / qlib-ab / feature-experiment）都用
+    **同一份写死超参**对比 —— 保证"只差一个变量"，但也意味着超参从未被系统
+    搜索过。本命令把「超参到底卡不卡门禁」变成可复算数字。
+
+    与 qlib-ab / label-ab 完全同口径：同一数据加载、同一特征列、同一组
+    walk-forward 折（严格时序无前视）。搜索目标 = **全部测试折 IC 均值**
+    （不是训练集指标 —— 用训练集指标选超参 = 泄漏）。
+
+    ⚠️ **不改门禁**（`affects_gate=false`）；最优超参**不自动落地**（T15.3
+    人工检查点），配置一字不动；搜索属选择自由度，已登记试验次数。
+
+    落盘 `reports/hyperopt_lightgbm_<h>d.json` + `reports/optuna_studies/*.db`
+    （SQLite study 可断点续跑、可审计）。
+    """
+    import scripts.evaluate_models as ev
+    from src.data.preprocessor import FeatureEngineer
+    from src.eval.hyperopt_tuner import (baseline_fold_ic, current_lightgbm_params,
+                                         tune_lightgbm)
+
+    if model_type != "lightgbm":
+        payload = {"error": f"暂不支持 {model_type} 的超参搜索（本轮仅 lightgbm；"
+                            "LSTM 搜索待 optuna+torch 联调后开放）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    logger.info(f"optuna 超参搜索（model={model_type}, n_trials={n_trials}）")
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+    horizon_map = horizons or [int(v.get("days", 5)) for v in horizons_cfg.values()
+                               if isinstance(v, dict)]
+    if not horizon_map:
+        horizon_map = [5, 10, 20]
+
+    out_dir = Path("reports")
+    out_dir.mkdir(exist_ok=True)
+    all_reports: dict = {}
+    for days in horizon_map:
+        combined = ev.build_supervised(data, config, int(days))
+        if combined.empty:
+            all_reports[f"{days}d"] = {"available": False,
+                                       "reason": "no_supervised_data"}
+            continue
+        fe = FeatureEngineer(config)
+        cols = [c for c in fe.get_feature_columns(combined, int(days))
+                if not str(c).startswith("_")]
+        X = combined[cols].to_numpy(dtype=float)
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        y = combined[f"target_{int(days)}d"].to_numpy(dtype=int)
+        fwd = combined["_fwd_ret"].to_numpy(dtype=float)
+        splits = ev.walk_forward_splits(len(combined), folds)
+        try:
+            report = tune_lightgbm(X, y, fwd, splits, n_trials=n_trials,
+                                   horizon_days=int(days))
+            report["baseline_current_params"] = {
+                "params": current_lightgbm_params(config),
+                "fold_mean_ic": baseline_fold_ic(
+                    X, y, fwd, splits, current_lightgbm_params(config)),
+            }
+        except Exception as e:  # noqa: BLE001 - 单周期失败不得拖垮整次搜索
+            logger.warning(f"[tune] {days}d 搜索失败: {e}")
+            all_reports[f"{days}d"] = {"available": False,
+                                       "reason": f"error: {e}"}
+            continue
+        all_reports[f"{days}d"] = report
+        out_path = out_dir / f"hyperopt_lightgbm_{int(days)}d.json"
+        out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2),
+                            encoding="utf-8")
+        print(f"[tune] {days}d: best search_ic="
+              f"{report['best_trial']['search_ic']:+.4f} "
+              f"(trial #{report['best_trial']['number']}), "
+              f"baseline_ic="
+              f"{(report['baseline_current_params'] or {}).get('fold_mean_ic')}")
+
+    _record_trial(config, "tune", {
+        "model": model_type, "n_trials": int(n_trials), "folds": folds,
+        "horizons": list(all_reports.keys()),
+    })
+    print(json.dumps({k: {kk: vv for kk, vv in v.items() if kk != "top_trials"}
+                      for k, v in all_reports.items()},
+                     ensure_ascii=False, indent=2))
+    print(f"\n搜索报告已保存: {out_dir}/hyperopt_lightgbm_<h>d.json"
+          f"（study: {out_dir}/optuna_studies/）")
+    return all_reports
+
+
+def run_confidence(config: dict, symbols: list[str] | None = None,
+                   horizons: list[int] | None = None, folds: int = 3) -> dict:
+    """置信度阈值曲线（S15 / G5，T15.2）：只对高置信样本给信号。
+
+    为什么需要：门禁卡在"全样本命中率 ~50%"，但模型在**自己最有把握的子集**
+    上可能显著更准。本命令把「置信度 ≥X 才输出信号」的覆盖/命中率/IC
+    trade-off 画成完整曲线，供 T15.3 人工检查点基于数字做决策。
+
+    置信度口径：`|p − 0.5| × 2`（概率距 0.5 的归一化距离）；neuralforecast
+    概率区间接入时只需把区间宽度换算成置信分喂 `confidence_from_interval`
+    （见 src/eval/confidence_curve.py docstring），不必另写链路。
+
+    ⚠️ **不改门禁**（`affects_gate=false`）；**不自动选阈值**（曲线是选择
+    自由度，未经多重比较校正不得引用单阈值读数为达标证据）；已登记试验。
+
+    落盘 `reports/confidence_curve_<h>d.json`。
+    """
+    import scripts.evaluate_models as ev
+    from src.data.preprocessor import FeatureEngineer
+    from src.eval.confidence_curve import sweep_confidence
+
+    logger.info("置信度阈值曲线（walk-forward 测试折口径）")
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+    horizon_map = horizons or [int(v.get("days", 5)) for v in horizons_cfg.values()
+                               if isinstance(v, dict)]
+    if not horizon_map:
+        horizon_map = [5, 10, 20]
+
+    out_dir = Path("reports")
+    out_dir.mkdir(exist_ok=True)
+    all_curves: dict = {}
+    for days in horizon_map:
+        combined = ev.build_supervised(data, config, int(days))
+        if combined.empty:
+            all_curves[f"{days}d"] = {"available": False,
+                                      "reason": "no_supervised_data"}
+            continue
+        fe = FeatureEngineer(config)
+        cols = [c for c in fe.get_feature_columns(combined, int(days))
+                if not str(c).startswith("_")]
+        splits = ev.walk_forward_splits(len(combined), folds)
+        if not splits:
+            all_curves[f"{days}d"] = {"available": False, "reason": "no_splits"}
+            continue
+
+        # 汇集全部测试折的样本（同 ic 门禁口径），再扫阈值
+        proba_parts, ret_parts = [], []
+        import lightgbm as lgb
+        from sklearn.preprocessing import StandardScaler
+        from src.eval.hyperopt_tuner import current_lightgbm_params
+        for train_idx, test_idx in splits:
+            scaler = StandardScaler()
+            X_tr = scaler.fit_transform(
+                combined[cols].to_numpy(dtype=float)[train_idx])
+            X_te = scaler.transform(
+                combined[cols].to_numpy(dtype=float)[test_idx])
+            clf = lgb.LGBMClassifier(verbose=-1, random_state=42,
+                                     **{k: (int(v) if k in ("num_leaves", "max_depth",
+                                                            "n_estimators") else float(v))
+                                        for k, v in current_lightgbm_params(config).items()})
+            y_all = combined[f"target_{int(days)}d"].to_numpy(dtype=int)
+            clf.fit(X_tr, y_all[train_idx])
+            proba_parts.append(clf.predict_proba(X_te)[:, 1])
+            ret_parts.append(combined["_fwd_ret"].to_numpy(dtype=float)[test_idx])
+        proba = np.concatenate(proba_parts)
+        ret = np.concatenate(ret_parts)
+
+        curve = sweep_confidence(proba, ret)
+        curve["horizon_days"] = int(days)
+        all_curves[f"{days}d"] = curve
+        out_path = out_dir / f"confidence_curve_{int(days)}d.json"
+        out_path.write_text(json.dumps(curve, ensure_ascii=False, indent=2),
+                            encoding="utf-8")
+        obs = curve.get("observation")
+        if obs:
+            print(f"[confidence] {days}d 观察点: thr={obs['threshold']} "
+                  f"hit={obs['hit_rate']:+.4f} ic={obs['ic']:+.4f} "
+                  f"cov={obs['coverage']:.2%}（呈现用，非推荐阈值）")
+
+    _record_trial(config, "confidence", {
+        "symbols": len(data), "folds": folds,
+        "horizons": list(all_curves.keys()),
+    })
+    print(json.dumps(all_curves, ensure_ascii=False, indent=2))
+    print(f"\n置信度曲线已保存: {out_dir}/confidence_curve_<h>d.json")
+    return all_curves
+
+
 def run_factor_model(config: dict, symbol: str | None = None, top_n: int = 10) -> dict:
     """多因子模型诊断：因子权重 / 族权重 / IC 排名 / 当前因子值。
 
@@ -1837,6 +2032,9 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py consistency 600519.SH    # 信号一致性校验（跨周期/跨模型/跨口径）
   python main.py risk-advice 600519.SH    # 智能风控建议：止损/止盈（Q4）
   python main.py risk-advice --all        # 全标的池风控建议（Markdown）
+  python main.py tune                     # optuna 超参搜索（LightGBM，S15/G5）
+  python main.py tune --n-trials 50       # 更多试验数
+  python main.py confidence               # 置信度阈值曲线（高置信样本命中率，S15/G5）
         """,
     )
     parser.add_argument("command", choices=[
@@ -1846,6 +2044,7 @@ def build_parser() -> argparse.ArgumentParser:
         "signal", "orders", "trade", "backtest", "macro", "monitor",
         "ic", "ic-trend", "ic-pool", "pool-train", "horizon-scan", "horizon-decision",
         "feature-experiment", "label-ab", "qlib-ab", "trials", "release-check",
+        "tune", "confidence",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -1895,6 +2094,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="horizon-decision 命令：人工确认人（非空才可能把决策单置为 confirmed）")
     parser.add_argument("--reason", dest="reason", default="",
                         help="horizon-decision 命令：人工确认/驳回的理由（写入决策单审计字段）")
+    parser.add_argument("--n-trials", dest="n_trials", type=int, default=20,
+                        help="tune 命令：optuna 试验数（缺省 20）")
+    parser.add_argument("--trials-horizons", dest="trials_horizons", default=None,
+                        help="tune / confidence 命令：逗号分隔的预测周期（交易日），如 5,10；缺省用配置")
     parser.add_argument("--host", default=None, help="API 服务地址")
     parser.add_argument("--port", type=int, default=None, help="API 服务端口")
     return parser
@@ -2057,6 +2260,25 @@ def main():
     elif args.command == "release-check":
         run_release_check(config, notify=bool(getattr(args, "notify", False)),
                           as_json=bool(getattr(args, "as_json", False)))
+    elif args.command == "tune":
+        _h = None
+        _raw_h = getattr(args, "trials_horizons", None)
+        if _raw_h:
+            try:
+                _h = [int(x.strip()) for x in str(_raw_h).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--trials-horizons 解析失败，改用配置 prediction_horizons: {_raw_h}")
+        run_tune(config, symbols=_cli_symbols(args), horizons=_h,
+                 n_trials=int(getattr(args, "n_trials", 20) or 20))
+    elif args.command == "confidence":
+        _h = None
+        _raw_h = getattr(args, "trials_horizons", None)
+        if _raw_h:
+            try:
+                _h = [int(x.strip()) for x in str(_raw_h).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--trials-horizons 解析失败，改用配置 prediction_horizons: {_raw_h}")
+        run_confidence(config, symbols=_cli_symbols(args), horizons=_h)
     elif args.command == "gate":
         run_gate(config, args.args[0] if args.args else None)
     elif args.command == "gate-diagnose":

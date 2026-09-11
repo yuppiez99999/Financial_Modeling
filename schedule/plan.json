@@ -816,7 +816,7 @@
         },
         {
           "id": "T13.3",
-          "name": "Alpha158 因子 IC 对比现有 15 因子，链路与 A/B 已交付（真实池实测数字待补）；结论不管好坏如实入库",
+          "name": "Alpha158 因子 IC 对比现有 15 因子，链路与 A/B 已交付（真实池实测已补，见 00_kickoff/qlib_alpha158_conclusion.md）；结论不管好坏如实入库",
           "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-11T09:20:00+00:00"
@@ -895,16 +895,16 @@
         {
           "id": "T15.1",
           "name": "optuna 包裹 LightGBM/LSTM 训练，搜索记录进 reports/",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-11T11:30:00+00:00"
         },
         {
           "id": "T15.2",
           "name": "neuralforecast 概率区间 → 置信度阈值，仅对高置信样本给信号（与 withheld 语义一致）",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-11T11:30:00+00:00"
         },
         {
           "id": "T15.3",
@@ -921,7 +921,7 @@
       "manual_checkpoint": [
         "T15.3"
       ],
-      "note": "仍不自动改门禁。里程碑 10-04：若 short/mid 命中率过 52% 且 IC 稳定，走人工审批切换 strategy_gate；未过则如实记入 SALES_PLAN §8.2 并说明原因。",
+      "note": "仍不自动改门禁。里程碑 10-04：若 short/mid 命中率过 52% 且 IC 稳定，走人工审批切换 strategy_gate；未过则如实记入 SALES_PLAN §8.2 并说明原因。 | T15.1/T15.2 已落地（2026-09-11）：optuna 搜索（tune 命令）与置信度阈值曲线（confidence 命令）均 report_only/affects_gate=false；T15.3 人工检查点待办。",
       "source": "Issue #29 高质量项目集成 · G5（optuna / Nixtla neuralforecast）",
       "depends_on": [
         "S13"

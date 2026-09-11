@@ -47,3 +47,30 @@ qlib 官方 Alpha158（`qlib/contrib/data/loader.py`）共 158 个表达式 =
   内部使用与集成无冲突；
 - 复现方式为**算法/表达式对齐**（因子定义属公开方法论），未复制 qlib 源码文本；
   若后续直接引入 qlib 包（`pip install pyqlib`），需在本表追加运行时版本号。
+
+---
+
+## optuna（S15 / G5 · T15.1 超参搜索）
+
+| 项 | 内容 |
+|----|------|
+| 来源 | optuna/optuna（https://github.com/optuna/optuna） |
+| 许可证 | MIT |
+| 引入方式 | **可选运行时依赖**（`pip install optuna`）；未安装时 `tune` 命令明确报错指引，不降级、不静默 |
+| 用途 | `src/eval/hyperopt_tuner.py`：LightGBM 超参搜索（walk-forward 测试折 IC 均值为目标），study 以 SQLite 持久化到 `reports/optuna_studies/` |
+| 边界 | 仅离线研究用途；搜索结果属选择自由度，不直接落地配置（T15.3 人工检查点） |
+
+## neuralforecast（S15 / G5 · T15.2 概率区间，间接引入）
+
+| 项 | 内容 |
+|----|------|
+| 来源 | Nixtla neuralforecast（https://github.com/Nixtla/neuralforecast） |
+| 许可证 | Apache-2.0 |
+| 引入方式 | **本轮未安装运行时依赖**：`src/eval/confidence_curve.py` 的 `confidence_from_interval` 把「概率区间宽度 → 置信度」的换算机制先行抽象落地，与 LightGBM 概率口径（`|p−0.5|×2`）共用同一条阈值曲线链路；后续接入 neuralforecast 时只需喂区间数据，无需改链路 |
+| 边界 | 若后续 `pip install neuralforecast`，需在本表追加运行时版本号 |
+
+## 许可证合规结论（S15）
+
+- optuna（MIT）与 neuralforecast（Apache-2.0）均允许内部使用与集成，
+  与本项目「禁止商业用途」的外授权收紧不冲突；
+- 本轮均为**可选依赖 + 缺省不安装**，CI 离线可跑（合成数据测试不触网）。
