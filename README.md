@@ -1,12 +1,28 @@
-# TrendCast Pro · 金融市场预测模型
+# 📈 TrendCast Pro · 金融市场预测模型
 
 > 基于 LightGBM 梯度提升树的智能金融市场预测引擎 — 多周期方向预测 + 真实行情数据链路 + 命中率审计
->
-> 已作为**只读信号源**集成至 [28-终极量化交易系统8.4](../28-终极量化交易系统8.4/)：`daily_runner.py` 步骤 2.5 每日自动拉取预测，信号卡片进入每日报告，命中率由 28 本地真实行情回溯审计（见《为28终极量化交易系统提供策略决策依据_设计方案_20260909.md》）。
+
+![Last Commit](https://img.shields.io/github/last-commit/yuppiez99999/Financial_Modeling?style=for-the-badge&logo=git&logoColor=white&color=blue)
+![Stars](https://img.shields.io/github/stars/yuppiez99999/Financial_Modeling?style=for-the-badge&logo=github&logoColor=white&color=yellow)
+![Issues](https://img.shields.io/github/issues/yuppiez99999/Financial_Modeling?style=for-the-badge&logo=github&logoColor=white&color=orange)
+![Repo Size](https://img.shields.io/github/repo-size/yuppiez99999/Financial_Modeling?style=for-the-badge&logo=github&logoColor=white&color=blueviolet)
+
+![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?style=flat-square&logo=python&logoColor=white)
+![LightGBM](https://img.shields.io/badge/LightGBM-4.0%2B-01B44C?style=flat-square)
+![FastAPI](https://img.shields.io/badge/FastAPI-8800-009688?style=flat-square&logo=fastapi&logoColor=white)
+![pandas](https://img.shields.io/badge/pandas-2.0%2B-150458?style=flat-square&logo=pandas&logoColor=white)
+![akshare](https://img.shields.io/badge/akshare-1.12%2B-E5093F?style=flat-square)
+
+![License](https://img.shields.io/badge/License-Non--Commercial-FF0000?style=flat-square)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey?style=flat-square)
+![Status](https://img.shields.io/badge/Status-Active%20Development-success?style=flat-square)
+![Top Language](https://img.shields.io/github/languages/top/yuppiez99999/Financial_Modeling?style=flat-square)
+
+> 🔗 已作为**只读信号源**集成至 [28-终极量化交易系统8.4](../28-终极量化交易系统8.4/)：`daily_runner.py` 步骤 2.5 每日自动拉取预测，信号卡片进入每日报告，命中率由 28 本地真实行情回溯审计（见《为28终极量化交易系统提供策略决策依据_设计方案_20260909.md》）。
 
 ---
 
-## 一、它做什么
+## 📋 一、它做什么
 
 对 **A 股股票 / 商品期货 / 外汇** 标的，输出未来 **5 日（短期）/ 10 日（中期）/ 20 日（长期）** 的涨跌方向概率（二分类），并提供：
 
@@ -46,7 +62,7 @@
 
 ---
 
-## 二、快速开始
+## 🚀 二、快速开始
 
 ### 1. 安装
 
@@ -107,7 +123,7 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 
 ---
 
-## 三、命令行接口
+## 💻 三、命令行接口
 
 
 | 命令 | 说明 |
@@ -161,7 +177,7 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 
 ---
 
-## 四、项目结构
+## 📁 四、项目结构
 
 ```
 .
@@ -211,7 +227,7 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 
 ---
 
-## 五、配置
+## ⚙️ 五、配置
 
 默认加载 `configs/config_pro.yaml`（存在时优先），可用 `--config` 覆盖。
 
@@ -294,7 +310,7 @@ strategy_gate:
 
 ---
 
-## 六、可选模型后端
+## 🧠 六、可选模型后端
 
 ### TimesFM（可选依赖）
 
@@ -329,7 +345,7 @@ Windows 上若出现 `WinError 126`（本机库加载失败），通常是 PyTor
 
 ---
 
-## 七、与主量化系统的对接（一期已交付并验证）
+## 🔗 七、与主量化系统的对接（一期已交付并验证）
 
 本仓库作为 **16_ 侧只读信号源**，与 `28-终极量化交易系统8.4` 通过 REST 对接。设计原则：**16_ 只出方向与概率，28 独享决策权**（一期只读注入，不改变 28 任何下单/调仓行为）。
 
@@ -365,7 +381,7 @@ resp = requests.get(
 
 ---
 
-## 八、测试
+## 🧪 八、测试
 
 ```bash
 python -m pytest tests/ -q     # 426 passed, 2 skipped
@@ -373,7 +389,7 @@ python -m pytest tests/ -q     # 426 passed, 2 skipped
 
 ---
 
-## 九、已知限制
+## ⚠️ 九、已知限制
 
 - 真实行情下三周期模型区分度均有限（AUC 0.54~0.57，2026-09-09 防泄漏口径），信号仅作观测参考，不应单独作为交易依据
 - 模型评估为历史回测口径，未扣除真实滑点与冲击成本，实盘前需做纸面跟踪
@@ -403,7 +419,7 @@ python -m pytest tests/ -q     # 426 passed, 2 skipped
 
 ---
 
-## 十、Q1 排期进展（2026-09-10 完成）
+## 📅 十、Q1 排期进展（2026-09-10 完成）
 
 对照 `SALES_PLAN.md` §8.2 技术改进路线图 Q1 与 §10 落地执行计划，本仓库 Q1 项已全部落地。
 
@@ -455,7 +471,7 @@ python -m pytest tests/ -q     # 159 passed, 1 skipped
 
 ---
 
-## 十一、Q2 路线进展（多因子集成 · IC/命中率门禁）
+## 🛣️ 十一、Q2 路线进展（多因子集成 · IC/命中率门禁）
 
 对照 `SALES_PLAN.md` §8.2 路线图 Q2「多因子模型集成，支持因子加权组合预测」，以及
 设计方案 §5「命中率与 IC 达标后再进入决策路径（决策路径 fail-close）」，本轮落地三件事：
@@ -614,7 +630,7 @@ python -m pytest tests/ -q     # 426 passed（Q1 基线 159 → Q2 230 → … �
 
 ---
 
-## 十二、Q3 路线进展（实时数据流 · 信号一致性 · 口径纠偏）
+## 🌊 十二、Q3 路线进展（实时数据流 · 信号一致性 · 口径纠偏）
 
 对照 `SALES_PLAN.md` §8.2 路线图 Q3「实时数据流接入，支持分钟级预测更新」，本轮落地三件事。
 
@@ -761,7 +777,7 @@ python -m pytest tests/ -q     # 260 passed（Q2 基线 230 → Q3 260）
 
 ---
 
-## 十三、Q4 路线进展（智能风控模块 · 自动止损止盈建议）
+## 🛡️ 十三、Q4 路线进展（智能风控模块 · 自动止损止盈建议）
 
 对照 `SALES_PLAN.md` §8.2 路线图 Q4「智能风控模块，自动生成止损止盈建议」。
 
@@ -860,7 +876,7 @@ python -m pytest tests/test_roadmap_q4.py -q   # 34 passed, 1 skipped
 波动缩放封顶、**建议不改变 `RiskManager` 输出**、`advise_payload` 与 `SignalEngine` 同源、
 契约可序列化、配置段、CLI 命令、API 状态码、监控报表两种分支。
 
-## 十四、S7 门禁解锁攻坚（门禁诊断 · 分层评估 · 训练折中性带）
+## 🔓 十四、S7 门禁解锁攻坚（门禁诊断 · 分层评估 · 训练折中性带）
 
 > 背景：路线图 Q1~Q4 走完后，**门禁仍为 `readonly`** —— short/mid 命中率没过 52%，
 > 导致 Q4 的止损止盈建议在真实运行下**一条价位都不会输出**（全部 `withheld`）。
@@ -987,7 +1003,7 @@ python -m pytest tests/ -q                     # 426 passed, 2 skipped
 
 ---
 
-## 十五、Q5 路线进展（信号衰减监控 · 定期报告升级）
+## 📈 十五、Q5 路线进展（信号衰减监控 · 定期报告升级）
 
 对照 `SALES_PLAN.md` §8.2 路线图 Q5「信号衰减监控，IC 时序与重训练预警」。
 
@@ -1103,7 +1119,7 @@ API 两种状态码分支。
    「按排期计划自动开发」必抛 `CommandNotFoundException`，日志文件从不落盘）。
    已补上函数定义 —— 与 `run_daily.py` 的日志契约（`run_<date>.json`）保持一致。
 
-## 十六、S9 按资产类别分池（分池门禁 · 分层建模）
+## 🎯 十六、S9 按资产类别分池（分池门禁 · 分层建模）
 
 > 承接 §14.4 的实测结论与建议「按标的分层建模 / 按资产类别分别设门禁，而非继续在
 > 池化口径上调参」。S9 把这条**建议**落地为可复算、可审计、无前视的一层。
@@ -1285,7 +1301,7 @@ python -m pytest tests/ -q                     # 426 passed, 2 skipped
 - 分层训练产物**不自动接管**推理路径，切换属人工决策；
 - 免责声明与许可证约定不变（见 §二十、§二十一）。
 
-## 十七、S10 多周期口径探索（换预测周期有没有用）
+## 🔬 十七、S10 多周期口径探索（换预测周期有没有用）
 
 > 承接 §16.5 最有价值的发现：现行门禁口径 5/10/20 日中长期卡线，而 **40/60 日整池与
 > 分池全部达标** —— 信号真实存在，只是 5/10/20 日这个尺度上模型没有优势。
@@ -1396,7 +1412,7 @@ python -m pytest tests/ -q                      # 462 passed, 2 skipped
 
 ---
 
-## 十八、S11–S14 路线进展（口径变更决策收敛）
+## 🧭 十八、S11–S14 路线进展（口径变更决策收敛）
 
 > 承接 §17.3/S10 的遗留：S10 用一条命令复算出「5/10/20 日未过线、40/60 日达标」
 > 的表象，并把它卡死在「产品口径变更须人工决策」。
@@ -1597,7 +1613,7 @@ CLI / 监控报表 / 日报 / API 的缺失与正常分支；配置段存在且�
 
 ---
 
-## 十八A、S11–S15 排期：高质量项目集成轮（G1~G5，已入 plan.json）
+## 📦 十八A、S11–S15 排期：高质量项目集成轮（G1~G5，已入 plan.json）
 
 > 承接 Issue #29「高质量项目集成」：S1~S14 轮次全部 completed、门禁仍 `readonly`
 > （三条提升路径已被证伪，见 §18）。本轮不再「再加一个模型」，而是按依赖顺序
@@ -1754,13 +1770,13 @@ CLI / 监控报表 / 日报 / API 的缺失与正常分支；配置段存在且�
 
 ---
 
-## 十九、技术栈
+## 🧰 十九、技术栈
 
 Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn · ONNX / onnxruntime · Wind MCP · 可选 TimesFM(PyTorch)
 
 ---
 
-## 二十、免责声明
+## 📜 二十、免责声明
 
 > **本项目仅供学习、交流、研究使用，不构成任何投资建议。**
 
@@ -1776,7 +1792,7 @@ Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn 
 
 ---
 
-## 二十一、许可证与版权
+## 📄 二十一、许可证与版权
 
 > **著作权归作者所有，禁止商用。**
 
