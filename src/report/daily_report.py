@@ -58,6 +58,7 @@ class DailyReportGenerator:
             report_lines.extend(self._generate_sentiment_section())
             report_lines.extend(self._generate_gate_section())
             report_lines.extend(self._generate_ic_trend_section())
+            report_lines.extend(self._generate_pool_section())
             report_lines.extend(self._generate_investment_advice(predictions))
         else:
             report_lines.append("**暂无预测数据**")
@@ -269,6 +270,74 @@ class DailyReportGenerator:
         lines.append("")
         return lines
 
+    def _generate_pool_section(self) -> list[str]:
+        """生成 S9 分池评估章节（按资产类别分池）。
+
+        读取 ``reports/stratified_gate.json``（由 ``python main.py ic-pool`` 产出）。
+        文件缺失时明确写「未评估」并给出命令，**绝不臆测分池结论**。
+
+        为什么日报要放：门禁章节只说「整池未放行」。研究员真正会追问的是
+        「是哪类标的拖的」——分池章节回答这个问题，且**不改变放行结论**。
+        """
+        lines = ["## 🧩 分池评估（S9：按资产类别）"]
+        report_dir = (self.config.get("pool_gate", {}) or {}).get("report_dir", self.report_dir)
+        path = Path(report_dir) / "stratified_gate.json"
+        if not path.exists():
+            lines.extend([
+                "",
+                "- 状态：**未评估**（未找到 `stratified_gate.json`，"
+                "执行 `python main.py ic-pool` 生成）",
+                "- 说明：分池用于定位「整池被哪类标的稀释」，默认不改变门禁放行判定",
+                "",
+            ])
+            return lines
+
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            lines.extend(["", f"- 分池结果读取失败：{e}", ""])
+            return lines
+
+        pools = payload.get("pools") or {}
+        if not pools:
+            lines.extend(["", "- 状态：无可用分池", ""])
+            return lines
+        lines.extend([
+            "",
+            f"- 判定时间：{payload.get('generated_at') or 'N/A'}"
+            f"（是否影响放行结论：{'是' if payload.get('affects_gate') else '否，仅作补充证据'}）",
+            "",
+            "| 分池 | 标的 | 短期 IC/命中 | 中期 IC/命中 | 长期 IC/命中 | 状态 |",
+            "|------|------|--------------|--------------|--------------|------|",
+        ])
+        for cls, pool in pools.items():
+            ics = pool.get("ic") or {}
+            hrs = pool.get("hit_rate") or {}
+
+            def _cell(h: str) -> str:
+                if h not in (pool.get("horizons") or {}):
+                    return "—"
+                ic_v = ics.get(h)
+                hr_v = hrs.get(h)
+                return f"{'N/A' if ic_v is None else f'{float(ic_v):+.4f}'} / {_fmt_pct(hr_v)}"
+
+            icon = "✅" if pool.get("passed") else ("❔" if not pool.get("available") else "❌")
+            lines.append(
+                f"| {pool.get('label') or cls} | {pool.get('symbol_count', 0)} | "
+                f"{_cell('short_term')} | {_cell('mid_term')} | {_cell('long_term')} | "
+                f"{icon} {pool.get('state', 'readonly')} |"
+            )
+        failed = payload.get("failed_pools") or []
+        if failed:
+            names = "、".join((pools.get(c, {}) or {}).get("label", c) for c in failed)
+            lines.extend(["", f"- ❌ **未过关分池**：{names}"])
+        lines.extend([
+            "",
+            "> 分池是**结构诊断**，不改变门禁判定：放行与否仍看上方「策略门禁」的整池口径。",
+            "",
+        ])
+        return lines
+
     def _generate_ic_trend_section(self) -> list[str]:
         """生成 Q5 信号衰减趋势章节。
 
@@ -417,6 +486,7 @@ class WeeklyReportGenerator(DailyReportGenerator):
             report_lines.extend(self._generate_detailed_predictions(predictions))
             report_lines.extend(self._generate_gate_section())
             report_lines.extend(self._generate_ic_trend_section())
+            report_lines.extend(self._generate_pool_section())
             report_lines.extend(self._generate_weekly_summary())
         else:
             report_lines.append("**暂无预测数据**")

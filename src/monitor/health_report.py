@@ -406,6 +406,39 @@ class ModelMonitor:
             logger.warning(f"[monitor] 读取 IC 趋势失败: {e}")
             return {"available": False, "error": str(e)}
 
+    def _collect_pool_gate(self) -> Dict[str, Any]:
+        """分池门禁状态（S9，只读）。
+
+        只读 `reports/stratified_gate.json`（由 `python main.py ic-pool` 落盘），
+        不重跑 walk-forward —— 监控报表必须随时可跑且零副作用。
+        """
+        try:
+            from src.eval.stratified import StratifiedEvaluator
+
+            return StratifiedEvaluator(self.config).load()
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取分池门禁失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_pool_train(self) -> Dict[str, Any]:
+        """分池训练产物状态（S9，只读）。"""
+        try:
+            from src.train.stratified_train import StratifiedTrainer, summarize_manifest
+
+            trainer = StratifiedTrainer(self.config)
+            manifest = trainer.load_manifest()
+            if not manifest.get("available"):
+                return {
+                    "available": False,
+                    "reason": manifest.get("reason", "no_pool_manifest"),
+                    "hint": "先运行 `python main.py pool-train` 生成 models/pools/pool_manifest.json",
+                }
+            manifest["rows"] = summarize_manifest(manifest)
+            return manifest
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取分池模型清单失败: {e}")
+            return {"available": False, "error": str(e)}
+
     def _collect_factor_model(self) -> Dict[str, Any]:
         """多因子模型状态（只读）：因子权重 / 族权重 / IC 排名。"""
         save_dir = Path((self.config.get("training", {}) or {}).get("save_dir", "models"))
@@ -473,6 +506,8 @@ class ModelMonitor:
         risk_advice = self._collect_risk_advice()
         gate_diagnosis = self._collect_gate_diagnosis(gate)
         ic_trend = self._collect_ic_trend()
+        pool_gate = self._collect_pool_gate()
+        pool_train = self._collect_pool_train()
 
         issues: List[str] = []
         if audit.get("available") and audit.get("drift"):
@@ -528,6 +563,23 @@ class ModelMonitor:
                 issues.append(
                     f"{'、'.join(near)} 预计 {steps} 步内跌破门禁线（|IC| < {ic_trend.get('min_ic')}）"
                 )
+        # 分池门禁（S9）：整池未过但某些分池过关 = 木桶短板稀释，属**结构问题**而非故障
+        if pool_gate.get("available") and passed_pools_of(pool_gate):
+            if gate.get("available") and not gate.get("passed"):
+                names = "、".join(
+                    (pool_gate.get("pools", {}).get(c, {}) or {}).get("label", c)
+                    for c in passed_pools_of(pool_gate)
+                )
+                issues.append(
+                    f"整池未放行但分池已过关（{names}）：整池口径被拖后腿分池稀释，"
+                    "可考虑按资产类别分别建池（默认不改变放行结论）"
+                )
+        # 分池训练（S9）：配置启用却一个池都没训出来 → 值得看一眼
+        if pool_train.get("available") and not any(
+            (r.get("status") == "trained") for r in (pool_train.get("rows") or [])
+        ):
+            issues.append("分池训练启用但没有任何分池产出模型，请检查各池样本量")
+
         status = "ok" if not issues else ("warning" if len(issues) < 3 else "critical")
 
         payload = {
@@ -544,8 +596,17 @@ class ModelMonitor:
             "streaming": streaming,
             "risk_advice": risk_advice,
             "ic_trend": ic_trend,
+            "pool_gate": pool_gate,
+            "pool_train": pool_train,
         }
         return HealthReport(payload)
+
+
+def passed_pools_of(pool_gate: Dict[str, Any]) -> List[str]:
+    """从分池门禁 payload 里取「已过线的分池」列表（缺字段时返回空，不猜）。"""
+    if not isinstance(pool_gate, dict):
+        return []
+    return [str(c) for c in (pool_gate.get("passed_pools") or [])]
 
 
 # ----------------------------------------------------------------------
@@ -792,6 +853,66 @@ def render_markdown(payload: Dict[str, Any]) -> str:
         lines.append(
             f"- 不可用：{ic_trend.get('error') or ic_trend.get('reason') or '未生成'}"
             f"（{ic_trend.get('hint', '')}）"
+        )
+    lines.append("")
+
+    pool_gate = payload.get("pool_gate", {}) or {}
+    pool_train = payload.get("pool_train", {}) or {}
+    lines.extend(["## 分池评估（S9：按资产类别分池）", ""])
+    if pool_gate.get("available"):
+        pools = pool_gate.get("pools") or {}
+        lines.extend([
+            f"- 判定范围：共 {len(pools)} 个分池"
+            f"（最少标的数 {pool_gate.get('min_symbols')}，最少样本 {pool_gate.get('min_samples')}）",
+            f"- 是否影响放行结论：{'是' if pool_gate.get('affects_gate') else '否（report_only，仅作补充证据）'}",
+            f"- 判定时间：{pool_gate.get('generated_at') or 'N/A'}",
+            "",
+            "| 分池 | 标的 | 样本 | 短期 IC/命中 | 中期 IC/命中 | 长期 IC/命中 | 状态 |",
+            "|------|------|------|--------------|--------------|--------------|------|",
+        ])
+        for cls, pool in pools.items():
+            ics = pool.get("ic") or {}
+            hrs = pool.get("hit_rate") or {}
+
+            def _cell(h: str) -> str:
+                if h not in (pool.get("horizons") or {}):
+                    return "—"
+                ic_v = ics.get(h)
+                hr_v = hrs.get(h)
+                ic_txt = "N/A" if ic_v is None else f"{float(ic_v):+.4f}"
+                hr_txt = "N/A" if hr_v is None else _fmt_pct(hr_v)
+                return f"{ic_txt} / {hr_txt}"
+
+            icon = "✅" if pool.get("passed") else ("❔" if not pool.get("available") else "❌")
+            lines.append(
+                f"| {pool.get('label') or cls} | {pool.get('symbol_count', 0)} | "
+                f"{pool.get('samples', 0)} | {_cell('short_term')} | {_cell('mid_term')} | "
+                f"{_cell('long_term')} | {icon} {pool.get('state', 'readonly')} |"
+            )
+        failed = pool_gate.get("failed_pools") or []
+        unavailable = pool_gate.get("unavailable_pools") or []
+        lines.append("")
+        if failed:
+            names = "、".join((pools.get(c, {}) or {}).get("label", c) for c in failed)
+            lines.append(f"- ❌ 未过关分池：{names}")
+        if unavailable:
+            names = "、".join((pools.get(c, {}) or {}).get("label", c) for c in unavailable)
+            lines.append(f"- ❔ 样本不足未判定：{names}")
+        if pool_train.get("available"):
+            trained = [r for r in (pool_train.get("rows") or []) if r.get("status") == "trained"]
+            lines.append(
+                f"- 分池模型产物：{len(trained)}/{len(pool_train.get('rows') or [])} 个分池已产出模型"
+                f"（`models/pools/pool_manifest.json`）"
+            )
+        lines.append("")
+        lines.append(
+            "> 分池是**结构诊断**：说明整池指标被哪些标的稀释。默认不改变 `strategy_gate` 的"
+            "放行结论（信号仍只读观测）。"
+        )
+    else:
+        lines.append(
+            f"- 不可用：{pool_gate.get('error') or pool_gate.get('reason') or '未生成'}"
+            f"（{pool_gate.get('hint', '')}）"
         )
     lines.append("")
 

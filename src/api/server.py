@@ -324,6 +324,53 @@ async def get_ic_trend():
     return payload
 
 
+# ==================== S9：按资产类别分池 ====================
+
+@app.get("/api/v1/strategy/pool-gate")
+async def get_pool_gate():
+    """分池门禁状态（只读，不触发训练）。
+
+    读取 ``reports/stratified_gate.json``（由 ``python main.py ic-pool`` 产出）；
+    文件缺失时如实返回 ``available=false`` + 生成提示，**不臆测分池结论**。
+    """
+    from src.eval.stratified import StratifiedEvaluator
+
+    try:
+        return StratifiedEvaluator(_config or {}).load()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"分池门禁报告读取失败: {e}")
+
+
+@app.get("/api/v1/strategy/pool-train")
+async def get_pool_train():
+    """分池训练产物状态（只读）。
+
+    读取 ``models/pools/pool_manifest.json``（由 ``python main.py pool-train`` 产出）。
+    """
+    from src.train.stratified_train import StratifiedTrainer, summarize_manifest
+
+    try:
+        manifest = StratifiedTrainer(_config or {}).load_manifest()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"分池模型清单读取失败: {e}")
+    if manifest.get("available"):
+        manifest["rows"] = summarize_manifest(manifest)
+    return manifest
+
+
+@app.get("/api/v1/strategy/asset-class/{symbol}")
+async def get_asset_class(symbol: str):
+    """单标的资产类别识别（只读、零网络）。
+
+    用于解释「为什么这只标的被分到 ETF 分池」——分池口径必须可解释。
+    """
+    from src.eval.asset_class import classify, label
+
+    res = classify(symbol)
+    res["label"] = label(res["asset_class"])
+    return res
+
+
 # ==================== Q2 路线：门禁与多因子 ====================
 
 @app.get("/api/v1/strategy/gate")

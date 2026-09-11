@@ -691,6 +691,20 @@ def _config_symbols(config: dict) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+def _cli_symbols(args) -> list[str] | None:
+    """解析 CLI 的标的来源：位置参数优先，其次 `--symbols a,b`（逗号分隔）。
+
+    返回 None = 未指定，由调用方回落到配置启用的标的池。
+    """
+    positional = [a for a in (getattr(args, "args", None) or []) if a]
+    if positional:
+        return positional
+    raw = getattr(args, "symbols", None)
+    if raw:
+        return [s.strip() for s in str(raw).split(",") if s.strip()]
+    return None
+
+
 def run_gate(config: dict, ic_path: str | None = None) -> dict:
     """策略门禁判定：IC 门禁（+ 可选审计命中率）→ readonly / gated。"""
     from src.trading.gate import StrategyGate, recent_audit_stats
@@ -746,6 +760,116 @@ def run_gate_diagnose(config: dict, ic_path: str | None = None) -> dict:
 
     result = diagnose(ic_payload, config.get("strategy_gate", {}), gate_decision)
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def run_pool_ic(config: dict, symbols: list[str] | None = None, folds: int = 3,
+                derive_band: bool | None = None) -> dict:
+    """按资产类别分池门禁评估（S9）：给每个分池独立出一份门禁判定。
+
+    与 `ic`（整池口径）共用同一套 walk-forward 序列构造，保证同源；
+    差别只在于「哪些标的进同一条 IC 序列」——这正是 S7 实测指出的症结：
+    个股与宽基 ETF 混在一条序列里，方向性互相抵消，木桶短板把整池拖死在门槛线上。
+
+    落盘 `reports/stratified_gate.json`，并打印与整池口径的对照结论。
+    ⚠️ 默认**不改变** `strategy_gate` 的放行结论（`pool_gate` 为 report_only）。
+    """
+    import scripts.evaluate_models as ev
+    from src.eval.stratified import (
+        StratifiedEvaluator,
+        build_sequences_for_pools,
+        compare_with_pooled,
+    )
+
+    logger.info("执行按资产类别分池门禁评估")
+    band_cfg = (config.get("strategy_gate", {}) or {}).get("neutral_band", {}) or {}
+    if derive_band is None:
+        derive_band = bool(band_cfg.get("enabled", False))
+    horizons_cfg = config.get("data", {}).get("prediction_horizons", {}) or {}
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "pools": {}}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    evaluator = StratifiedEvaluator(config)
+    splits = evaluator.split(data)
+
+    def _build_pool_sequences(pool_data: dict) -> dict:
+        """单池 → {horizon: {scores, returns}}（与整池门禁完全同源）。"""
+        out: dict = {}
+        for hname, days in horizons_cfg.items():
+            combined = ev.build_supervised(pool_data, config, int(days))
+            if combined.empty:
+                out[hname] = {"horizon_days": int(days), "scores": [], "returns": [],
+                              "window_size": 0}
+                continue
+            scores, returns, band = _ic_scores_for_horizon(
+                config, combined, int(days), folds, derive_band)
+            out[hname] = {
+                "horizon_days": int(days),
+                "scores": scores,
+                "returns": returns,
+                "window_size": 20 if len(scores) >= 60 else None,
+                "neutral_band": band,
+            }
+        return out
+
+    sequences = build_sequences_for_pools(data, splits, _build_pool_sequences)
+    result = evaluator.decide(data, sequences)
+    result["folds"] = folds
+    result["symbols_evaluated"] = len(data)
+    result["neutral_band_enabled"] = bool(derive_band)
+
+    # 与整池口径对照：回答「是不是被木桶短板拖死的」
+    pooled = None
+    pooled_path = Path((config.get("strategy_gate", {}) or {}).get("report_dir", "reports")) / "ic_report.json"
+    if pooled_path.exists():
+        try:
+            pooled = json.loads(pooled_path.read_text(encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[pool-ic] 整池 IC 产物读取失败: {e}")
+    result["vs_pooled"] = compare_with_pooled(result, pooled)
+
+    saved = evaluator.save(result)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(f"\n分池门禁报告已保存: {saved}")
+    if result["vs_pooled"].get("narrative"):
+        print(f"对照结论: {result['vs_pooled']['narrative']}")
+    return result
+
+
+def run_pool_train(config: dict, symbols: list[str] | None = None) -> dict:
+    """按资产类别分层训练（S9）：每个分池训一套独立模型。
+
+    产出 `models/pools/pool_<class>_<model_type>_<horizon>_<days>d.pkl`
+    + `models/pools/pool_manifest.json`（推理侧据此路由，绝不跨池串用）。
+    """
+    import scripts.evaluate_models as ev
+    from src.train.stratified_train import StratifiedTrainer, summarize_manifest
+
+    logger.info("执行按资产类别分层训练")
+    horizons_cfg = config.get("data", {}).get("prediction_horizons", {}) or {}
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据", "pools": {}}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    trainer = StratifiedTrainer(config)
+    manifest = trainer.train_pools(data, horizons_cfg)
+    print(json.dumps(manifest, ensure_ascii=False, indent=2))
+    rows = summarize_manifest(manifest)
+    if rows:
+        print("\n分池训练结果:")
+        for r in rows:
+            print(f"  {r['label']:<14} status={r['status']:<8} "
+                  f"标的={r['symbol_count']} 产物={r['files']} {r['reason']}")
+    if manifest.get("manifest_path"):
+        print(f"\n分池模型清单已保存: {manifest['manifest_path']}")
+    return manifest
 
 
 def run_ic_trend(config: dict, symbols: list[str] | None = None, folds: int = 3) -> dict:
@@ -1117,6 +1241,8 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py ic --stratify            # 额外按标的分解（定位拖后腿的标的）
   python main.py ic --derive-band         # 逐折用训练折推导中性带（过滤 ≈0.5 噪音）
   python main.py ic-trend                 # IC 时序 / 信号衰减监控（Q5）
+  python main.py ic-pool                  # 按资产类别分池门禁（个股 / ETF 分开判定，S9）
+  python main.py pool-train               # 按资产类别分层训练（每池一套模型，S9）
   python main.py gate                     # 策略门禁判定（IC + 审计命中率）
   python main.py gate-diagnose            # 门禁阻塞诊断（还差多少 / 哪条腿卡住）
   python main.py factors 600519.SH        # 多因子加权组合预测（推理期特征因子）
@@ -1134,7 +1260,7 @@ def build_parser() -> argparse.ArgumentParser:
         "serve", "schedule", "audit", "notify", "batch",
         "daily-report", "weekly-report", "adaptive",
         "signal", "orders", "trade", "backtest", "macro", "monitor",
-        "ic", "ic-trend", "gate", "gate-diagnose", "factors", "factor-model",
+        "ic", "ic-trend", "ic-pool", "pool-train", "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
     parser.add_argument("args", nargs="*", help="附加参数")
@@ -1264,6 +1390,11 @@ def main():
         run_ic(config, args.args or None,
                stratify=bool(getattr(args, "stratify", False)),
                derive_band=getattr(args, "derive_band", None))
+    elif args.command == "ic-pool":
+        run_pool_ic(config, args.args or _cli_symbols(args),
+                    derive_band=getattr(args, "derive_band", None))
+    elif args.command == "pool-train":
+        run_pool_train(config, args.args or _cli_symbols(args))
     elif args.command == "ic-trend":
         run_ic_trend(config, args.args or None)
     elif args.command == "gate":

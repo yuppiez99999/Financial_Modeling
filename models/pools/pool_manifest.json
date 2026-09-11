@@ -1,0 +1,283 @@
+{
+  "generated_at": "2026-09-11T08:50:30",
+  "model_type": "lightgbm",
+  "min_samples": 200,
+  "fallback_to_pooled": false,
+  "pool_dir": "models/pools",
+  "plan": {
+    "stock": {
+      "asset_class": "stock",
+      "label": "个股",
+      "symbols": [
+        "688041.SH",
+        "300308.SZ",
+        "002371.SZ",
+        "603019.SH",
+        "300033.SZ",
+        "300782.SZ",
+        "688017.SH",
+        "300274.SZ",
+        "000408.SZ",
+        "601088.SH",
+        "600276.SH",
+        "600900.SH"
+      ],
+      "available_symbols": [
+        "688041.SH",
+        "300308.SZ",
+        "002371.SZ",
+        "603019.SH",
+        "300033.SZ",
+        "300782.SZ",
+        "688017.SH",
+        "300274.SZ",
+        "000408.SZ",
+        "601088.SH",
+        "600276.SH",
+        "600900.SH"
+      ],
+      "trainable": true,
+      "reason": ""
+    },
+    "etf": {
+      "asset_class": "etf",
+      "label": "ETF / 场内基金",
+      "symbols": [
+        "588080.SH",
+        "512880.SH",
+        "510050.SH",
+        "512800.SH",
+        "515030.SH",
+        "512760.SH",
+        "512170.SH",
+        "518880.SH",
+        "588000.SH",
+        "510300.SH",
+        "510500.SH",
+        "512100.SH",
+        "159915.SZ",
+        "511010.SH"
+      ],
+      "available_symbols": [
+        "588080.SH",
+        "512880.SH",
+        "510050.SH",
+        "512800.SH",
+        "515030.SH",
+        "512760.SH",
+        "512170.SH",
+        "518880.SH",
+        "588000.SH",
+        "510300.SH",
+        "510500.SH",
+        "512100.SH",
+        "159915.SZ",
+        "511010.SH"
+      ],
+      "trainable": true,
+      "reason": ""
+    }
+  },
+  "pools": {
+    "stock": {
+      "asset_class": "stock",
+      "label": "个股",
+      "symbols": [
+        "688041.SH",
+        "300308.SZ",
+        "002371.SZ",
+        "603019.SH",
+        "300033.SZ",
+        "300782.SZ",
+        "688017.SH",
+        "300274.SZ",
+        "000408.SZ",
+        "601088.SH",
+        "600276.SH",
+        "600900.SH"
+      ],
+      "horizons": {
+        "short_term": {
+          "status": "ok",
+          "horizon_days": 5,
+          "samples": 9540,
+          "train_samples": 7155,
+          "feature_count": 107,
+          "symbols": [
+            "000408.SZ",
+            "002371.SZ",
+            "300033.SZ",
+            "300274.SZ",
+            "300308.SZ",
+            "300782.SZ",
+            "600276.SH",
+            "600900.SH",
+            "601088.SH",
+            "603019.SH",
+            "688017.SH",
+            "688041.SH"
+          ],
+          "file": "models/pools/pool_stock_lightgbm_short_term_5d.pkl",
+          "trained_at": "2026-09-11T08:50:40"
+        },
+        "mid_term": {
+          "status": "ok",
+          "horizon_days": 10,
+          "samples": 9480,
+          "train_samples": 7110,
+          "feature_count": 107,
+          "symbols": [
+            "000408.SZ",
+            "002371.SZ",
+            "300033.SZ",
+            "300274.SZ",
+            "300308.SZ",
+            "300782.SZ",
+            "600276.SH",
+            "600900.SH",
+            "601088.SH",
+            "603019.SH",
+            "688017.SH",
+            "688041.SH"
+          ],
+          "file": "models/pools/pool_stock_lightgbm_mid_term_10d.pkl",
+          "trained_at": "2026-09-11T08:50:48"
+        },
+        "long_term": {
+          "status": "ok",
+          "horizon_days": 20,
+          "samples": 9360,
+          "train_samples": 7020,
+          "feature_count": 107,
+          "symbols": [
+            "000408.SZ",
+            "002371.SZ",
+            "300033.SZ",
+            "300274.SZ",
+            "300308.SZ",
+            "300782.SZ",
+            "600276.SH",
+            "600900.SH",
+            "601088.SH",
+            "603019.SH",
+            "688017.SH",
+            "688041.SH"
+          ],
+          "file": "models/pools/pool_stock_lightgbm_long_term_20d.pkl",
+          "trained_at": "2026-09-11T08:50:58"
+        }
+      },
+      "status": "trained",
+      "reason": "",
+      "files": [
+        "models/pools/pool_stock_lightgbm_short_term_5d.pkl",
+        "models/pools/pool_stock_lightgbm_mid_term_10d.pkl",
+        "models/pools/pool_stock_lightgbm_long_term_20d.pkl"
+      ]
+    },
+    "etf": {
+      "asset_class": "etf",
+      "label": "ETF / 场内基金",
+      "symbols": [
+        "588080.SH",
+        "512880.SH",
+        "510050.SH",
+        "512800.SH",
+        "515030.SH",
+        "512760.SH",
+        "512170.SH",
+        "518880.SH",
+        "588000.SH",
+        "510300.SH",
+        "510500.SH",
+        "512100.SH",
+        "159915.SZ",
+        "511010.SH"
+      ],
+      "horizons": {
+        "short_term": {
+          "status": "ok",
+          "horizon_days": 5,
+          "samples": 11130,
+          "train_samples": 8347,
+          "feature_count": 107,
+          "symbols": [
+            "159915.SZ",
+            "510050.SH",
+            "510300.SH",
+            "510500.SH",
+            "511010.SH",
+            "512100.SH",
+            "512170.SH",
+            "512760.SH",
+            "512800.SH",
+            "512880.SH",
+            "515030.SH",
+            "518880.SH",
+            "588000.SH",
+            "588080.SH"
+          ],
+          "file": "models/pools/pool_etf_lightgbm_short_term_5d.pkl",
+          "trained_at": "2026-09-11T08:51:08"
+        },
+        "mid_term": {
+          "status": "ok",
+          "horizon_days": 10,
+          "samples": 11060,
+          "train_samples": 8295,
+          "feature_count": 107,
+          "symbols": [
+            "159915.SZ",
+            "510050.SH",
+            "510300.SH",
+            "510500.SH",
+            "511010.SH",
+            "512100.SH",
+            "512170.SH",
+            "512760.SH",
+            "512800.SH",
+            "512880.SH",
+            "515030.SH",
+            "518880.SH",
+            "588000.SH",
+            "588080.SH"
+          ],
+          "file": "models/pools/pool_etf_lightgbm_mid_term_10d.pkl",
+          "trained_at": "2026-09-11T08:51:17"
+        },
+        "long_term": {
+          "status": "ok",
+          "horizon_days": 20,
+          "samples": 10920,
+          "train_samples": 8190,
+          "feature_count": 107,
+          "symbols": [
+            "159915.SZ",
+            "510050.SH",
+            "510300.SH",
+            "510500.SH",
+            "511010.SH",
+            "512100.SH",
+            "512170.SH",
+            "512760.SH",
+            "512800.SH",
+            "512880.SH",
+            "515030.SH",
+            "518880.SH",
+            "588000.SH",
+            "588080.SH"
+          ],
+          "file": "models/pools/pool_etf_lightgbm_long_term_20d.pkl",
+          "trained_at": "2026-09-11T08:51:27"
+        }
+      },
+      "status": "trained",
+      "reason": "",
+      "files": [
+        "models/pools/pool_etf_lightgbm_short_term_5d.pkl",
+        "models/pools/pool_etf_lightgbm_mid_term_10d.pkl",
+        "models/pools/pool_etf_lightgbm_long_term_20d.pkl"
+      ]
+    }
+  }
+}

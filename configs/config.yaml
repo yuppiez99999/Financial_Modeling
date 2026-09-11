@@ -325,12 +325,37 @@ strategy_gate:
   min_audit_hit_rate: 0.5   # 审计命中率下限
   report_dir: "reports"     # 判定结果输出目录（strategy_gate.json）
   # S7 门禁解锁：训练折中性带（过滤 ≈0.5 的噪音样本，仅用训练折学常数，无前视）
+  # S9 按资产类别分池放行（默认关闭 = 分池只做补充证据，不改放行结论）
+  pool_scope:
+    enabled: false
+    mode: "report_only"       # report_only(只报告) / per_class(每个分池各自过线才放行)
   neutral_band:
     enabled: false          # true = 评估/门禁启用训练折中性带（默认关闭，保持既有口径）
     min_keep_ratio: 0.5     # 至少保留多少比例的样本，防"只留 1 个 → 命中率 100%"的退化解
 
 # IC 趋势 / 信号衰减监控（src/monitor/ic_trend.py，Q5）
 # 门禁只看「此刻 IC 是否达标」；本段决定「IC 在变好还是变坏」的判定口径
+# 分池门禁（S9 按资产类别分池）：把 S7 的实测结论「整池被木桶短板绑架」落成可复算证据
+# ⚠️ 默认 `report_only`：分池结果**不改变** strategy_gate 的放行结论，只是补充证据。
+#    想按分池各自放行，必须显式 enabled: true + mode: per_class，
+#    且**每个分池各自过线**才算放行（绝不"取最好看的那个池子"代表全体）。
+pool_gate:
+  min_symbols: 2          # 分池最少标的数（低于此只记指标不判定，单标的池化 IC 无跨标的代表性）
+  min_samples: 30         # 分池单周期最少有效样本
+  report_dir: "reports"   # 分池报告输出目录（stratified_gate.json）
+  # 识别不了的自定义代码在此手工归类：{"MY.CODE": "stock"}
+  symbol_class_map: {}
+
+# 分池训练（S9）：每个资产类别训一套独立模型
+# ⚠️ fallback_to_pooled 默认 false = 分池样本不足时**如实拒答**，不静默回退整池模型
+#    （静默回退会让"分层"变成空话：以为拿到 ETF 专用模型，其实是整池模型）
+pool_train:
+  enabled: true
+  min_samples: 200        # 单分池最少样本行数（低于则不训，如实标注 insufficient_data）
+  fallback_to_pooled: false
+  save_dir: ""            # 留空 = 跟随 training.save_dir，产物落在 <save_dir>/pools/
+
+
 ic_trend:
   window: 250          # 每个锚点的 IC 观察窗（样本数）
   step: 40             # 锚点之间的步长（样本数）

@@ -134,10 +134,13 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 | `intraday <symbol>` | 单只标的盘中信号更新（baseline vs live） |
 | `consistency <symbol>` | 信号一致性校验（跨周期 / 跨模型 / 跨口径，Q3） |
 | `ic-trend` | IC 时序 / 信号衰减监控：斜率 + 预计跌破门禁步数（Q5） |
+| `ic-pool` | 按资产类别分池门禁：个股 / ETF / … 各自独立判定（S9，见 §16） |
+| `pool-train` | 按资产类别分层训练：每分池一套独立模型 + 清单路由（S9） |
 
 常用参数：`--horizon {short_term,mid_term,long_term,all}`、`--config <path>`、
 `--model-type {lightgbm,pytorch_lstm,timesfm,ensemble,factor_model,multifactor}`、
-`--symbols <A,B>`（stream / ic）、`--once`（stream）、`--host` / `--port`。
+`--symbols <A,B>`（stream / ic / ic-pool / pool-train）、`--once`（stream）、
+`--host` / `--port`。
 
 ---
 
@@ -348,7 +351,7 @@ resp = requests.get(
 ## 八、测试
 
 ```bash
-python -m pytest tests/ -q     # 334 passed, 2 failed, 2 skipped
+python -m pytest tests/ -q     # 426 passed, 2 skipped
 ```
 
 ---
@@ -569,7 +572,7 @@ curl http://localhost:8800/api/v1/factor-model    # JSON 契约
 ### 11.8 测试
 
 ```bash
-python -m pytest tests/ -q     # 230 passed（Q1 基线 159 → Q2 230）
+python -m pytest tests/ -q     # 426 passed（Q1 基线 159 → Q2 230 → … → S9 426）
 ```
 
 | 测试文件 | 数量 | 覆盖 |
@@ -579,6 +582,7 @@ python -m pytest tests/ -q     # 230 passed（Q1 基线 159 → Q2 230）
 | `test_roadmap_q3.py` | 34 | 实时快照 / 盘中观点失真 / 信号一致性 / 非法行情防护 |
 | `test_roadmap_q4.py` | 34 | ATR 止损 / 结构位 / 盈亏比约束 / 门禁 withhold 分支 |
 | `test_roadmap_q5.py` | 33 | IC 时序 / 斜率与趋势判定 / 跌破外推 / 四个消费口分支 |
+| `test_roadmap_s9.py` | 55 | 资产类别识别 / 分池门禁 fail-close / 不改整池结论 / 分层训练不静默回退 / 消费口分支 |
 
 另修复 3 处**跨用例模块全局污染**（`test_predictor_minimal`/`test_ensemble_integration`/`test_predictor_integration`
 直接给模块属性赋值 → 改为 `monkeypatch.setattr`）：原先会污染 `src.inference.predictor` 的
@@ -947,7 +951,7 @@ mid/long 通过 → `scope=all` 下整体**仍为 readonly**。
 
 ```bash
 python -m pytest tests/test_roadmap_s7.py -q   # 29 passed
-python -m pytest tests/ -q                     # 334 passed, 2 failed, 2 skipped
+python -m pytest tests/ -q                     # 426 passed, 2 skipped
 ```
 
 新增 `tests/test_roadmap_s7.py`（29 项）：短板识别 / 归一化差距 / `scope=all` vs `any` /
@@ -1077,13 +1081,195 @@ API 两种状态码分支。
    「按排期计划自动开发」必抛 `CommandNotFoundException`，日志文件从不落盘）。
    已补上函数定义 —— 与 `run_daily.py` 的日志契约（`run_<date>.json`）保持一致。
 
-## 十六、技术栈
+## 十六、S9 按资产类别分池（分池门禁 · 分层建模）
+
+> 承接 §14.4 的实测结论与建议「按标的分层建模 / 按资产类别分别设门禁，而非继续在
+> 池化口径上调参」。S9 把这条**建议**落地为可复算、可审计、无前视的一层。
+>
+> ⚠️ 先给结论，免得误读：**S9 没有解锁门禁**。它做的是把"整池卡住"这件事
+> 拆到资产类别粒度，并证明了**分池本身救不了短周期**（实测见 §16.5）。
+> 默认配置下（`pool_gate: report_only`）**放行结论与之前逐字段一致**。
+
+### 16.1 为什么要分池
+
+`strategy_gate` 默认 `scope=all`，判定的是**整池 IC 序列**。当池子里混着波动结构完全
+不同的标的时，一条序列的 IC 是两类互不相干信号的混合 —— 表现好的子池被表现差的
+子池**稀释**，门禁于是永远卡在门槛线上。
+
+§14.4 已用 `--stratify` 给出证据：个股分层后轻松通过、拖后腿的是宽基 ETF。
+S9 把「个股 / ETF 分开评估」做成**一等公民**：
+
+| 能力 | 命令 | 产物 |
+|------|------|------|
+| 分池门禁 | `python main.py ic-pool` | `reports/stratified_gate.json` |
+| 分层训练 | `python main.py pool-train` | `models/pools/pool_<class>_*.pkl` + `pool_manifest.json` |
+| 分池状态 | `GET /api/v1/strategy/pool-gate` | 只读，缺失返回 `available=false` |
+| 分池模型 | `GET /api/v1/strategy/pool-train` | 只读 manifest |
+| 类别查询 | `GET /api/v1/strategy/asset-class/{symbol}` | 单标的分类 + 命中规则 |
+| 报表 | `monitor` / `daily-report` / `weekly-report` | 「分池评估（S9）」章节 |
+
+### 16.2 资产类别识别（`src/eval/asset_class.py`）
+
+**零网络**：纯代码规则，不调行情接口、不读股票名称库。门禁是准入闸，
+不能因为"分类器挂掉"而放行，所以它必须永远可用。
+
+| 代码段 | 归类 | 说明 |
+|--------|------|------|
+| `51/56/58`（.SH）、`159`（.SZ） | ETF / 场内基金 | 上交所/深交所基金代码段 |
+| `60/68/00/30` | 个股 | 主板 / 科创板 / 深主板 / 创业板 |
+| `11/12`（6 位） | 可转债 | 既非个股也非基金，另立分池 |
+| `.SHF/.DCE/.CZC/.INE/...` | 期货 | 交易所后缀 |
+| `.FXCM/.FX` | 外汇 | 交易所后缀 |
+| 其它 | **未识别** | 见下 |
+
+三条硬规则：
+
+1. **不猜**：无法识别的代码归 `unknown`，**绝不硬塞进 `stock`** ——
+   硬塞等于把未知风险混进已知口径，会让该分池的指标失去含义；
+2. **可解释**：每次识别都返回命中规则（`rule`），人能一眼看出"为什么它算 ETF"；
+3. **空池不回退**：「没有 ETF」和「把所有标的都当 ETF」是两件完全不同的事，
+   `resolve_pool` 无命中时返回**空字典**。
+
+识别不了的自定义代码可在配置里手工归类（仍零网络）：
+
+```yaml
+pool_gate:
+  symbol_class_map:
+    "MY.CODE": "stock"
+```
+
+### 16.3 分池门禁的边界（比功能重要）
+
+| 约束 | 做法 | 理由 |
+|------|------|------|
+| **不改整池结论** | 默认 `mode: report_only`，`affects_gate=false` | 分池是**补充证据**，不是绕过门槛的通道 |
+| **不挑好看的池子** | 显式 `per_class` 时，**所有可判定分池都过线**才放行 | 「取最好的一个池子代表全体」等于把多重比较当证据 |
+| **不可判定即 fail-close** | 存在样本不足的分池 → 整体 `readonly` | 忽略不可判定项然后放行，是典型的"看起来过关" |
+| **fail-close 逐周期** | 分池内任一周期未过 → 该池 `readonly` | 与整池口径同构，不搞双重标准 |
+| **单标的池不判定** | `min_symbols`（默认 2）以下只记指标 | 单标的的池化 IC 不具备跨标的代表性 |
+
+### 16.4 分层训练（`src/train/stratified_train.py`）
+
+每个资产类别训**一套独立模型**，产物自带元数据（分池 → 标的 → 文件 → 样本数 → 时间）：
+
+```bash
+python main.py pool-train                 # 逐池训练（配置内全部标的）
+python main.py pool-train 600519.SH 510300.SH   # 只跑指定标的
+```
+
+**不做静默回退**：某个分池样本不足时**如实拒答**（`status=skipped`），
+不偷偷用整池模型顶替。原因很直接 —— 静默回退会让"分层"变成一句空话：
+用户以为拿到的是 ETF 专用模型，其实是个股池训出来的，**这比没有更糟**。
+需要回退必须显式配置，且结果里标注 `fallback=true`：
+
+```yaml
+pool_train:
+  enabled: true
+  min_samples: 200          # 单分池最少样本行数
+  fallback_to_pooled: false # true = 显式回退整池（推理侧标注 fallback=true）
+  save_dir: ""              # 留空 = <training.save_dir>/pools/
+```
+
+推理侧用 `resolve_pool_model(symbol)` 路由，**只对属于该分池的标的**用对应模型，
+绝不跨池串用；未命中时返回 `None`（而不是随便给一个模型）。
+
+> 分层训练目前**只产出模型与清单**，尚未接管 `PredictionEngine` 的默认加载路径 ——
+> 要不要用它替换默认整池模型，属于**人工决策**，不在本轮自动放行范围内。
+
+### 16.5 真实 26 标的池实测（本机缓存行情，非合成数据）
+
+> S9 是否 worthwhile，取决于"分池到底能不能把指标推过线"。以下是真实数据的回答。
+
+**分池门禁**（28 持仓池 26 只 · 腾讯前复权日K · walk-forward 3 折 · 无前视）：
+
+| 分池 | 标的 | 样本 | short_term | mid_term | long_term | 结论 |
+|------|------|------|-----------|----------|-----------|------|
+| 个股 | 12 | 17028 | IC +0.0302 / 51.23% ❌ | IC +0.0786 / 51.94% ❌ | IC +0.1806 / 55.58% ✅ | 未过（short/mid 命中率差） |
+| ETF | 14 | 19866 | IC −0.0463 / 47.17% ❌ | IC −0.0512 / 44.78% ❌ | IC +0.0503 / 51.15% ❌ | 未过 |
+| 整池（对照） | 26 | 12402 | IC +0.0008 / 49.14% ❌ | IC −0.0075 / 48.31% ❌ | IC +0.0384 / 51.20% ❌ | 未过 |
+
+**结论一（支持分池）**：分池确实**解开了方向性抵消** ——
+short_term 整池 IC 0.0008（≈0）拆开后变成个股 +0.0302 / ETF −0.0463，
+两池方向相反，混在一起刚好抵消掉。**整池指标不是"弱"，而是"被平均掉的"。**
+
+**结论二（反直觉，但是真的）**：**分池没能把 short/mid 推过门槛**。
+个股 short_term IC 刚好摸到 0.03，命中率 51.23% 仍差 0.77 个百分点；
+ETF 两周期 IC 为负。也就是说 §14.4 里"个股分层后轻松通过"的乐观印象，
+在**完整 26 只池 + 更早数据区间**下并不成立。
+
+**结论三（这是本轮最有价值的发现）**：把预测周期拉长后，**门禁整体放行**：
+
+| 预测周期 | 整池 | 个股 | ETF |
+|---------|------|------|-----|
+| 5 日 | IC +0.014 / 50.31% ❌ | IC +0.017 / 49.27% ❌ | IC +0.011 / 51.20% ❌ |
+| 20 日 | IC +0.073 / 50.84% ❌ | IC +0.060 / 49.50% ❌ | IC +0.090 / 52.00% ❌ |
+| **40 日** | **IC +0.098 / 53.87% ✅** | **IC +0.093 / 52.34% ✅** | **IC +0.099 / 55.19% ✅** |
+| 60 日 | IC +0.150 / 56.82% ✅ | IC +0.242 / 58.94% ✅ | IC +0.089 / 55.01% ✅ |
+
+**信号是真实存在的，但周期越长越强**：5 日尺度上模型基本没有优势，
+40 日尺度上 IC 从 0.01 跳到 0.10、命中率跨过 52% 线，60 日进一步走强。
+这与"短周期被噪声主导、长周期方向性更稳定"完全一致。
+
+> ⚠️ 40/60 日是**探索性**口径，不是现行门禁口径（现值 short/mid/long = 5/10/20 日）。
+> 把它改成 40 日属于**产品口径变更**，需要人工决策，本轮**不做**。
+> 数据也仅为本机缓存区间（约 3 年），更早区间未取，**不作为通用结论**。
+
+**本轮正确的对外表述**：分池是**结构诊断工具**（能指出"哪类标的在稀释整池、
+抵消发生在哪个周期"），**不是解锁手段**；当前门禁仍为 `readonly`。
+
+### 16.6 配置
+
+```yaml
+strategy_gate:
+  # S9 按资产类别分池放行（默认关闭 = 分池只做补充证据，不改放行结论）
+  pool_scope:
+    enabled: false
+    mode: "report_only"   # report_only(只报告) / per_class(每个分池各自过线才放行)
+
+pool_gate:
+  min_symbols: 2          # 分池最少标的数（低于此只记指标不判定）
+  min_samples: 30         # 分池单周期最少有效样本
+  report_dir: "reports"   # 分池报告输出目录（stratified_gate.json）
+  symbol_class_map: {}    # 识别不了的自定义代码手工归类
+
+pool_train:
+  enabled: true
+  min_samples: 200
+  fallback_to_pooled: false
+  save_dir: ""
+```
+
+### 16.7 测试
+
+```bash
+python -m pytest tests/test_roadmap_s9.py -q   # 55 passed
+python -m pytest tests/ -q                     # 426 passed, 2 skipped
+```
+
+新增 `tests/test_roadmap_s9.py`（55 项）：六类识别规则与大小写/空格容错、
+未识别不硬塞 `stock`、分池筛选不回退全池、手工覆盖表生效、分池顺序稳定；
+分池门禁 fail-close（逐周期）、样本不足不判定、单标的池只记指标、
+空池永不通过、分池之间互不干扰；**默认 report_only 时 `affects_gate=false`**、
+`per_class` 时必须全部可判定分池过线、存在不可判定分池即 fail-close；
+对照结论两种叙述分支；报告落盘/读取/缺失不臆测、报表行不塞原始序列；
+分池训练样本不足如实拒答、显式回退才 `fallback`、路由按分池不跨池、
+未知类别返回 `None`；监控报表 / 日报 / 周报 / 三个 API 的正常与缺失分支；
+配置段默认值约束（`pool_scope.enabled=false`、`fallback_to_pooled=false`）；CLI 命令与标的解析。
+
+### 16.8 合规边界
+
+- 分池**默认不改变** `strategy_gate` 判定，`enforce_trading` 行为不变；
+- 分池结论**不得**对外表述为"信号已可用"或"部分周期已达标"（40/60 日为探索性口径）；
+- 分层训练产物**不自动接管**推理路径，切换属人工决策；
+- 免责声明与许可证约定不变（见 §十八、§十九）。
+
+## 十七、技术栈
 
 Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn · ONNX / onnxruntime · Wind MCP · 可选 TimesFM(PyTorch)
 
 ---
 
-## 十七、免责声明
+## 十八、免责声明
 
 > **本项目仅供学习、交流、研究使用，不构成任何投资建议。**
 
@@ -1099,7 +1285,7 @@ Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn 
 
 ---
 
-## 十八、许可证与版权
+## 十九、许可证与版权
 
 > **著作权归作者所有，禁止商用。**
 

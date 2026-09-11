@@ -382,11 +382,63 @@
       "manual_checkpoint": [
         "T8.1"
       ]
+    },
+    {
+      "id": "S9",
+      "name": "按资产类别分池门禁与分层建模",
+      "status": "completed",
+      "started_at": "2026-09-11T08:40:00+00:00",
+      "completed_at": "2026-09-11T09:10:00+00:00",
+      "tasks": [
+        {
+          "id": "T9.1",
+          "name": "资产类别识别器（零网络、可解释、不猜）",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T09:10:00+00:00"
+        },
+        {
+          "id": "T9.2",
+          "name": "分池门禁评估（fail-close、默认 report_only）",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T09:10:00+00:00"
+        },
+        {
+          "id": "T9.3",
+          "name": "分池训练产物与推理路由（不静默回退整池）",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T09:10:00+00:00"
+        },
+        {
+          "id": "T9.4",
+          "name": "消费口接入：CLI / API / 监控报表 / 日报周报",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T09:10:00+00:00"
+        },
+        {
+          "id": "T9.5",
+          "name": "真实 26 标的池实测与周期分层对照，README/排期同步",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T09:10:00+00:00"
+        }
+      ],
+      "auto_acceptable": [
+        "T9.1",
+        "T9.2",
+        "T9.3",
+        "T9.4",
+        "T9.5"
+      ],
+      "manual_checkpoint": []
     }
   ],
-  "current_stage_index": 7,
+  "current_stage_index": 8,
   "current_task_index": 0,
-  "last_run_date": "2026-09-10",
+  "last_run_date": "2026-09-11",
   "next_run_date": null,
   "blockers": [],
   "result": "all_stages_completed"
