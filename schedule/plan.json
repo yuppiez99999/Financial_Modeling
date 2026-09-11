@@ -751,31 +751,31 @@
     {
       "id": "S12",
       "name": "标签重构（G2：三重障碍法 + 无前视测试 + A/B 实验）",
-      "status": "pending",
+      "status": "completed",
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-09-11T07:30:34.522041+00:00",
       "scheduled_dates": "2026-09-15 ~ 2026-09-19",
       "tasks": [
         {
           "id": "T12.1",
           "name": "新增 src/data/labeling.py：三重障碍法（止盈/止损/时间），波动率自适应，替代固定 5/10/20 日窗口",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-11T07:30:34.522041+00:00"
         },
         {
           "id": "T12.2",
           "name": "对照 leakage_checklist.md 扩展 tests/『标签无前视』用例",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-11T07:30:34.522041+00:00"
         },
         {
           "id": "T12.3",
           "name": "同一 LightGBM 配置下新标签 vs 旧标签 IC/命中率 A/B 对比，结论不管好坏如实入库（人工检查点）",
-          "status": "pending",
+          "status": "completed",
           "auto_run": false,
-          "completed_at": null
+          "completed_at": "2026-09-11T07:30:34.522041+00:00"
         }
       ],
       "auto_acceptable": [
@@ -789,7 +789,8 @@
       "source": "Issue #29 高质量项目集成 · G2（machine-learning-for-trading 三重障碍法）",
       "depends_on": [
         "S11"
-      ]
+      ],
+      "result": "三重障碍法标签 + 无前视测试 + 同口径 A/B 已落地。结论（26 标的/3 折，如实入库 00_kickoff/label_ab_conclusion.md）：10 日周期 IC +0.034、命中率 52.88%（旧 49.28%），首次跨 52% 门禁线；5 日周期结论混合。affects_gate 恒 False，是否纳入主线待人工检查点 T12.3 定稿。"
     },
     {
       "id": "S13",
@@ -927,11 +928,11 @@
       ]
     }
   ],
-  "current_stage_index": 14,
+  "current_stage_index": 16,
   "current_task_index": 0,
   "last_run_date": "2026-09-11",
   "next_run_date": "2026-09-12",
   "blockers": [],
   "result": "s11_s15_appended_pending_start",
-  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。"
+  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。"
 }

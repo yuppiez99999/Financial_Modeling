@@ -139,6 +139,7 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 | `horizon-scan` | 多周期口径探索：换预测周期有没有用（S10，见 §17） |
 | `horizon-decision [--days] [--decided-by] [--reason]` | 周期切换决策单：多重比较校正后还站得住吗（S11，见 §18.1） |
 | `feature-experiment [--arms]` | 特征扩充正交对照：横截面/宏观/情感有没有增量（S12，见 §18.2） |
+| `label-ab [--horizons 5,10]` | 标签口径 A/B 对比：三重障碍法 vs 固定窗口，同折同样本（S12/G2，见 §18A） |
 | `trials [--note] [--asof] [--command-filter]` | 评估试验登记：累计比较次数与口径指纹（S13，见 §18.3） |
 | `release-check [--notify] [--json]` | 发布态健康检查：现在能不能继续往下跑（S14，见 §18.4） |
 
@@ -146,7 +147,7 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 `--model-type {lightgbm,pytorch_lstm,timesfm,ensemble,factor_model,multifactor}`、
 `--symbols <A,B>`（stream / ic / ic-pool / pool-train / horizon-scan）、`--once`（stream）、
 `--no-pools`（horizon-scan）、`--days`（horizon-scan / horizon-decision）、
-`--arms`（feature-experiment）、`--note` / `--asof`（trials）、
+`--arms`（feature-experiment）、`--horizons`（label-ab）、`--note` / `--asof`（trials）、
 `--decided-by` / `--reason`（horizon-decision 人工签字）、`--notify`（release-check）、
 `--host` / `--port`。
 
@@ -1638,9 +1639,25 @@ CLI / 监控报表 / 日报 / API 的缺失与正常分支；配置段存在且�
   aggressive 0.030% 单边），净收益 = spread − 2×单边成本×(turnover×days) 保守线性
   上界。**口径为草案**：三档参数在定稿前为常量、不允许配置覆盖（防选择自由度回流），
   人工定稿前不作为任何决策依据。
-- **T11.3 ✅**：`00_kickoff/finrl_comparison_conclusion.md` 升 v2 —— 如实记录
-  S5 最小实验**只验证了 toy 环境管线可运行**（无真实训练、无对比数字），
-  并依据样本量不足 + 当前卡点不在模型族的判断**封存 FinRL，不扩大实验**。
+
+
+**S12 落地记录（2026-09-11）**：
+
+- **T12.1 ✅**：新增 `src/data/labeling.py` —— 三重障碍法（止盈/止损/时间三重障碍，
+  上下障碍 = `k × σ_t`，σ_t 由**截至 t** 的滚动波动率估计，随波动率自适应），
+  替代写死的 5/10/20 日窗口；支持日内高低价判定触碰（路径不被收盘价抹平）；
+  三分类可折叠为二分类（`to_binary`）与现有 `target_{h}d` 语义对齐。
+- **T12.2 ✅**：新增 `tests/test_roadmap_s12_g2.py`（22 例）—— 含**无前视硬测试**
+  （篡改 i 之后价格，σ_i 不变）、优先序（止盈/止损/时间障碍）、同日双向触发给中性、
+  尾部未到期返回 None 等。
+- **T12.3 ✅ 结论入库**：新增 `src/eval/label_ab.py` + CLI `python main.py label-ab`，
+  同一批样本 / 同一组折 / 同一模型配置下对比新旧标签；结论写入
+  `00_kickoff/label_ab_conclusion.md`。**26 标的 / 3 折实测**：
+  - 10 日：新标签 IC **+0.061**（旧 +0.027）、命中率 **52.88%**（旧 49.28%），
+    首次跨过 52% 门禁线；
+  - 5 日：结论**混合**（IC 微降、命中率微升），不构成明确改善。
+- **⚠️ 不改门禁**：`affects_gate` 恒为 `False`，`data.prediction_horizons` 与
+  `strategy_gate` 一个字不动；是否把三重障碍法标签纳入训练主线由**人工检查点**决定。
 
 
 ---

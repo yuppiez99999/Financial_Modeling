@@ -1292,6 +1292,84 @@ def run_release_check(config: dict, notify: bool = False, as_json: bool = False)
     return result
 
 
+def run_label_ab(config: dict, symbols: list[str] | None = None,
+                 horizons: list[int] | None = None, folds: int = 3) -> dict:
+    """标签口径 A/B 对比（S12 / G2）：旧固定窗口 vs 三重障碍法。
+
+    为什么需要（Issue #29 集成方案 G2 验收口径）：
+      标签重构是本轮唯一可能直接改变门禁判定的一步，必须用**同数据、同折、
+      同模型配置**的对照实验把「换了标签是否变好」变成可复算数字。
+
+    本命令做的事：
+      1. 对每个周期分别构造两份标签：
+         · 旧：`target_{h}d`（未来 h 日收益 > 0，写死窗口）；
+         · 新：三重障碍法（止盈/止损/时间三重障碍，阈值随波动率自适应）
+               折叠为二分类；
+      2. 在同一批样本、同一组 walk-forward 折上分别训练 LightGBM 并评估
+         IC / 命中率；
+      3. 输出增量对照（新 − 旧）与命中率二项 z 值提示。
+
+    ⚠️ **不改门禁**：`affects_gate` 恒为 False，只产出证据；
+    是否把新标签纳入主线由人工检查点（T12.3）决定。结论**不管好坏都如实入库**。
+
+    落盘 `reports/label_ab.json`。
+    """
+    import scripts.evaluate_models as ev
+    from src.data.preprocessor import FeatureEngineer
+    from src.eval.label_ab import LabelABExperiment, build_ab_report
+
+    logger.info("执行标签口径 A/B 对比（三重障碍法 vs 固定窗口）")
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+    horizon_map = horizons or [int(v.get("days", 5)) for v in horizons_cfg.values()
+                               if isinstance(v, dict)]
+    if not horizon_map:
+        horizon_map = [5, 10, 20]
+
+    experiment = LabelABExperiment(config)
+    results: dict = {}
+    for days in horizon_map:
+        combined = ev.build_supervised(data, config, int(days))
+        if combined.empty:
+            results[f"{days}d"] = {"available": False, "reason": "no_supervised_data",
+                                   "horizon_days": int(days)}
+            continue
+        fe = FeatureEngineer(config)
+        cols = [c for c in fe.get_feature_columns(combined, int(days))
+                if not str(c).startswith("_")]
+        splits = ev.walk_forward_splits(len(combined), folds)
+        try:
+            results[f"{days}d"] = experiment.compare(combined, int(days), cols, splits)
+        except Exception as e:  # noqa: BLE001 - 单周期失败不得拖垮整次对比
+            logger.warning(f"[label-ab] {days}d 对比失败: {e}")
+            results[f"{days}d"] = {"available": False, "reason": f"error: {e}",
+                                   "horizon_days": int(days)}
+
+    report = build_ab_report(results)
+    report["folds"] = folds
+    report["symbols_evaluated"] = len(data)
+    out_dir = Path("reports")
+    out_dir.mkdir(exist_ok=True)
+    out_path = out_dir / "label_ab.json"
+    out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    _record_trial(config, "label-ab", {
+        "symbols": len(data), "folds": folds, "horizons": list(results.keys()),
+        "any_improved": report["summary"]["any_improved"],
+    })
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    print(f"\n标签 A/B 报告已保存: {out_path}")
+    print(f"\n结论: {report['summary']['conclusion']}")
+    return report
+
+
 def run_factor_model(config: dict, symbol: str | None = None, top_n: int = 10) -> dict:
     """多因子模型诊断：因子权重 / 族权重 / IC 排名 / 当前因子值。
 
@@ -1623,6 +1701,7 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py horizon-decision          # 周期切换决策前置评估（多重比较校正 + 决策单，S11）
   python main.py horizon-decision --days 40 --decided-by 安然 --reason "业务可接受 40 日延迟"  # 人工签字
   python main.py feature-experiment        # 特征扩充正交对照实验（横截面/宏观/情感，S12）
+  python main.py label-ab                  # 标签口径 A/B 对比（三重障碍法 vs 固定窗口，S12/G2）
   python main.py trials                    # 查看评估试验登记（累计比较次数，S13）
   python main.py release-check             # 发布态健康检查（收敛阻塞项与建议动作，S14）
   python main.py release-check --notify    # 附带告警路由决定（含去重）
@@ -1646,7 +1725,7 @@ def build_parser() -> argparse.ArgumentParser:
         "daily-report", "weekly-report", "adaptive",
         "signal", "orders", "trade", "backtest", "macro", "monitor",
         "ic", "ic-trend", "ic-pool", "pool-train", "horizon-scan", "horizon-decision",
-        "feature-experiment", "trials", "release-check",
+        "feature-experiment", "label-ab", "trials", "release-check",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -1689,6 +1768,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--arms", default=None,
                         help="feature-experiment 命令：逗号分隔的对照臂 "
                              "(cross_sectional/macro/sentiment)，缺省为全部")
+    parser.add_argument("--horizons", default=None,
+                        help="label-ab 命令：逗号分隔的预测周期（交易日），如 5,10,20；"
+                             "缺省用配置 prediction_horizons")
     parser.add_argument("--decided-by", dest="decided_by", default="",
                         help="horizon-decision 命令：人工确认人（非空才可能把决策单置为 confirmed）")
     parser.add_argument("--reason", dest="reason", default="",
@@ -1837,6 +1919,15 @@ def main():
         if _raw_arms:
             _arms = [a.strip() for a in str(_raw_arms).split(",") if a.strip()]
         run_feature_experiment(config, symbols=_cli_symbols(args), arms=_arms)
+    elif args.command == "label-ab":
+        _horizons = None
+        _raw_h = getattr(args, "horizons", None)
+        if _raw_h:
+            try:
+                _horizons = [int(x.strip()) for x in str(_raw_h).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--horizons 解析失败，改用配置 prediction_horizons: {_raw_h}")
+        run_label_ab(config, symbols=_cli_symbols(args), horizons=_horizons)
     elif args.command == "trials":
         run_trials(config, command=getattr(args, "command_filter", None),
                    asof=getattr(args, "asof", None),
