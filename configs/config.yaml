@@ -103,6 +103,12 @@ model:
     level2_shrink: 0.35         # 族内权重向等权收缩比例，防单一因子过度集中
     family_weights: {}          # 显式族权重（留空 = 由 |IC| 自动估计）
     factor_weights: {}          # 显式因子权重（留空 = 由 |IC| 自动估计）
+    # S13/G3：qlib Alpha158 族因子供给器（report_only，缺省关闭）
+    # true 时 FeatureEngineer 不变 —— factor_a158_* 仅在 `python main.py qlib-ab`
+    # 命令内计算；纳入生产特征集须 T13.4 人工检查点批准后另行改造。
+    qlib_alpha158:
+      enabled: false
+      families: [momentum, trend, volatility, volume, reversal]
     # 类级加权组合：最终得分 = Σ w_class × 该类得分
     ensemble:
       classes: [factor, tree, sequence]

@@ -34,6 +34,8 @@ from pathlib import Path
 
 import yaml
 
+import pandas as pd  # noqa: E402（qlib-ab 序列对齐用）
+
 # 项目根目录
 PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -1370,6 +1372,123 @@ def run_label_ab(config: dict, symbols: list[str] | None = None,
     return report
 
 
+def run_qlib_ab(config: dict, symbols: list[str] | None = None,
+                folds: int = 3, dump_bin: bool = True) -> dict:
+    """Alpha158 因子增量验证（S13 / G3）：qlib 因子 vs 现有 15 因子特征集。
+
+    为什么需要（Issue #29 集成方案 G3 验收口径）：
+      「Alpha158 有没有增量」必须变成同数据、同折、同模型配置的可复算数字。
+      本命令做的事：
+        1. （可选）把行情缓存转 qlib .bin 列存（``integrations/qlib/data_layer``）；
+        2. 逐标的计算 Alpha158 并压缩为 ``factor_a158_*`` 族因子
+           （``src/factors/qlib_factor_provider.py``，纯 pandas，无 qlib 运行时依赖）；
+        3. 同一批样本、同一组折、同一 LightGBM 配置下 A/B：
+           基准臂 = 现行特征集；对照臂 = 现行特征 + factor_a158_*。
+
+    ⚠️ **不改门禁**：``affects_gate`` 恒为 False；是否纳入主线由 T13.4
+    人工检查点决定。结论不管好坏写入 ``00_kickoff/qlib_alpha158_conclusion.md``。
+
+    落盘 ``reports/qlib_ab.json``。
+    """
+    import scripts.evaluate_models as ev
+    from src.data.preprocessor import FeatureEngineer
+    from src.eval.qlib_ab import QlibABExperiment, build_ab_report
+    from src.factors.qlib_factor_provider import PROVIDER_FACTOR_COLUMNS, QlibFactorProvider
+
+    logger.info("执行 Alpha158 因子增量验证（qlib vs 现有特征集）")
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    dump_payload: dict = {}
+    if dump_bin:
+        try:
+            from integrations.qlib.data_layer import dump_all as qlib_dump_all
+
+            dump_payload = qlib_dump_all("data/qlib_bin", data)
+            logger.info("[qlib-ab] .bin 转换: %s 标的 / %s 行",
+                        dump_payload.get("symbols_written"), dump_payload.get("total_rows"))
+        except Exception as e:  # noqa: BLE001 - 数据层失败不影响 A/B 本身
+            logger.warning(f"[qlib-ab] .bin 转换失败（不影响 A/B）: {e}")
+            dump_payload = {"error": str(e)}
+
+    horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+    horizon_map = [int(v.get("days", 5)) for v in horizons_cfg.values()
+                   if isinstance(v, dict)]
+    if not horizon_map:
+        horizon_map = [5, 10, 20]
+
+    provider = QlibFactorProvider(config)
+    experiment = QlibABExperiment(config)
+    results: dict = {}
+    for days in horizon_map:
+        combined = ev.build_supervised(data, config, int(days))
+        if combined.empty:
+            results[f"{days}d"] = {"available": False, "reason": "no_supervised_data",
+                                   "horizon_days": int(days)}
+            continue
+        # 逐标的追加 Alpha158 族因子（provider 内部 fail-soft）
+        enriched_parts = []
+        for symbol, df in data.items():
+            try:
+                part = provider.compute(df.copy())
+                part["_symbol"] = symbol
+                enriched_parts.append(part)
+            except Exception as e:  # noqa: BLE001 - 单标的失败跳过
+                logger.warning(f"[qlib-ab] {symbol} Alpha158 供给失败: {e}")
+        if not enriched_parts:
+            results[f"{days}d"] = {"available": False, "reason": "a158_enrichment_failed",
+                                   "horizon_days": int(days)}
+            continue
+        enriched = pd.concat(enriched_parts, ignore_index=True)
+        # 重建监督集：与 combined 同一套特征工程 + target，再按 (_symbol, date) 对齐因子
+        fe = FeatureEngineer(config)
+        base_cols = [c for c in fe.get_feature_columns(combined, int(days))
+                     if not str(c).startswith("_")]
+        # 对齐：enriched 只取因子列与键
+        key_cols = ["date"]
+        a158_cols = [c for c in PROVIDER_FACTOR_COLUMNS if c in enriched.columns]
+        if "_symbol" in combined.columns:
+            enriched = enriched.set_index(["_symbol", "date"])
+            combined_k = combined.set_index(["_symbol", "date"])
+        else:
+            # combined 无 _symbol（旧版）：按 date 对齐（降级口径，样本可能少）
+            enriched = enriched.set_index("date")
+            combined_k = combined.set_index("date")
+        factor_frame = enriched[a158_cols].reindex(combined_k.index)
+        combined_k = pd.concat([combined_k, factor_frame], axis=1).reset_index()
+        splits = ev.walk_forward_splits(len(combined_k), folds)
+        try:
+            results[f"{days}d"] = experiment.compare(
+                combined_k, int(days), base_cols, a158_cols, splits)
+        except Exception as e:  # noqa: BLE001 - 单周期失败不拖垮整次对比
+            logger.warning(f"[qlib-ab] {days}d 对比失败: {e}")
+            results[f"{days}d"] = {"available": False, "reason": f"error: {e}",
+                                   "horizon_days": int(days)}
+
+    report = build_ab_report(results)
+    report["folds"] = folds
+    report["symbols_evaluated"] = len(data)
+    report["qlib_bin_dump"] = dump_payload
+    out_dir = Path("reports")
+    out_dir.mkdir(exist_ok=True)
+    out_path = out_dir / "qlib_ab.json"
+    out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    _record_trial(config, "qlib-ab", {
+        "symbols": len(data), "folds": folds, "horizons": list(results.keys()),
+        "any_improved": report["summary"]["any_improved"],
+    })
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    print(f"\nAlpha158 A/B 报告已保存: {out_path}")
+    print(f"\n结论: {report['summary']['conclusion']}")
+    return report
+
+
 def run_factor_model(config: dict, symbol: str | None = None, top_n: int = 10) -> dict:
     """多因子模型诊断：因子权重 / 族权重 / IC 排名 / 当前因子值。
 
@@ -1702,6 +1821,7 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py horizon-decision --days 40 --decided-by 安然 --reason "业务可接受 40 日延迟"  # 人工签字
   python main.py feature-experiment        # 特征扩充正交对照实验（横截面/宏观/情感，S12）
   python main.py label-ab                  # 标签口径 A/B 对比（三重障碍法 vs 固定窗口，S12/G2）
+  python main.py qlib-ab                   # Alpha158 因子增量验证（qlib vs 现有特征集，S13/G3）
   python main.py trials                    # 查看评估试验登记（累计比较次数，S13）
   python main.py release-check             # 发布态健康检查（收敛阻塞项与建议动作，S14）
   python main.py release-check --notify    # 附带告警路由决定（含去重）
@@ -1725,7 +1845,7 @@ def build_parser() -> argparse.ArgumentParser:
         "daily-report", "weekly-report", "adaptive",
         "signal", "orders", "trade", "backtest", "macro", "monitor",
         "ic", "ic-trend", "ic-pool", "pool-train", "horizon-scan", "horizon-decision",
-        "feature-experiment", "label-ab", "trials", "release-check",
+        "feature-experiment", "label-ab", "qlib-ab", "trials", "release-check",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -1928,6 +2048,8 @@ def main():
             except ValueError:
                 logger.warning(f"--horizons 解析失败，改用配置 prediction_horizons: {_raw_h}")
         run_label_ab(config, symbols=_cli_symbols(args), horizons=_horizons)
+    elif args.command == "qlib-ab":
+        run_qlib_ab(config, symbols=_cli_symbols(args))
     elif args.command == "trials":
         run_trials(config, command=getattr(args, "command_filter", None),
                    asof=getattr(args, "asof", None),
