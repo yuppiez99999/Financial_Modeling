@@ -260,7 +260,9 @@ class DataQualityGate:
                 if pd.isna(latest_date):
                     latest_date = pd.to_datetime(df["date"].iloc[-1], errors="coerce")
                 days_old = (pd.Timestamp.now(tz="UTC") - latest_date).days if not pd.isna(latest_date) else 999
-                timeliness = max(0, 100 - days_old * 0.5)
+                # 同日（days_old=0）给 100 而非 100.5：timeliness 上限 100，
+                # 防止 quality_score 均值越过 100（无模型分支取四维均值）
+                timeliness = min(100.0, max(0, 100 - days_old * 0.5))
             except Exception:
                 timeliness = 95.0
         else:
