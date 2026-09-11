@@ -331,7 +331,7 @@
       ]
     },
     {
-            "id": "Q5",
+      "id": "S8",
       "name": "Q5 信号衰减监控与定期报告",
       "status": "completed",
       "started_at": "2026-09-10T14:30:00+00:00",
@@ -384,7 +384,7 @@
       ]
     }
   ],
-  "current_stage_index": 6,
+  "current_stage_index": 7,
   "current_task_index": 0,
   "last_run_date": "2026-09-10",
   "next_run_date": null,
