@@ -332,6 +332,30 @@ class ModelMonitor:
             logger.warning(f"[monitor] 读取策略门禁状态失败: {e}")
             return {"available": False, "error": str(e)}
 
+    def _collect_gate_diagnosis(self, gate: Dict[str, Any]) -> Dict[str, Any]:
+        """门禁阻塞诊断（S7，只读）：还差多少 / 哪条腿卡住。
+
+        仅当门禁存在且**未放行**时才诊断，且只读既有产物（IC 评估 + 门禁判定），
+        不重跑评估、不触网 —— 监控报表必须随时可跑且零副作用。
+        """
+        if not gate.get("available") or gate.get("passed"):
+            return {"available": False, "reason": "gate_not_blocked"}
+        try:
+            from src.inference.gate_diagnosis import diagnose
+
+            gate_dir = Path(
+                (self.config.get("strategy_gate", {}) or {}).get("report_dir", "reports")
+            )
+            ic_payload: Dict[str, Any] = {}
+            ic_path = gate_dir / "ic_report.json"
+            if ic_path.exists():
+                ic_payload = json.loads(ic_path.read_text(encoding="utf-8"))
+            out = diagnose(ic_payload, self.config.get("strategy_gate", {}), gate)
+            out["available"] = bool(out.get("total_count"))
+            return out
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 门禁诊断失败: {e}")
+
     def _collect_ic_trend(self) -> Dict[str, Any]:
         """IC 趋势 / 信号衰减状态（Q5，只读）。
 
@@ -447,6 +471,7 @@ class ModelMonitor:
         factors = self._collect_factor_model()
         streaming = self._collect_streaming()
         risk_advice = self._collect_risk_advice()
+        gate_diagnosis = self._collect_gate_diagnosis(gate)
         ic_trend = self._collect_ic_trend()
 
         issues: List[str] = []
@@ -466,6 +491,14 @@ class ModelMonitor:
             issues.append(
                 f"策略门禁为 {gate.get('state', 'readonly')}（信号只读），未达打分因子放行条件"
             )
+            # S7：把"未放行"具体到"还差多少 / 哪条腿"，避免只剩一句"命中率不够"
+            if gate_diagnosis.get("available") and gate_diagnosis.get("binding_horizon"):
+                short = gate_diagnosis.get("binding_shortfall") or {}
+                detail = "；".join(f"{k} 还差 {v}" for k, v in short.items())
+                issues.append(
+                    f"门禁约束在 {gate_diagnosis['binding_horizon']}"
+                    f"（{gate_diagnosis.get('binding_metric')}）：{detail}"
+                )
         # 实时流（Q3）：启用后盘中应有新鲜快照；交易时段内超过 3 个轮询周期即告警
         if streaming.get("available") or streaming.get("reason") == "no_snapshot_today":
             if streaming.get("is_trading_hours"):
@@ -506,6 +539,7 @@ class ModelMonitor:
             "data_sources": sources,
             "models": models,
             "gate": gate,
+            "gate_diagnosis": gate_diagnosis,
             "factors": factors,
             "streaming": streaming,
             "risk_advice": risk_advice,
@@ -651,6 +685,16 @@ def render_markdown(payload: Dict[str, Any]) -> str:
                     f"{_fmt_pct(h.get('hit_rate'))} | {h.get('samples', 0)} | "
                     f"{'✅' if h.get('passed') else '❌'} |"
                 )
+        diag = payload.get("gate_diagnosis", {}) or {}
+        if diag.get("available") and diag.get("binding_horizon"):
+            short = diag.get("binding_shortfall") or {}
+            detail = "；".join(f"{k} 还差 {v}" for k, v in short.items())
+            lines.append("")
+            lines.append(
+                f"- 🔧 阻塞诊断：约束在 `{diag['binding_horizon']}`"
+                f"（{diag.get('binding_metric')}）—— {detail}"
+            )
+            lines.append(f"- {diag.get('note', '')}")
         lines.append("")
     else:
         lines.append(

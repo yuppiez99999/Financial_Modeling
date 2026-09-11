@@ -458,7 +458,63 @@ def run_backtest(config: dict, symbol: str) -> None:
 
 # ==================== Q2 路线：门禁与多因子 ====================
 
-def run_ic(config: dict, symbols: list[str] | None = None, folds: int = 3) -> dict:
+def _ic_scores_for_horizon(config: dict, combined, horizon_days: int, folds: int,
+                           derive_band: bool) -> tuple[list, list, float]:
+    """对给定监督数据集做 walk-forward 训练，产出 (scores, returns, neutral_band)。
+
+    - ``scores`` 用「概率 - 0.5」去中性化（0 = 无观点），与因子/信号口径一致；
+    - ``derive_band=True`` 时，逐折**只用训练折**推导中性带，再施加到该折测试样本；
+      训练折学到的常数用在测试折上不构成前视（见 ``derive_neutral_band``）；
+    - 未 ``derive_band`` 时 neutral_band 返回 0.0，逐字节保持既有门禁口径。
+    """
+    import numpy as np
+    import scripts.evaluate_models as ev
+    from src.inference.ic import derive_neutral_band
+
+    from src.data.preprocessor import FeatureEngineer
+
+    fe = FeatureEngineer(config)
+    cols = [c for c in fe.get_feature_columns(combined, int(horizon_days))
+            if not str(c).startswith("_")]
+    X = combined[cols].to_numpy(dtype=float)
+    y = combined[f"target_{int(horizon_days)}d"].to_numpy(dtype=float)
+    fwd = combined["_fwd_ret"].to_numpy(dtype=float)
+
+    scores: list = []
+    returns: list = []
+    bands: list = []
+    for train_idx, test_idx in ev.walk_forward_splits(len(X), folds):
+        if len(np.unique(y[train_idx])) < 2:
+            continue
+        try:
+            from src.train.models.lightgbm_model import LightGBMModel
+
+            model = LightGBMModel(config)
+            model.train(X[train_idx], y[train_idx])
+            proba = model.predict_proba(X[test_idx])[:, 1]
+            train_proba = model.predict_proba(X[train_idx])[:, 1]
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[ic] horizon={horizon_days}d 折训练失败: {e}")
+            continue
+        fold_scores = [float(p) - 0.5 for p in proba]
+        fold_returns = [float(r) for r in fwd[test_idx]]
+        if derive_band:
+            band_cfg = (config.get("strategy_gate", {}) or {}).get("neutral_band", {}) or {}
+            band = derive_neutral_band(
+                [float(p) - 0.5 for p in train_proba],
+                [float(r) for r in fwd[train_idx]],
+                min_keep_ratio=float(band_cfg.get("min_keep_ratio", 0.5)),
+            )
+            bands.append(band)
+        scores.extend(fold_scores)
+        returns.extend(fold_returns)
+    # 多折取中位数：单折异常不污染整体口径（且仍全部来自训练折）
+    band_out = float(np.median(bands)) if bands else 0.0
+    return scores, returns, band_out
+
+
+def run_ic(config: dict, symbols: list[str] | None = None, folds: int = 3,
+           stratify: bool = False, derive_band: bool | None = None) -> dict:
     """IC / 命中率门禁评估（walk-forward 时序回测，口径与 scripts/evaluate_models.py 一致）。
 
     复用评估脚本的 ``build_supervised`` / ``walk_forward_splits`` / ``compute_metrics``，
@@ -466,12 +522,20 @@ def run_ic(config: dict, symbols: list[str] | None = None, folds: int = 3) -> di
       - 逐标的特征工程 + 逐标的构造目标（防跨标的 shift 污染）；
       - 测试折严格在训练折之后（无未来函数）；
       - forward return 取真实收盘价，未到期样本自动跳过。
+
+    S7 门禁解锁攻坚新增（均默认关闭，向后兼容）：
+      - ``stratify=True``    ：额外按标的分解结果，定位拖后腿的标的；
+      - ``derive_band``      ：逐折用训练折推导中性带，过滤 ≈0.5 的噪音样本。
+        ``True``/``False`` = 显式开关；``None`` = 跟随
+        ``strategy_gate.neutral_band.enabled``（缺省 false）。
     """
-    import numpy as np
     import scripts.evaluate_models as ev
     from src.inference.ic import ICCalculator
 
     logger.info("执行 IC / 命中率门禁评估")
+    band_cfg = (config.get("strategy_gate", {}) or {}).get("neutral_band", {}) or {}
+    if derive_band is None:
+        derive_band = bool(band_cfg.get("enabled", False))
     horizons_cfg = config.get("data", {}).get("prediction_horizons", {})
     symbols = symbols or _config_symbols(config)
     data = ev.load_market_data(config, symbols)
@@ -483,21 +547,84 @@ def run_ic(config: dict, symbols: list[str] | None = None, folds: int = 3) -> di
 
     calc = ICCalculator(config)
     per_horizon: dict = {}
+    # 分标的：{symbol: {hname: {scores, returns}}}
+    per_symbol: dict = {} if stratify else None
+
     for hname, days in horizons_cfg.items():
-        seq = build_walkforward_sequences(data, config, int(days), folds)
+        combined = ev.build_supervised(data, config, int(days))
+        if combined.empty:
+            per_horizon[hname] = {"horizon_days": int(days), "scores": [], "returns": [],
+                                  "window_size": 0}
+            continue
+        scores, returns, band = _ic_scores_for_horizon(
+            config, combined, int(days), folds, derive_band)
         per_horizon[hname] = {
             "horizon_days": int(days),
-            "scores": seq["scores"],
-            "returns": seq["returns"],
+            "scores": scores,
+            "returns": returns,
             # 门禁需 IC 稳定性：按 20 样本滚动窗口统计 ICIR
-            "window_size": 20 if len(seq["scores"]) >= 60 else None,
+            "window_size": 20 if len(scores) >= 60 else None,
+            "neutral_band": band,
         }
+        if stratify:
+            _fill_per_symbol(per_symbol, config, data, hname, int(days), folds, derive_band)
 
     result = calc.evaluate_all(per_horizon)
     result["symbols_evaluated"] = len(data)
     result["folds"] = folds
+    result["neutral_band_enabled"] = bool(derive_band)
+    if stratify:
+        result["per_symbol"] = _summarize_per_symbol(per_symbol or {})
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return result
+
+
+def _fill_per_symbol(per_symbol: dict, config: dict, data: dict,
+                     hname: str, days: int, folds: int, derive_band: bool) -> None:
+    """逐标的独立跑一遍 walk-forward，把结果挂到 per_symbol[symbol][hname]。"""
+    import scripts.evaluate_models as ev
+
+    for symbol in data:
+        one = ev.build_supervised({symbol: data[symbol]}, config, days)
+        if one.empty:
+            continue
+        scores, returns, band = _ic_scores_for_horizon(
+            config, one, days, folds, derive_band)
+        if not scores:
+            continue
+        per_symbol.setdefault(symbol, {})[hname] = {
+            "horizon_days": days,
+            "scores": scores,
+            "returns": returns,
+            "neutral_band": band,
+        }
+
+
+def _summarize_per_symbol(per_symbol: dict) -> dict:
+    """把逐标的原始序列压成精简指标（避免把大数组塞进报告 JSON）。"""
+    from src.inference.ic import ICCalculator, hit_rate
+
+    out: dict = {}
+    for symbol, horizons in per_symbol.items():
+        entry: dict = {}
+        calc = ICCalculator()
+        for hname, payload in horizons.items():
+            res = calc.evaluate(hname, int(payload["horizon_days"]),
+                                payload["scores"], payload["returns"],
+                                neutral_band=payload.get("neutral_band", 0.0))
+            entry[hname] = {
+                "samples": res.samples,
+                "ic": round(res.ic, 4),
+                "hit_rate": round(res.hit_rate, 4),
+                "hit_rate_raw": round(res.hit_rate_raw or hit_rate(
+                    payload["scores"], payload["returns"]), 4),
+                "neutral_band": round(res.neutral_band, 6),
+                "available": res.available,
+                "passed": res.passed,
+            }
+        if entry:
+            out[symbol] = entry
+    return out
 
 
 def build_walkforward_sequences(
@@ -587,6 +714,38 @@ def run_gate(config: dict, ic_path: str | None = None) -> dict:
     print(json.dumps(decision, ensure_ascii=False, indent=2))
     print(f"\n门禁判定已保存: {out}")
     return decision
+
+
+def run_gate_diagnose(config: dict, ic_path: str | None = None) -> dict:
+    """门禁阻塞诊断：把 `readonly` 拆成「还差多少 / 哪条腿卡住 / 该不该动」。
+
+    纯读既有产物（IC 评估 + 门禁判定），不训练、不触网、不改门禁结论。
+    """
+    from src.inference.gate_diagnosis import diagnose
+
+    logger.info("执行门禁阻塞诊断")
+    ic_payload = None
+    if ic_path and Path(ic_path).exists():
+        ic_payload = json.loads(Path(ic_path).read_text(encoding="utf-8"))
+    else:
+        # 不重跑评估（可能很贵）：优先复用落盘产物
+        cached = Path(config.get("strategy_gate", {}).get("report_dir", "reports")) / "ic_report.json"
+        if cached.exists():
+            ic_payload = json.loads(cached.read_text(encoding="utf-8"))
+            logger.info(f"复用 IC 评估产物: {cached}")
+        else:
+            ic_payload = run_ic(config)
+
+    gate_decision = None
+    gate_cached = Path(config.get("strategy_gate", {}).get("report_dir", "reports")) / "strategy_gate.json"
+    if gate_cached.exists():
+        try:
+            gate_decision = json.loads(gate_cached.read_text(encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[gate-diagnose] 门禁判定读取失败: {e}")
+
+    result = diagnose(ic_payload, config.get("strategy_gate", {}), gate_decision)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 def run_ic_trend(config: dict, symbols: list[str] | None = None, folds: int = 3) -> dict:
@@ -955,8 +1114,11 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py macro                    # 查看宏观指标数据源状态
   python main.py monitor                  # 生成模型监控报表
   python main.py ic                       # IC / 命中率门禁评估（全标的池）
+  python main.py ic --stratify            # 额外按标的分解（定位拖后腿的标的）
+  python main.py ic --derive-band         # 逐折用训练折推导中性带（过滤 ≈0.5 噪音）
   python main.py ic-trend                 # IC 时序 / 信号衰减监控（Q5）
   python main.py gate                     # 策略门禁判定（IC + 审计命中率）
+  python main.py gate-diagnose            # 门禁阻塞诊断（还差多少 / 哪条腿卡住）
   python main.py factors 600519.SH        # 多因子加权组合预测（推理期特征因子）
   python main.py factor-model 600519.SH   # 多因子模型权重 / IC 诊断（可训练模型）
   python main.py stream --once            # 盘中实时流一次性更新（Q3）
@@ -972,7 +1134,7 @@ def build_parser() -> argparse.ArgumentParser:
         "serve", "schedule", "audit", "notify", "batch",
         "daily-report", "weekly-report", "adaptive",
         "signal", "orders", "trade", "backtest", "macro", "monitor",
-        "ic", "ic-trend", "gate", "factors", "factor-model",
+        "ic", "ic-trend", "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
     parser.add_argument("args", nargs="*", help="附加参数")
@@ -992,6 +1154,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="risk-advice 命令：对配置内全部启用标的产出建议")
     parser.add_argument("--json", dest="as_json", action="store_true",
                         help="risk-advice 命令：输出 JSON（缺省输出 Markdown）")
+    parser.add_argument("--stratify", action="store_true",
+                        help="ic 命令：额外按标的分层评估，定位拖后腿的标的")
+    parser.add_argument("--derive-band", dest="derive_band", action="store_true", default=None,
+                        help="ic 命令：逐折用训练折推导中性带，过滤 ≈0.5 噪音样本（缺省跟随配置）")
     parser.add_argument("--host", default=None, help="API 服务地址")
     parser.add_argument("--port", type=int, default=None, help="API 服务端口")
     return parser
@@ -1095,11 +1261,15 @@ def main():
         output = args.args[0] if args.args else None
         run_monitor(config, output)
     elif args.command == "ic":
-        run_ic(config, args.args or None)
+        run_ic(config, args.args or None,
+               stratify=bool(getattr(args, "stratify", False)),
+               derive_band=getattr(args, "derive_band", None))
     elif args.command == "ic-trend":
         run_ic_trend(config, args.args or None)
     elif args.command == "gate":
         run_gate(config, args.args[0] if args.args else None)
+    elif args.command == "gate-diagnose":
+        run_gate_diagnose(config, args.args[0] if args.args else None)
     elif args.command == "factor-model":
         symbol = args.args[0] if args.args else None
         run_factor_model(config, symbol)
