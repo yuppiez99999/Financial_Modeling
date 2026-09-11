@@ -9,8 +9,12 @@ project:
 
 # 数据配置
 data:
-  # 数据源回退链: Wind(A股/期货, 优先) -> 腾讯(免费A股/港股) -> 模拟(兜底)
-  source: ["wind", "tencent", "simulation"]
+  # 数据源回退链: Wind(机构级, 优先) -> akshare(免费多市场: A股/ETF/期货/外汇)
+  #              -> 腾讯(免费A股/ETF 备用通道) -> 模拟(兜底)
+  # S14/G4：akshare 由可选依赖升为 P1，成为**唯一覆盖期货与外汇的免费档**；
+  # 同时与腾讯形成 A股/ETF 双通道，可交叉识别单源前复权退化。
+  # 未安装 akshare 时自动跳过（不报错），链路与升级前一致。
+  source: ["wind", "akshare", "tencent", "simulation"]
   raw_dir: "data/raw"
   processed_dir: "data/processed"
 
@@ -49,7 +53,9 @@ data:
         - "511010.SH"   # 国债ETF
 
     futures:
-      enabled: false    # 腾讯源不支持期货代码（RB.SHF 等）；二期接 Wind 行情后再开启
+      # S14/G4：akshare(futures_zh_daily_sina) 已实测支持以下全部主连代码，
+      # 免费档即可覆盖，故开启（此前因腾讯源不支持 RB.SHF 等而关闭）。
+      enabled: true
       symbols:
         - "RB.SHF"      # 螺纹钢
         - "CU.SHF"      # 铜
@@ -63,7 +69,13 @@ data:
         - "SR.CZC"      # 白糖
 
     forex:
-      enabled: false   # 腾讯/Wind MCP 暂不支持 FXCM 外汇代码
+      # S14/G4：akshare 通道（新浪外汇日K）已实测支持 USDCNH/USDCNY 等，
+      # 开启后数据侧不再是瓶颈（此前仅 Wind MCP 支持，默认关）。
+      # 代码后缀 .FXCM 保留（沿用既有口径），实际取数走 akshare 外汇通道。
+      enabled: true
+      symbols:
+        - "USDCNH.FXCM"  # 美元兑离岸人民币
+        - "USDCNY.FXCM"  # 美元兑在岸人民币
 
   # 时间范围（end_date 留空 = 采集至最新交易日）
   start_date: "2020-01-01"

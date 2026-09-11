@@ -7,7 +7,8 @@
 | 组件 | 来源 | 许可证 | 引入阶段 | 用途 | 使用方式 |
 |------|------|--------|---------|------|---------|
 | microsoft/qlib（Alpha158） | https://github.com/microsoft/qlib | MIT | S13 / G3（2026-09-11） | Alpha158 因子集（98 列） | **表达式级对齐复现**：`integrations/qlib/alpha158.py` 用纯 pandas 复现 qlib `Alpha158DataLoader` 的因子表达式，**未引入 qlib 运行时依赖、未复制 qlib 源码** |
-| akfamily/akshare | https://github.com/akfamily/akshare | MIT | 既有（requirements.txt，可选） | 财经数据接口 | pip 依赖 |
+| akfamily/akshare | https://github.com/akfamily/akshare | MIT | **S14 / G4（2026-09-11）由「可选依赖」升为 P1 数据源** | A股 / ETF / 国内期货 / 外汇 日K；宏观指标 | pip 依赖（`akshare>=1.12.0`，已在 requirements.txt）；**未安装时链路静默跳过** |
+| 新浪财经公开接口（InnerFuturesNewService / NewForexService / stock_zh_a_daily 通道） | https://finance.sina.com.cn | 公开免费接口（无独立许可证，仅取数不复制代码） | S14 / G4（2026-09-11） | 国内期货日K、外汇日K | **HTTP 直连**：`src/data/akshare_client.py` 中 `_sina_futures_fetch` / `_sina_fx_fetch`。原因：akshare 的 `futures_zh_daily_sina` 内部请求**不带 UA/Referer**，在新浪限流下返回 HTTP 456 导致批量拉取 9/10 失败，故用复用 Session + 浏览器头直连**同一公开接口**（字段口径与 akshare 一致，见 `00_kickoff/akshare_data_source_conclusion.md` 第四节） |
 | vectorbt | https://github.com/polakowo/vectorbt | 自定义（允许商用） | 既有（S1 回测层） | 向量化回测 | pip 依赖 |
 | Kronos（快照） | https://github.com/shiyu-coder/Kronos | MIT | 既有（对照参考） | K 线基础模型 | 仓库内源码快照（`Kronos/THIRD_PARTY_NOTICE.md`） |
 | LightGBM | https://github.com/microsoft/LightGBM | MIT | 既有 | 主力模型 | pip 依赖 |

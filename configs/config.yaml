@@ -10,7 +10,9 @@ project:
 
 # 数据配置
 data:
-  # 数据源（按顺序回退）：wind / tencent / simulation
+  # 数据源（按顺序回退）：wind / akshare / tencent / simulation
+  # 标准版保持 simulation 为默认（离线可跑）；如需真实数据在专业版
+  # configs/config_pro.yaml 中已切换为 wind → akshare → tencent → simulation。
   source: ["simulation"]
   raw_dir: "data/raw"
   processed_dir: "data/processed"

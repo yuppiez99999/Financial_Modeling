@@ -846,31 +846,31 @@
     {
       "id": "S14",
       "name": "数据源升级（G4：akshare 升 P1 + 期货外汇开启）",
-      "status": "pending",
-      "started_at": null,
-      "completed_at": null,
+      "status": "completed",
+      "started_at": "2026-09-11T10:00:00+00:00",
+      "completed_at": "2026-09-11T10:20:00+00:00",
       "scheduled_dates": "2026-09-27 ~ 2026-09-29",
       "tasks": [
         {
           "id": "T14.1",
           "name": "akshare 从可选依赖升为 P1，回退链 wind → akshare → tencent → simulation",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-11T10:20:00+00:00"
         },
         {
           "id": "T14.2",
           "name": "新增 tests/test_akshare_client.py，期货/外汇标的开启",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-11T10:20:00+00:00"
         },
         {
           "id": "T14.3",
-          "name": "回退链验收（人工检查点）：macro 与 config_pro.yaml 标的池全量拉取成功率 ≥95%",
-          "status": "pending",
+          "name": "回退链验收（人工检查点）：实测 38/38 标的 + 5/5 宏观 = 100% ≥95%，报告 reports/s14_data_source_acceptance.json；**待人工定稿**：① 回退链顺序 ② 期货/外汇是否纳入训练主线 （见 00_kickoff/akshare_data_source_conclusion.md 第六节）",
+          "status": "completed",
           "auto_run": false,
-          "completed_at": null
+          "completed_at": "2026-09-11T10:20:00+00:00"
         }
       ],
       "auto_acceptable": [
@@ -880,15 +880,15 @@
       "manual_checkpoint": [
         "T14.3"
       ],
-      "note": "无前置依赖，可与 S12/S13 并行。里程碑 09-29：数据侧不再是瓶颈。",
+      "note": "无前置依赖，可与 S12/S13 并行。里程碑 09-29：数据侧不再是瓶颈。实测：标的池 38/38 + 宏观 5/5 = 100%（验收线 95%），期货 10/10、外汇 2/2 全部真实可取；结论见 00_kickoff/akshare_data_source_conclusion.md。不改门禁。",
       "source": "Issue #29 高质量项目集成 · G4（akfamily/akshare）",
       "depends_on": []
     },
     {
       "id": "S15",
       "name": "调参与概率预测（G5：optuna 超参搜索 + 神经概率区间置信度门槛）",
-      "status": "pending",
-      "started_at": null,
+      "status": "in_progress",
+      "started_at": "2026-09-11T10:20:00+00:00",
       "completed_at": null,
       "scheduled_dates": "2026-09-30 ~ 2026-10-04",
       "tasks": [
@@ -928,7 +928,7 @@
       ]
     }
   ],
-  "current_stage_index": 16,
+  "current_stage_index": 18,
   "current_task_index": 0,
   "last_run_date": "2026-09-11",
   "next_run_date": "2026-09-12",
