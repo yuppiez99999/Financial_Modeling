@@ -479,12 +479,241 @@
         "T10.3",
         "T10.4"
       ]
+    },
+    {
+      "id": "S11",
+      "name": "预测周期切换决策前置（多重收敛校正）",
+      "status": "completed",
+      "started_at": "2026-09-11T06:31:16.109250+00:00",
+      "completed_at": "2026-09-11T06:31:16.109250+00:00",
+      "tasks": [
+        {
+          "id": "T11.1",
+          "name": "多个候选周期的多重比较校正（Bonferroni/Holm）",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T11.2",
+          "name": "IC 显著性检验与最小 p 下限（选择偏差量化）",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T11.3",
+          "name": "决策单：提议/证据/结论/人工确认状态",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T11.4",
+          "name": "CLI / 监控报表 / 日报周报 / API 接入",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T11.5",
+          "name": "真实 26 标的池实测：40/60 日达标未复现，判定 reject",
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T11.6",
+          "name": "测试与文档（README §18 / SALES_PLAN）",
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        }
+      ],
+      "auto_acceptable": [
+        "T11.1",
+        "T11.2",
+        "T11.3",
+        "T11.4"
+      ],
+      "manual_checkpoint": [
+        "T11.5",
+        "T11.6"
+      ]
+    },
+    {
+      "id": "S12",
+      "name": "特征扩充正交对照实验",
+      "status": "completed",
+      "started_at": "2026-09-11T06:31:16.109250+00:00",
+      "completed_at": "2026-09-11T06:31:16.109250+00:00",
+      "tasks": [
+        {
+          "id": "T12.1",
+          "name": "横截面特征族（同日面板，无前视）",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T12.2",
+          "name": "基准臂与对照臂的逐族正交对照",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T12.3",
+          "name": "配对增量 + 多重比较校正判定（adopt/reject/defer）",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T12.4",
+          "name": "CLI / 监控报表 / 日报 / API 接入",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T12.5",
+          "name": "真实数据实测：横截面/宏观/情感均不显著",
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T12.6",
+          "name": "测试与文档",
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        }
+      ],
+      "auto_acceptable": [
+        "T12.1",
+        "T12.2",
+        "T12.3",
+        "T12.4"
+      ],
+      "manual_checkpoint": [
+        "T12.5",
+        "T12.6"
+      ]
+    },
+    {
+      "id": "S13",
+      "name": "评估试验登记（研究者自由度透明化）",
+      "status": "completed",
+      "started_at": "2026-09-11T06:31:16.109250+00:00",
+      "completed_at": "2026-09-11T06:31:16.109250+00:00",
+      "tasks": [
+        {
+          "id": "T13.1",
+          "name": "append-only 试验登记（口径指纹 + 时间戳）",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T13.2",
+          "name": "累计次数查询（asof 语义，含命令/口径过滤）",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T13.3",
+          "name": "接入 S11/S12 校正：历史试验计入比较次数",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T13.4",
+          "name": "CLI / 监控报表接入与 fail-soft 边界",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T13.5",
+          "name": "测试与文档",
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        }
+      ],
+      "auto_acceptable": [
+        "T13.1",
+        "T13.2",
+        "T13.3",
+        "T13.4"
+      ],
+      "manual_checkpoint": [
+        "T13.5"
+      ]
+    },
+    {
+      "id": "S14",
+      "name": "发布态健康检查与告警路由",
+      "status": "completed",
+      "started_at": "2026-09-11T06:31:16.109250+00:00",
+      "completed_at": "2026-09-11T06:31:16.109250+00:00",
+      "tasks": [
+        {
+          "id": "T14.1",
+          "name": "产物可用性优先的三级结论（blocking/action/info）",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T14.2",
+          "name": "告警路由与去重（blocking 必发，action 变化才发）",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T14.3",
+          "name": "只读采集各产物（不重算指标、零副作用）",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T14.4",
+          "name": "CLI / 监控报表接入",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        },
+        {
+          "id": "T14.5",
+          "name": "测试与文档",
+          "status": "completed",
+          "auto_run": false,
+          "completed_at": "2026-09-11T06:31:16.109250+00:00"
+        }
+      ],
+      "auto_acceptable": [
+        "T14.1",
+        "T14.2",
+        "T14.3",
+        "T14.4"
+      ],
+      "manual_checkpoint": [
+        "T14.5"
+      ]
     }
   ],
-  "current_stage_index": 9,
-  "current_task_index": 0,
+  "current_stage_index": 13,
+  "current_task_index": 4,
   "last_run_date": "2026-09-11",
   "next_run_date": null,
   "blockers": [],
-  "result": "all_stages_completed"
+  "result": "all_stages_completed",
+  "note": "S11~S14 为同一轮『口径变更决策收敛』开发：S11 用多重比较校正查实换周期不成立（40/60 日达标在当前缓存行情下未复现）；S12 用正交对照查实加横截面/宏观/情感特征无显著增量；S13 把历史试验次数落成 append-only 事实，让校正分母包含未登记自由度；S14 把各产物收敛成一条可执行的发布态判断。"
 }

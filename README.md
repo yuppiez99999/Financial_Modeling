@@ -137,11 +137,17 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 | `ic-pool` | 按资产类别分池门禁：个股 / ETF / … 各自独立判定（S9，见 §16） |
 | `pool-train` | 按资产类别分层训练：每分池一套独立模型 + 清单路由（S9） |
 | `horizon-scan` | 多周期口径探索：换预测周期有没有用（S10，见 §17） |
+| `horizon-decision [--days] [--decided-by] [--reason]` | 周期切换决策单：多重比较校正后还站得住吗（S11，见 §18.1） |
+| `feature-experiment [--arms]` | 特征扩充正交对照：横截面/宏观/情感有没有增量（S12，见 §18.2） |
+| `trials [--note] [--asof] [--command-filter]` | 评估试验登记：累计比较次数与口径指纹（S13，见 §18.3） |
+| `release-check [--notify] [--json]` | 发布态健康检查：现在能不能继续往下跑（S14，见 §18.4） |
 
 常用参数：`--horizon {short_term,mid_term,long_term,all}`、`--config <path>`、
 `--model-type {lightgbm,pytorch_lstm,timesfm,ensemble,factor_model,multifactor}`、
 `--symbols <A,B>`（stream / ic / ic-pool / pool-train / horizon-scan）、`--once`（stream）、
-`--no-pools`（horizon-scan）、
+`--no-pools`（horizon-scan）、`--days`（horizon-scan / horizon-decision）、
+`--arms`（feature-experiment）、`--note` / `--asof`（trials）、
+`--decided-by` / `--reason`（horizon-decision 人工签字）、`--notify`（release-check）、
 `--host` / `--port`。
 
 ---
@@ -377,6 +383,11 @@ python -m pytest tests/ -q     # 426 passed, 2 skipped
 - **腾讯前复权数据在向历史分页时会退化**：接口对早期页的复权基准不一致，会返回非正价格，
   已由 `TencentClient._parse_rows` 剔除（中国神华实测剔除 945/3201 行）；需更长历史时建议接 Wind
 - **信号一致性校验不参与策略门禁**：它只回答"各口径是否自相矛盾"，不替代 IC / 命中率门禁
+- **三条提升路径已证伪（2026-09-11）**：换预测周期（S11）、加横截面特征、加宏观特征（S12）
+  经多重比较校正后**均不显著**；情感特征因开关关闭**未测**（未测 ≠ 无效，见 §18.5）。
+  下一步需要新的信号来源或新的问题定义，而不是继续在同一批口径上调参
+- **校正依赖试验登记的完整性**：`logs/trials.jsonl` 为 append-only 人工可见记录，
+  若绕过 CLI 手动跑评估则不会被登记，校正强度会被低估（这也是登记放在 CLI 里的原因）
 
 > **Q1 排期已完成的修复**（2026-09-10）：原「已知限制」中「宏观指标 API 连接失败」「新闻采集性能待优化」两项已解决；
 > 7 例遗留失败测试（`test_cli_api`/`test_modules`）已全部转绿。详见「十、Q1 排期进展」。
@@ -1263,7 +1274,7 @@ python -m pytest tests/ -q                     # 426 passed, 2 skipped
 - 分池**默认不改变** `strategy_gate` 判定，`enforce_trading` 行为不变；
 - 分池结论**不得**对外表述为"信号已可用"或"部分周期已达标"（40/60 日为探索性口径）；
 - 分层训练产物**不自动接管**推理路径，切换属人工决策；
-- 免责声明与许可证约定不变（见 §十九、§二十）。
+- 免责声明与许可证约定不变（见 §二十、§二十一）。
 
 ## 十七、S10 多周期口径探索（换预测周期有没有用）
 
@@ -1334,6 +1345,10 @@ python main.py horizon-scan --days 5,20,40   # 自定义候选周期
 > ⚠️ 这不是"已解锁"。信号在更长周期上更强，与"短周期被噪声主导"一致，
 > 但切换门禁周期是**产品口径变更**：需要人工决策、重新做泄漏与偏差审查、
 > 并确认业务上 40/60 日的预测延迟可接受。`strategy_gate` 放行结论**不变**。
+>
+> **⚠️ 后续更正（见 §18.1）**：S11 用多重比较校正复核后，上表 40/60 日的"达标"
+> 在当前缓存行情下**没有复现**（40 日 IC +0.0035、60 日 IC −0.0279），
+> 且全部候选校正后均不显著。上表为本节当时的探索快照，**不应作为当前口径证据**使用。
 
 ### 17.4 配置
 
@@ -1368,17 +1383,218 @@ python -m pytest tests/ -q                      # 462 passed, 2 skipped
 - **不得**把 40/60 日达标表述为"信号已可用"、"即将解锁"或"部分周期已达标"；
   40/60 日为探索性口径，切换须人工决策，**禁止**用于对外材料；
 - 扫描结论是**门槛敏感性证据**，不是业绩或信号质量结论；
-- 免责声明与许可证约定不变（见 §十九、§二十）。
+- 免责声明与许可证约定不变（见 §二十、§二十一）。
 
 ---
 
-## 十八、技术栈
+## 十八、S11–S14 路线进展（口径变更决策收敛）
+
+> 承接 §17.3/S10 的遗留：S10 用一条命令复算出「5/10/20 日未过线、40/60 日达标」
+> 的表象，并把它卡死在「产品口径变更须人工决策」。
+> S11~S14 做的是**把这条决策路径真正收敛掉** —— 结果是：三条路都没走通，
+> 而且这次是**用证据**说没走通。
+
+### 18.1 S11 预测周期切换决策前置（多重比较校正 · 决策单）
+
+**为什么需要**：S10 的候选周期是**逐个试出来的**。在 5 个候选里挑最好看的那个当结论，
+是典型的**多重比较** —— 候选越多，「至少一个偶然过线」的概率越高；
+那不是信号变强，是选择偏差把指标抬上去了。
+
+```bash
+python main.py horizon-decision                       # 只看证据与阻塞项
+python main.py horizon-decision --days 40             # 指定拟切换周期
+python main.py horizon-decision --days 40 \
+    --decided-by 安然 --reason "业务可接受 40 日延迟"   # 人工签字（才可能 confirmed）
+```
+
+| 关键设计 | 做法 | 理由 |
+|---------|------|------|
+| **多重比较校正** | Bonferroni + Holm，取**更严格**的一个 | 族错误率；Holm 比均匀 Bonferroni 更强且同样控错误率 |
+| **最小 p 下限** | `1 / k^(1+γ)`（Bailey & López de Prado 近似） | 把「纯靠运气能到多小」显式算出来，避免噪声伪装发现 |
+| **不自动批准** | 结论 `approve` 时 `status` 仍是 `pending`，需 `--decided-by` | 口径变更不能由代码自动生效（与门禁 fail-close 同一条纪律） |
+| **报告时效** | 扫描报告超龄 → `stale`，不得据此放行 | 证据不可复现就不算证据 |
+
+**真实 26 标的池实测（本机缓存行情，非合成数据）**：
+
+| 周期 | 现行口径 | 样本 | IC | 命中率 | 校正后显著性 |
+|------|---------|------|-----|--------|-------------|
+| 5 日 | ✅ | 32721 | +0.0250 | 51.42% | 不显著（族错误率 1.0） |
+| 10 日 | ✅ | 32643 | +0.0341 | 51.68% | 不显著 |
+| 20 日 | ✅ | 32487 | +0.0299 | 52.12% | 不显著 |
+| 40 日 | — | 32175 | +0.0035 | 51.48% | 不显著 |
+| 60 日 | — | 31863 | −0.0279 | 50.47% | 不显著 |
+
+**结论：`reject`** —— 全部候选未过线且校正后不显著，不支持据此切换预测周期。
+
+> ⚠️ **重要更正**：S10 报告里的「40/60 日达标」在当前缓存行情下**没有复现**
+> （40 日 IC +0.0035、60 日 IC −0.0279）。这说明**未校正的探索性结果不能直接当决策依据**。
+> README §17.3 与 SALES_PLAN §8.2 中原先记录的 40/60 日达标值属**当时快照**，
+> 不应作为当前口径证据使用。§17.3 的探索记录保留（作为方法和历史），但结论以本节为准。
+
+### 18.2 S12 特征扩充正交对照（横截面 / 宏观 / 情感）
+
+**为什么需要**：README §17.3 与 SALES_PLAN §8.2 写着「特征扩充可把 short/mid 命中率推过门禁线」。
+这是一条**因果断言**，却一直没有对照实验 —— 特征越多越容易过拟合，
+"某次跑出好看数字"无法区分「真带来正交信息」与「噪声被拟合」。
+
+```bash
+python main.py feature-experiment                          # 全部对照臂
+python main.py feature-experiment --arms cross_sectional,macro
+```
+
+每臂**只改特征集**：同一份数据、同一折切分、同一超参、同一评估口径。
+新增横截面特征全部在**同一天横截面上**计算（`rank(axis=1)` / 当日均值），
+严格只用同日多标的快照，不跨时间（有测试守护）。
+
+**实测（4 只标的子集，缓存行情）**：
+
+| 周期 | 基准 IC | 横截面臂 IC 增量 | 宏观臂 IC 增量 | 情感臂 |
+|------|--------|----------------|--------------|--------|
+| short_term | +0.0754 | +0.0007 | −0.0081 | 未测（开关关闭） |
+| mid_term | −0.0075 | +0.0328 | +0.0110 | 未测 |
+| long_term | +0.0773 | −0.0084 | +0.0049 | 未测 |
+
+**结论：`reject`** —— 6 个可评估臂**全部不显著**；mid_term 看起来有增量，
+但配对增量不显著（族错误率 1.0），不足以支持投入。
+
+> 情感臂如实标注**「没测」而不是「没用」**：当前 `features.sentiment_enabled: false`，
+> 该族没有产出任何列。**未测 ≠ 无效**，也不计入多重比较次数（没测过不构成一次比较）。
+
+### 18.3 S13 评估试验登记（研究者自由度透明化）
+
+**为什么需要**：S11 与 S12 撞上同一堵墙 —— 校正只能惩罚**本次**比较过的次数，
+它不知道上周改过口径、上上周换过特征开关。每个未登记的"再试一次"都在稀释 p 值。
+
+```bash
+python main.py trials                          # 累计试验次数 + 口径指纹
+python main.py trials --note "试了 40 日周期"    # 手动登记一次探索
+python main.py trials --asof 2026-09-01T00:00:00  # 只看当时之前（不允许用未来的次数校正过去）
+```
+
+- **append-only**：追加写、不删除、不改写历史（改了就失去"不可篡改"的意义）；
+- **口径指纹**：周期 / 特征开关 / 门禁阈值 / 模型类型等最易反复调整的旋钮摘要（sha256 前 16 位）；
+- **损坏不当作 0**：登记文件损坏 → `available=false` —— **0 次等于校正失效**，那是放纵自由度；
+- **接入校正**：`ic` / `horizon-scan` / `feature-experiment` 每次评估自动登记，
+  S11/S12 校正时把累计历史次数计入 `n_trials`（分母变大 → 更难被噪声骗过）。
+
+### 18.4 S14 发布态健康检查与告警路由
+
+**为什么需要**：到这里已有门禁 / IC 趋势 / 分池 / 扫描 / 决策单 / 对照实验 / 试验登记 ——
+但它们是一堆**各自独立的报告**。运维上真正要回答的只有一个问题：
+「现在能不能继续按当前口径往下跑？要不要先做某件事？」
+最常见的失败不是"模型坏了"，而是**没人发现某份报告过期了**。
+
+```bash
+python main.py release-check           # 三类结论：blocking / action / info
+python main.py release-check --notify  # 附带告警路由决定（含去重）
+python main.py release-check --json
+```
+
+| 结论 | 含义 | 例子 |
+|------|------|------|
+| `blocking` | 必须处理，否则当前结论不可信 | 扫描报告过期、试验登记损坏、模型产物缺失 |
+| `action` | 建议动作 | IC 衰减 → 提前重训练；有显著特征臂待人工确认 |
+| `info` | 只是状态 | 门禁仍 readonly |
+
+**优先级**：**产物可用性 > 指标好坏**。一份过期的门禁判定比一个不达标但新鲜的判定更危险
+—— 前者会让人以为"已经评估过了"。
+
+**告警路由**：`blocking` 每次都发（漏报代价高）；`action` 只在待处理项**变化**时发
+（每天播同一句"IC 在衰减"会把人训练成忽略告警）；恢复也要通知（否则人以为还在坏）。
+
+### 18.5 这一轮的整体结论（如实呈现）
+
+| 路线 | 结论 | 依据 |
+|------|------|------|
+| 换预测周期（40/60 日） | ❌ 不支持 | S11：校正后全部不显著；S10 的"达标"未复现 |
+| 加横截面特征 | ❌ 不支持 | S12：增量不显著（族错误率 1.0） |
+| 加宏观特征 | ❌ 不支持 | S12：short/long 为负增量，mid 正但不显著 |
+| 加情感特征 | ❔ 未测 | 开关关闭，该族无特征列（**未测 ≠ 无效**） |
+
+**门禁仍为 `readonly`**，`strategy_gate` 放行结论逐字段不变。
+三条已知路径都被证伪后，**下一步需要的是新的信号来源或新的问题定义**，
+而不是继续在同一批口径上调参 —— 这正是 S13 试验登记要防止的事。
+
+### 18.6 配置
+
+```yaml
+horizon_decision:
+  max_family_p: 0.05          # 族错误率上限（校正后仍须 <= 该值才判显著）
+  min_samples: 30
+  max_report_age_days: 7      # 扫描报告最大可接受年龄（超龄 → stale）
+  freeze_current_horizons: true  # 未经人工确认不得改 data.prediction_horizons
+  report_dir: "reports"
+
+feature_experiment:
+  arms: [cross_sectional, macro, sentiment]
+  max_family_p: 0.05
+  min_ic_delta: 0.0
+  report_dir: "reports"
+
+trial_registry:
+  dir: "logs"                 # trials.jsonl（append-only，勿手改）
+  filename: "trials.jsonl"
+
+release_check:
+  report_dir: "reports"
+  state_file: "logs/alert_state.json"
+  channel: "webhook"
+  max_scan_age_days: 7
+  max_trend_age_days: 30
+```
+
+### 18.7 接口
+
+| 命令 | 产物 | 用途 |
+|------|------|------|
+| `ic` | — | 门禁评估（现在自动登记试验） |
+| `horizon-decision [--days] [--decided-by] [--reason]` | `reports/horizon_decision.json` | 周期切换决策单 |
+| `feature-experiment [--arms]` | `reports/feature_experiment.json` | 特征扩充对照实验 |
+| `trials [--note] [--asof] [--command-filter]` | `logs/trials.jsonl` | 试验登记（append-only） |
+| `release-check [--notify] [--json]` | `reports/release_check.json` | 发布态健康检查 |
+
+API（全部只读）：`GET /api/v1/strategy/horizon-decision`、`GET /api/v1/eval/feature-experiment`
+
+监控报表 / 日报 / 周报新增章节：**周期切换决策单（S11）**、**特征扩充对照（S12）**、
+**评估试验登记（S13）**、**发布态健康检查（S14）**。
+
+### 18.8 测试
+
+```bash
+python -m pytest tests/test_roadmap_s11.py -q   # 43 passed
+python -m pytest tests/test_roadmap_s12.py -q   # 22 passed
+python -m pytest tests/test_roadmap_s13.py -q   # 32 passed
+python -m pytest tests/test_roadmap_s14.py -q   # 27 passed
+python -m pytest tests/ -q                      # 586 passed, 2 skipped
+```
+
+覆盖：统计基础（p 值/Bonferroni/Holm/下限单调性）；多重比较陷阱必判 reject；
+决策单未签字恒 pending、过期恒 stale、`affects_gate` 恒 False；
+横截面特征**只横跨标的不跨时间**（改写未来价格不影响过去特征）；
+基准列与臂列不重叠；未测臂**不计入比较次数**且如实标注"没测"；
+登记 append-only、损坏不当作 0、asof 不含未来；
+发布态 `blocking > action > info` 优先级、告警去重与恢复通知；
+CLI / 监控报表 / 日报 / API 的缺失与正常分支；配置段存在且现行周期未被改动。
+
+### 18.9 合规边界
+
+- 以上全部模块 `affects_gate` / `affects_features` 恒为 `False`，
+  不改变门禁口径、放行结论与生产特征集；
+- **不得**把 `approve` 表述为"已解锁"、"信号已可用"；批准的是**证据**，
+  落地仍需人工改配置 + 重做泄漏/偏差审查；
+- **不得**把"未测"（情感臂）表述为"已证明无用"；
+- 扫描/对照/决策单结论均为**证据**，不是业绩或信号质量结论；
+- 免责声明与许可证约定不变（见 §二十、§二十一）。
+
+---
+
+## 十九、技术栈
 
 Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn · ONNX / onnxruntime · Wind MCP · 可选 TimesFM(PyTorch)
 
 ---
 
-## 十九、免责声明
+## 二十、免责声明
 
 > **本项目仅供学习、交流、研究使用，不构成任何投资建议。**
 
@@ -1394,7 +1610,7 @@ Python 3.10+ · LightGBM · scikit-learn · pandas / numpy · FastAPI + uvicorn 
 
 ---
 
-## 二十、许可证与版权
+## 二十一、许可证与版权
 
 > **著作权归作者所有，禁止商用。**
 

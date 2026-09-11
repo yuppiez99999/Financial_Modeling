@@ -573,6 +573,12 @@ def run_ic(config: dict, symbols: list[str] | None = None, folds: int = 3,
     result["symbols_evaluated"] = len(data)
     result["folds"] = folds
     result["neutral_band_enabled"] = bool(derive_band)
+    # S13 试验登记：每次门禁评估都是一次"比较"，登记后校正才有真实的分母
+    _record_trial(config, "ic", {
+        "symbols": len(data), "folds": folds,
+        "passed": bool(result.get("all_passed")),
+        "horizons": {k: v.get("passed") for k, v in (result.get("horizons") or {}).items()},
+    })
     if stratify:
         result["per_symbol"] = _summarize_per_symbol(per_symbol or {})
     print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -689,6 +695,22 @@ def _config_symbols(config: dict) -> list[str]:
         if isinstance(cfg, dict) and cfg.get("enabled"):
             out.extend(cfg.get("symbols", []))
     return list(dict.fromkeys(out))
+
+
+def _record_trial(config: dict, command: str, summary_payload: dict) -> None:
+    """登记一次评估试验（S13，fail-soft）。
+
+    登记失败**不得**影响评估本身：告警后继续。登记的价值在于让
+    「试了多少次」在多次会话之间保持可见 —— 这正是多重比较校正拿不到的分母。
+    """
+    try:
+        from src.eval.trial_registry import record
+
+        entry = record(command, config, summary=summary_payload)
+        if not entry.get("_persisted", True):
+            logger.warning("[trial] 试验登记未落盘（评估结果不受影响）")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[trial] 试验登记失败（评估结果不受影响）: {e}")
 
 
 def _cli_symbols(args) -> list[str] | None:
@@ -1016,9 +1038,205 @@ def run_horizon_scan(config: dict, symbols: list[str] | None = None, folds: int 
     result["vs_current"] = compare_with_current(result)
 
     saved = scanner.save(result)
+    _record_trial(config, "horizon-scan", {
+        "symbols": len(data), "folds": folds,
+        "candidates": result.get("candidates"),
+        "passed_horizons": (result.get("summary") or {}).get("passed_horizons"),
+    })
     print(json.dumps(result, ensure_ascii=False, indent=2))
     print(f"\n多周期扫描报告已保存: {saved}")
     print(f"\n对照结论: {result['vs_current'].get('narrative')}")
+    return result
+
+
+def run_horizon_decision(config: dict, days: list[int] | None = None,
+                         decided_by: str = "", reason: str = "") -> dict:
+    """预测周期切换的决策前置评估（S11）：多重比较校正 + 决策单。
+
+    为什么需要它（S10 的遗留）：
+      S10 用一条命令复算出「5/10/20 日未过、40/60 日达标」的表象，但候选周期是
+      **逐个试出来的** —— 在 5 个候选里挑最好看的那个当结论，是典型的多重比较。
+      本轮用当前缓存行情复算时，S10 报告里 40/60 日的「达标」**没有复现**
+      （40 日 IC +0.0035、60 日 IC −0.0279，均未过线），正说明未校正的探索性结果
+      不能直接当产品变更依据。
+
+    本命令做的事：
+      1. 对扫描报告里每个候选周期做 **IC 显著性检验**（IC / (σ_IC/√n)）；
+      2. 用 **Bonferroni + Holm** 把「挑最好看」的选择偏差折算成族错误率；
+      3. 输出**决策单**（verdict + status + blockers），结论为 approve 时
+         仍需人工签字（`--decided-by`）才算 confirmed。
+
+    ⚠️ **不改门禁口径**：`data.prediction_horizons` 一个字不动，
+    `affects_gate` 恒为 False，`strategy_gate` 放行结论逐字段不变。
+    结论为 reject / defer 时如实写出，绝不因为某个候选数字好看而放宽口径。
+
+    落盘 `reports/horizon_decision.json`。
+    """
+    from src.eval import horizon_decision as hd
+
+    logger.info("执行预测周期切换决策前置评估")
+    scan = hd.load_json(hd.scan_path(config))
+    if scan is None:
+        logger.warning("[horizon-decision] 未找到多周期扫描报告，先跑 `python main.py horizon-scan`")
+
+    evidence = hd.evaluate_scan(scan, config, proposed_days=days or None)
+    record = hd.build_decision_record(
+        scan, config, proposed_days=days or None,
+        decided_by=decided_by, reason=reason)
+    out = hd.save(record, config)
+
+    print(json.dumps(record, ensure_ascii=False, indent=2))
+    print(f"\n决策单已保存: {out}")
+    print(f"\n结论: {record['verdict']} / 状态: {record['status']}")
+    print(f"说明: {evidence.get('narrative')}")
+    if record.get("blockers"):
+        print("阻塞项:")
+        for b in record["blockers"]:
+            print(f"  - {b}")
+    return record
+
+
+def run_feature_experiment(config: dict, symbols: list[str] | None = None,
+                           arms: list[str] | None = None, folds: int = 3) -> dict:
+    """特征扩充正交对照实验（S12）：先证明"该不该扩"，再扩。
+
+    背景：
+      README §17.3 / SALES_PLAN §8.2 写着「特征扩充（横截面/宏观/情感）可把
+      short/mid 命中率推过门禁线」 —— 这是一条**因果断言**，但一直没有对照实验支撑。
+      特征越多越容易过拟合，"某次跑出好看数字"无法区分「真带来正交信息」与
+      「噪声被拟合进去」。
+
+    本命令做的事（每臂只改特征集，其余全不动）：
+      1. 基准臂 = 生产现行特征（技术 + 扩展指标 [+ 因子列]）；
+      2. 对照臂 = 逐族加入横截面 / 宏观 / 情感特征；
+      3. 与基准**同折配对**对比 IC / 命中率增量；
+      4. 对增量做近似 t 检验 + **Bonferroni 多重比较校正**（与 S11 同一纪律）；
+      5. 结论三态：adopt / reject / defer。
+
+    ⚠️ **不改生产特征集**：`affects_features` 恒为 False，只产出证据；
+    是否接入需人工确认并重跑全量门禁。样本不足 / 特征缺失一律如实标注。
+
+    落盘 `reports/feature_experiment.json`。
+    """
+    import scripts.evaluate_models as ev
+    from src.eval.feature_experiment import DEFAULT_ARMS, run_experiment, save
+
+    logger.info("执行特征扩充正交对照实验")
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "horizons": {}}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    result = run_experiment(data, config, arms=arms or DEFAULT_ARMS, folds=folds)
+    result["symbols_evaluated"] = len(data)
+    result["folds"] = folds
+    _record_trial(config, "feature-experiment", {
+        "symbols": len(data), "folds": folds,
+        "arms": result.get("arms"), "verdict": result.get("verdict"),
+    })
+    out = save(result, config)
+
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(f"\n特征扩充实验报告已保存: {out}")
+    print(f"\n结论: {result['verdict']}")
+    print(f"说明: {result['narrative']}")
+    return result
+
+
+def run_trials(config: dict, command: str | None = None, asof: str | None = None,
+               note: str = "") -> dict:
+    """评估试验登记（S13）：把「试了多少次」变成不可篡改的事实。
+
+    背景（S11 + S12 的共同结论）：
+      两次独立排查都撞上同一堵墙 —— 校正只能惩罚**本次**比较过的次数，
+      它不知道上周改过口径、上上周换过特征开关。
+      每个未被登记的"再试一次"都在悄悄稀释 p 值的有效性。
+
+    本命令做的事：
+      - `python main.py trials`                 查看累计试验次数与口径指纹；
+      - `python main.py trials --note "..."`     手动追加一条登记（说明这次试了什么）；
+      - `--asof` 查询某时点的累计次数（保证"当时不知道未来"）。
+
+    ⚠️ 登记为 **append-only**：不删除、不改写历史记录。
+    登记文件缺失 = 0 次；文件损坏 = 如实报 `available=false`，**绝不当作 0**。
+    """
+    from src.eval.trial_registry import (count_trials, make_entry, record,
+                                         registry_path, summary)
+
+    logger.info("查看评估试验登记")
+    if note:
+        entry = record(command or "manual", config, note=note)
+        print(f"已登记：{json.dumps(entry, ensure_ascii=False)}")
+        print(f"登记文件：{registry_path(config)}")
+
+    stats = summary(config, asof=asof)
+    stats["filtered_command"] = str(command or "")
+    filtered = count_trials(config, command=command, asof=asof)
+    stats["filtered"] = filtered
+
+    print(json.dumps(stats, ensure_ascii=False, indent=2))
+    print(f"\n登记文件: {registry_path(config)}")
+    if stats.get("available"):
+        print(f"累计试验次数（多重比较校正应使用）：{stats.get('count')}"
+              f"（其中命令 {command or '全部'}：{filtered.get('count')}）")
+        print(f"口径指纹: {stats.get('fingerprint_hash')}")
+    else:
+        print(f"⚠️ 登记不可用：{stats.get('reason')}（未按 0 次处理）")
+    return stats
+
+
+def run_release_check(config: dict, notify: bool = False, as_json: bool = False) -> dict:
+    """发布态健康检查（S14）：把散落的运维信号收敛成一条可执行判断。
+
+    为什么需要它：
+      仓库里已有门禁 / IC 趋势 / 分池 / 多周期扫描 / 决策单 / 特征实验 / 试验登记 ——
+      但它们是**各自独立的报告**。运维上要回答的只有一个问题：
+      「现在这套东西能不能继续按当前口径往下跑？要不要先做某件事？」
+
+      过去靠人翻五份报告，于是最常见的失败不是"模型坏了"，
+      而是**没人发现某份报告过期了**（门禁判定用的是两周前的 IC）。
+      本命令把「产物可用性」放在「指标好坏」之前：过期的判定比不达标更危险。
+
+    产出三类结论：
+      - `blocking`：必须处理，否则当前结论不可信（扫描过期、登记损坏、模型缺失…）
+      - `action`  ：建议动作（IC 衰减 → 提前重训练；有显著特征臂待确认…）
+      - `info`    ：只是状态（门禁仍 readonly）
+
+    ⚠️ 只汇总与排序，**不重算指标、不自动修复**、不改变门禁结论。
+    加 `--notify` 时按去重规则给出告警路由决定（blocking 必发；action 仅在
+    待处理项变化时发 —— 每天播同一句会把人训练成忽略告警）。
+
+    落盘 `reports/release_check.json`。
+    """
+    from src.monitor.release_check import collect_and_check, route_alerts
+
+    logger.info("执行发布态健康检查")
+    result = collect_and_check(config)
+    routing = None
+    if notify:
+        routing = route_alerts(result, config)
+        result["alert_routing"] = routing
+
+    out = Path((config.get("release_check", {}) or {}).get("report_dir", "reports")) / "release_check.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"发布态: {result['status']}")
+        for group in ("blocking", "actions", "info"):
+            for it in result.get(group) or []:
+                icon = {"blocking": "⛔", "action": "⚠️", "info": "ℹ️"}.get(it["severity"], "-")
+                print(f"  {icon} [{it['code']}] {it['message']}")
+                if it.get("next_step"):
+                    print(f"        → {it['next_step']}")
+        if routing:
+            print(f"\n告警路由: send={routing['should_send']} 原因={routing['reason']}")
+    print(f"\n发布态检查已保存: {out}")
     return result
 
 
@@ -1350,6 +1568,14 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py pool-train               # 按资产类别分层训练（每池一套模型，S9）
   python main.py horizon-scan             # 多周期口径探索扫描（换周期有没有用，S10）
   python main.py horizon-scan --days 5,20,40   # 自定义候选周期
+  python main.py horizon-decision          # 周期切换决策前置评估（多重比较校正 + 决策单，S11）
+  python main.py horizon-decision --days 40 --decided-by 安然 --reason "业务可接受 40 日延迟"  # 人工签字
+  python main.py feature-experiment        # 特征扩充正交对照实验（横截面/宏观/情感，S12）
+  python main.py trials                    # 查看评估试验登记（累计比较次数，S13）
+  python main.py release-check             # 发布态健康检查（收敛阻塞项与建议动作，S14）
+  python main.py release-check --notify    # 附带告警路由决定（含去重）
+  python main.py trials --note "试了 40 日周期"  # 手动登记一次探索
+  python main.py feature-experiment --arms cross_sectional,macro  # 指定对照臂
   python main.py gate                     # 策略门禁判定（IC + 审计命中率）
   python main.py gate-diagnose            # 门禁阻塞诊断（还差多少 / 哪条腿卡住）
   python main.py factors 600519.SH        # 多因子加权组合预测（推理期特征因子）
@@ -1367,7 +1593,9 @@ def build_parser() -> argparse.ArgumentParser:
         "serve", "schedule", "audit", "notify", "batch",
         "daily-report", "weekly-report", "adaptive",
         "signal", "orders", "trade", "backtest", "macro", "monitor",
-        "ic", "ic-trend", "ic-pool", "pool-train", "horizon-scan", "gate", "gate-diagnose", "factors", "factor-model",
+        "ic", "ic-trend", "ic-pool", "pool-train", "horizon-scan", "horizon-decision",
+        "feature-experiment", "trials", "release-check",
+        "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
     parser.add_argument("args", nargs="*", help="附加参数")
@@ -1396,6 +1624,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--days", default=None,
                         help="horizon-scan 命令：逗号分隔的候选周期（交易日），如 5,20,40；"
                              "缺省用配置 horizon_scan.candidates。位置参数仍是标的列表")
+    parser.add_argument("--notify", action="store_true",
+                        help="release-check 命令：附带告警路由决定（含与上次的去重比较）")
+    parser.add_argument("--note", default="",
+                        help="trials 命令：追加一条试验登记说明（append-only）")
+    parser.add_argument("--asof", default=None,
+                        help="trials 命令：只看该时点之前的累计次数（ISO 时间字符串）")
+    parser.add_argument("--command-filter", dest="command_filter", default=None,
+                        help="trials 命令：只统计指定命令的试验次数")
+    parser.add_argument("--arms", default=None,
+                        help="feature-experiment 命令：逗号分隔的对照臂 "
+                             "(cross_sectional/macro/sentiment)，缺省为全部")
+    parser.add_argument("--decided-by", dest="decided_by", default="",
+                        help="horizon-decision 命令：人工确认人（非空才可能把决策单置为 confirmed）")
+    parser.add_argument("--reason", dest="reason", default="",
+                        help="horizon-decision 命令：人工确认/驳回的理由（写入决策单审计字段）")
     parser.add_argument("--host", default=None, help="API 服务地址")
     parser.add_argument("--port", type=int, default=None, help="API 服务端口")
     return parser
@@ -1521,6 +1764,31 @@ def main():
         run_horizon_scan(config, symbols=_cli_symbols(args),
                          candidates=_cand or None,
                          include_pools=not getattr(args, "no_pools", False))
+    elif args.command == "horizon-decision":
+        _proposed = None
+        _raw_prop = getattr(args, "days", None)
+        if _raw_prop:
+            try:
+                _proposed = [int(x) for x in str(_raw_prop).replace(" ", "").split(",") if x]
+            except ValueError:
+                logger.warning(f"--days 解析失败，改用扫描中最有力的候选: {_raw_prop}")
+                _proposed = None
+        run_horizon_decision(config, _proposed,
+                             decided_by=str(getattr(args, "decided_by", "") or ""),
+                             reason=str(getattr(args, "reason", "") or ""))
+    elif args.command == "feature-experiment":
+        _arms = None
+        _raw_arms = getattr(args, "arms", None)
+        if _raw_arms:
+            _arms = [a.strip() for a in str(_raw_arms).split(",") if a.strip()]
+        run_feature_experiment(config, symbols=_cli_symbols(args), arms=_arms)
+    elif args.command == "trials":
+        run_trials(config, command=getattr(args, "command_filter", None),
+                   asof=getattr(args, "asof", None),
+                   note=str(getattr(args, "note", "") or ""))
+    elif args.command == "release-check":
+        run_release_check(config, notify=bool(getattr(args, "notify", False)),
+                          as_json=bool(getattr(args, "as_json", False)))
     elif args.command == "gate":
         run_gate(config, args.args[0] if args.args else None)
     elif args.command == "gate-diagnose":

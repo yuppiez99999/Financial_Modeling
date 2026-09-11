@@ -60,6 +60,8 @@ class DailyReportGenerator:
             report_lines.extend(self._generate_ic_trend_section())
             report_lines.extend(self._generate_pool_section())
             report_lines.extend(self._generate_horizon_scan_section())
+            report_lines.extend(self._generate_horizon_decision_section())
+            report_lines.extend(self._generate_feature_experiment_section())
             report_lines.extend(self._generate_investment_advice(predictions))
         else:
             report_lines.append("**暂无预测数据**")
@@ -342,6 +344,131 @@ class DailyReportGenerator:
         ])
         return lines
 
+    def _generate_horizon_decision_section(self) -> list[str]:
+        """生成 S11 周期切换决策单章节（多重比较校正后还站得住吗）。
+
+        读取 ``reports/horizon_decision.json``（由 ``python main.py horizon-decision`` 产出）。
+        文件缺失时明确写「未评估」并给出命令，**绝不臆测结论**。
+
+        为什么报告要放：上一章（S10）会显示「某个长周期看起来达标」，
+        读者最容易的误用就是据此要求切周期。本章节回答「校正之后还站得住吗」，
+        并**不改变放行结论**。
+        """
+        lines = ["## 🧪 周期切换决策单（S11：多重比较校正）"]
+        report_dir = (self.config.get("horizon_decision", {}) or {}).get(
+            "report_dir", self.report_dir)
+        path = Path(report_dir) / "horizon_decision.json"
+        if not path.exists():
+            lines.extend([
+                "",
+                "- 状态：**未评估**（未找到 `horizon_decision.json`，"
+                "执行 `python main.py horizon-decision` 生成）",
+                "- 说明：对「换预测周期」的候选做多重比较校正，避免把偶然过线当证据",
+                "",
+            ])
+            return lines
+
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            lines.extend(["", f"- 决策单读取失败：{e}", ""])
+            return lines
+
+        ev = payload.get("evidence") or {}
+        lines.extend([
+            "",
+            f"- 结论：`{payload.get('verdict')}` / 状态：`{payload.get('status')}`",
+            f"- 现行口径：{ev.get('current_horizons')} 日 → 拟切换：{ev.get('proposed_horizons')} 日",
+            f"- 候选数（比较次数）：{ev.get('n_trials')}｜族错误率下限：{ev.get('min_p_floor')}",
+            f"- 是否影响放行结论："
+            f"{'是' if payload.get('affects_gate') else '否（决策单不改变门禁）'}",
+        ])
+        rows = ev.get("candidates") or []
+        if rows:
+            lines.extend([
+                "",
+                "| 周期 | 现行 | IC | 命中率 | 显著性(校正后) | 扫描过线 |",
+                "|------|------|-----|--------|---------------|---------|",
+            ])
+            for row in rows:
+                ic_v = row.get("ic")
+                ic_txt = "N/A" if ic_v is None else f"{float(ic_v):+.4f}"
+                if not row.get("available"):
+                    sig = "不可用"
+                else:
+                    sig = f"{row.get('p_family')}（{'显著' if row.get('significant') else '不显著'}）"
+                lines.append(
+                    f"| {row.get('horizon_days')} 日 | "
+                    f"{'是' if row.get('is_current_horizon') else '—'} | {ic_txt} | "
+                    f"{_fmt_pct(row.get('hit_rate'))} | {sig} | "
+                    f"{'✅' if row.get('passed_scan_gate') else '❌'} |"
+                )
+        if ev.get("narrative"):
+            lines.extend(["", f"- 证据结论：{ev['narrative']}"])
+        blockers = payload.get("blockers") or []
+        if blockers:
+            lines.append("- 阻塞项：")
+            lines.extend([f"  - {b}" for b in blockers])
+        lines.extend([
+            "",
+            "> 决策单**不改变**门禁口径；`approve` 也需要人工修改配置并重做泄漏/偏差审查。",
+            "",
+        ])
+        return lines
+
+    def _generate_feature_experiment_section(self) -> list[str]:
+        """生成 S12 特征扩充对照实验章节（横截面/宏观/情感有没有用）。
+
+        读取 ``reports/feature_experiment.json``（`python main.py feature-experiment` 产出）。
+        缺失时明确写「未评估」并给出命令，**绝不臆测结论**。
+        """
+        lines = ["## 🔬 特征扩充对照实验（S12）"]
+        report_dir = (self.config.get("feature_experiment", {}) or {}).get(
+            "report_dir", self.report_dir)
+        path = Path(report_dir) / "feature_experiment.json"
+        if not path.exists():
+            lines.extend([
+                "",
+                "- 状态：**未评估**（未找到 `feature_experiment.json`，"
+                "执行 `python main.py feature-experiment` 生成）",
+                "- 说明：逐族对照加入横截面/宏观/情感特征，看 IC 增量能否经多重比较校正",
+                "",
+            ])
+            return lines
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            lines.extend(["", f"- 实验报告读取失败：{e}", ""])
+            return lines
+
+        lines.extend([
+            "",
+            f"- 结论：`{payload.get('verdict')}`｜比较次数：{payload.get('n_trials')}",
+            f"- 是否改变生产特征集："
+            f"{'是' if payload.get('affects_features') else '否（只产出证据）'}",
+            f"- 说明：{payload.get('narrative')}",
+        ])
+        rows = payload.get("comparisons") or []
+        if rows:
+            lines.extend([
+                "",
+                "| 周期 | 特征族 | 新增列 | IC 增量 | 命中率增量 | 显著性(校正后) |",
+                "|------|--------|--------|---------|------------|---------------|",
+            ])
+            for row in rows[:12]:
+                lines.append(
+                    f"| {row.get('horizon')} | {row.get('arm')} | "
+                    f"{len(row.get('features_added') or [])} | "
+                    f"{row.get('ic_delta', 0):+.4f} | {row.get('hit_delta', 0):+.2%} | "
+                    f"{row.get('p_family')}（{'显著' if row.get('significant') else '不显著'}） |"
+                )
+        lines.extend([
+            "",
+            "> 对照实验**不改变**生产特征集；`adopt` 也需人工确认并重跑全量门禁。",
+            "",
+        ])
+        return lines
+
     def _generate_pool_section(self) -> list[str]:
         """生成 S9 分池评估章节（按资产类别分池）。
 
@@ -560,6 +687,8 @@ class WeeklyReportGenerator(DailyReportGenerator):
             report_lines.extend(self._generate_ic_trend_section())
             report_lines.extend(self._generate_pool_section())
             report_lines.extend(self._generate_horizon_scan_section())
+            report_lines.extend(self._generate_horizon_decision_section())
+            report_lines.extend(self._generate_feature_experiment_section())
             report_lines.extend(self._generate_weekly_summary())
         else:
             report_lines.append("**暂无预测数据**")

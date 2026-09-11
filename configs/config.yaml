@@ -364,6 +364,38 @@ horizon_scan:
   report_dir: "reports"   # 扫描报告输出目录（horizon_scan.json）
 
 
+# 预测周期切换的决策前置（src/eval/horizon_decision.py，S11）
+# S10 只能回答「换周期看起来有没有用」；本段决定「这个结论经不经得起多重比较校正」
+# 特征扩充正交对照实验（src/eval/feature_experiment.py，S12）
+# 回答「加横截面/宏观/情感特征到底有没有用」：逐族对照 + 多重比较校正，不自动改特征集
+feature_experiment:
+  arms: [cross_sectional, macro, sentiment]  # 对照臂（缺列的臂如实标注"未测"）
+  max_family_p: 0.05          # 族错误率上限（Bonferroni 校正后仍须 <= 该值才判显著）
+  min_ic_delta: 0.0           # 采纳所需的最小 IC 增量（0 = 只要显著为正即可）
+  report_dir: "reports"       # 实验报告输出目录（feature_experiment.json）
+
+# 评估试验登记（src/eval/trial_registry.py，S13）
+# 多重比较校正只能数"本次"比较；这里把历史试验次数落成 append-only 事实
+# 发布态健康检查（src/monitor/release_check.py，S14）
+# 把门禁/趋势/扫描/决策单/对照实验/试验登记收敛成一条可执行判断
+release_check:
+  report_dir: "reports"          # 检查结果输出目录（release_check.json）
+  state_file: "logs/alert_state.json"  # 告警去重状态（只记上一次的待处理项标识）
+  channel: "webhook"             # 告警渠道（复用 notification 配置）
+  max_scan_age_days: 7           # 扫描报告最大可接受年龄（天）
+  max_trend_age_days: 30         # IC 趋势报告最大可接受年龄（天）
+
+trial_registry:
+  dir: "logs"                 # 登记目录（trials.jsonl，append-only，勿手改）
+  filename: "trials.jsonl"
+
+horizon_decision:
+  max_family_p: 0.05          # 族错误率上限（Bonferroni/Holm 校正后仍须 <= 该值才判显著）
+  min_samples: 30             # 单候选最少样本（低于则不作证据）
+  max_report_age_days: 7      # 扫描报告最大可接受年龄（天），超龄 → 决策单标记 stale
+  freeze_current_horizons: true  # true = 未经人工确认不得改 data.prediction_horizons
+  report_dir: "reports"       # 决策单输出目录（horizon_decision.json）
+
 ic_trend:
   window: 250          # 每个锚点的 IC 观察窗（样本数）
   step: 40             # 锚点之间的步长（样本数）

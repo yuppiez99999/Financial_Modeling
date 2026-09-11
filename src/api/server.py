@@ -381,6 +381,63 @@ async def get_horizon_scan():
     return payload
 
 
+@app.get("/api/v1/strategy/horizon-decision")
+async def get_horizon_decision():
+    """预测周期切换决策单（只读，不触发训练/不重跑扫描）。
+
+    读取 ``reports/horizon_decision.json``（由 ``python main.py horizon-decision`` 产出）；
+    文件缺失时如实返回 ``available=false`` + 生成提示，**不臆测结论**。
+
+    返回内容包括：多重比较校正后的逐候选显著性、verdict（approve/reject/defer）、
+    status（pending/confirmed/stale）与阻塞项。
+
+    ⚠️ 决策单不改变门禁口径（``affects_gate`` 恒为 ``False``），
+    也不代表可直接切换 —— ``approve`` 仍需人工修改配置并重做泄漏/偏差审查。
+    """
+    try:
+        from src.eval import horizon_decision as hd
+
+        record = hd.load(_config or {})
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"周期切换决策单读取失败: {e}")
+    if not record:
+        return {
+            "available": False,
+            "reason": "no_horizon_decision",
+            "hint": "先运行 `python main.py horizon-scan` 再跑 `python main.py horizon-decision`",
+            "affects_gate": False,
+        }
+    record["available"] = True
+    return record
+
+
+@app.get("/api/v1/eval/feature-experiment")
+async def get_feature_experiment():
+    """特征扩充正交对照实验结果（只读，不重跑实验）。
+
+    读取 ``reports/feature_experiment.json``（由 ``python main.py feature-experiment`` 产出）；
+    文件缺失时如实返回 ``available=false`` + 生成提示，**不臆测结论**。
+
+    ⚠️ 实验结论**不改变生产特征集**（``affects_features`` 恒为 ``False``），
+    也不是放行依据：``adopt`` 仍需人工确认并重跑全量门禁。
+    """
+    try:
+        from src.eval.feature_experiment import load
+
+        payload = load(_config or {})
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"特征扩充实验报告读取失败: {e}")
+    if not payload:
+        return {
+            "available": False,
+            "reason": "no_feature_experiment",
+            "hint": "先运行 `python main.py feature-experiment`",
+            "affects_features": False,
+        }
+    payload["available"] = True
+    return payload
+
+
 @app.get("/api/v1/strategy/asset-class/{symbol}")
 async def get_asset_class(symbol: str):
     """单标的资产类别识别（只读、零网络）。

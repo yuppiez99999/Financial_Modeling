@@ -439,6 +439,87 @@ class ModelMonitor:
             logger.warning(f"[monitor] 读取多周期扫描失败: {e}")
             return {"available": False, "error": str(e)}
 
+    def _collect_horizon_decision(self) -> Dict[str, Any]:
+        """预测周期切换决策单（S11，只读）。
+
+        只读 `reports/horizon_decision.json`（由 `python main.py horizon-decision` 落盘）。
+        监控报表**不重新做显著性检验**，也不把决策单当放行依据：
+        决策单的 `affects_gate` 恒为 False，这里只做状态展示与阻塞项提示。
+        """
+        try:
+            from src.eval import horizon_decision as hd
+
+            record = hd.load(self.config)
+            if not record:
+                return {
+                    "available": False,
+                    "reason": "no_horizon_decision",
+                    "hint": "先运行 `python main.py horizon-scan` 再跑 `python main.py horizon-decision`",
+                }
+            record["available"] = True
+            return record
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取周期切换决策单失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_release_check(self) -> Dict[str, Any]:
+        """发布态健康检查（S14，只读）。
+
+        只读 `reports/release_check.json`（由 `python main.py release-check` 落盘）。
+        **不在报表里重跑检查**：检查会读多个产物，报表应当零副作用、随时可跑。
+        """
+        try:
+            path = Path((self.config.get("release_check", {}) or {}).get(
+                "report_dir", "reports")) / "release_check.json"
+            if not path.exists():
+                return {
+                    "available": False,
+                    "reason": "no_release_check",
+                    "hint": "运行 `python main.py release-check` 生成发布态检查",
+                }
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["available"] = True
+            return payload
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取发布态检查失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_trial_registry(self) -> Dict[str, Any]:
+        """评估试验登记汇总（S13，只读）。
+
+        把「试了多少次」摆到报表上：校正的强度取决于这个数字，
+        而它过去只存在于人的记忆里。
+        """
+        try:
+            from src.eval.trial_registry import summary
+
+            return summary(self.config)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取试验登记失败: {e}")
+            return {"available": False, "error": str(e), "count": 0, "total": 0}
+
+    def _collect_feature_experiment(self) -> Dict[str, Any]:
+        """特征扩充正交对照实验（S12，只读）。
+
+        只读 `reports/feature_experiment.json`（由 `python main.py feature-experiment` 落盘）。
+        监控报表**不重跑实验**（重训代价高且会让报表有副作用），只做状态展示。
+        """
+        try:
+            from src.eval.feature_experiment import load
+
+            payload = load(self.config)
+            if not payload:
+                return {
+                    "available": False,
+                    "reason": "no_feature_experiment",
+                    "hint": "先运行 `python main.py feature-experiment` 生成对照实验结果",
+                }
+            payload["available"] = True
+            return payload
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取特征扩充实验失败: {e}")
+            return {"available": False, "error": str(e)}
+
     def _collect_pool_train(self) -> Dict[str, Any]:
         """分池训练产物状态（S9，只读）。"""
         try:
@@ -528,6 +609,10 @@ class ModelMonitor:
         pool_gate = self._collect_pool_gate()
         pool_train = self._collect_pool_train()
         horizon_scan = self._collect_horizon_scan()
+        horizon_decision = self._collect_horizon_decision()
+        feature_experiment = self._collect_feature_experiment()
+        trial_registry = self._collect_trial_registry()
+        release_state = self._collect_release_check()
 
         issues: List[str] = []
         if audit.get("available") and audit.get("drift"):
@@ -619,6 +704,10 @@ class ModelMonitor:
             "pool_gate": pool_gate,
             "pool_train": pool_train,
             "horizon_scan": horizon_scan,
+            "horizon_decision": horizon_decision,
+            "feature_experiment": feature_experiment,
+            "trial_registry": trial_registry,
+            "release_check": release_state,
         }
         return HealthReport(payload)
 
@@ -977,6 +1066,129 @@ def render_markdown(payload: Dict[str, Any]) -> str:
         lines.append(
             f"- 不可用：{hscan.get('error') or hscan.get('reason') or '未生成'}"
             f"（{hscan.get('hint', '')}）"
+        )
+    lines.append("")
+
+    rel = payload.get("release_check", {}) or {}
+    lines.extend(["## 发布态健康检查（S14：现在能不能继续往下跑）", ""])
+    if rel.get("available"):
+        lines.append(f"- 发布态：**{rel.get('status')}**"
+                     f"（blocking {len(rel.get('blocking') or [])} / "
+                     f"action {len(rel.get('actions') or [])}）")
+        for item in rel.get("blocking") or []:
+            lines.append(f"- ⛔ [{item.get('code')}] {item.get('message')}"
+                         f" → {item.get('next_step', '')}")
+        for item in rel.get("actions") or []:
+            lines.append(f"- ⚠️ [{item.get('code')}] {item.get('message')}"
+                         f" → {item.get('next_step', '')}")
+        lines.append("")
+        lines.append("> 检查只做汇总与排序：**产物可用性优先于指标好坏**"
+                     "（过期的判定比不达标更危险）；不重算指标、不自动修复。")
+    else:
+        lines.append(
+            f"- 不可用：{rel.get('error') or rel.get('reason') or '未生成'}"
+            f"（{rel.get('hint', '')}）"
+        )
+    lines.append("")
+
+    trials = payload.get("trial_registry", {}) or {}
+    lines.extend(["## 评估试验登记（S13：多重比较校正的分母）", ""])
+    if trials.get("available"):
+        lines.extend([
+            f"- 累计试验次数：**{trials.get('count')}**（登记总数 {trials.get('total')}）",
+            f"- 口径指纹：`{trials.get('fingerprint_hash')}`"
+            f"（最近一次登记：{trials.get('latest_at') or '—'}）",
+            f"- 按命令计数：{trials.get('by_command')}",
+            "- 用途：校正时用它作为比较次数，而不是只数本次扫描的候选数",
+        ])
+    else:
+        lines.append(
+            f"- ⚠️ 登记不可用：{trials.get('error') or trials.get('reason') or '未登记'}"
+            "（**未按 0 次处理** —— 0 次会让校正失效）"
+        )
+    lines.append("")
+
+    fexp = payload.get("feature_experiment", {}) or {}
+    lines.extend(["## 特征扩充正交对照（S12：横截面/宏观/情感到底有没有用）", ""])
+    if fexp.get("available"):
+        lines.extend([
+            f"- 结论：`{fexp.get('verdict')}`｜比较次数：{fexp.get('n_trials')}",
+            "- 是否改变生产特征集：否（`affects_features=false`，只产出证据）",
+            f"- 说明：{fexp.get('narrative')}",
+        ])
+        rows = (fexp.get("comparisons") or [])[:12]
+        if rows:
+            lines.extend([
+                "",
+                "| 周期 | 特征族 | 新增列 | IC 增量 | 命中率增量 | 显著性(校正后) |",
+                "|------|--------|--------|---------|------------|---------------|",
+            ])
+            for row in rows:
+                lines.append(
+                    f"| {row.get('horizon')} | {row.get('arm')} | "
+                    f"{len(row.get('features_added') or [])} | "
+                    f"{row.get('ic_delta', 0):+.4f} | {row.get('hit_delta', 0):+.2%} | "
+                    f"{row.get('p_family')}（{'显著' if row.get('significant') else '不显著'}） |"
+                )
+        lines.extend([
+            "",
+            "> ⚠️ `adopt` 是**证据**不是落地：接入生产特征集需人工确认并重跑全量门禁。",
+        ])
+    else:
+        lines.append(
+            f"- 不可用：{fexp.get('error') or fexp.get('reason') or '未生成'}"
+            f"（{fexp.get('hint', '')}）"
+        )
+    lines.append("")
+
+    hdec = payload.get("horizon_decision", {}) or {}
+    lines.extend(["## 预测周期切换决策单（S11：多重比较校正后还站得住吗）", ""])
+    if hdec.get("available"):
+        ev = hdec.get("evidence") or {}
+        lines.extend([
+            f"- 结论：`{hdec.get('verdict')}` / 状态：`{hdec.get('status')}`",
+            f"- 现行口径：{ev.get('current_horizons')} 日 → 拟切换：{ev.get('proposed_horizons')} 日",
+            f"- 候选数（比较次数）：{ev.get('n_trials')}｜族错误率下限：{ev.get('min_p_floor')}",
+            "- 是否影响放行结论：否（`affects_gate=false`，决策单不改变门禁）",
+        ])
+        if hdec.get("confirmed_by"):
+            lines.append(f"- 人工确认人：{hdec.get('confirmed_by')}")
+        rows = ev.get("candidates") or []
+        if rows:
+            lines.extend([
+                "",
+                "| 周期 | 现行 | IC | 命中率 | 显著性(校正后) | 结论 |",
+                "|------|------|-----|--------|---------------|------|",
+            ])
+            for row in rows:
+                ic_v = row.get("ic")
+                hr_v = row.get("hit_rate")
+                ic_txt = "N/A" if ic_v is None else f"{float(ic_v):+.4f}"
+                hr_txt = "N/A" if hr_v is None else _fmt_pct(hr_v)
+                if not row.get("available"):
+                    sig = "不可用"
+                else:
+                    sig = f"{row.get('p_family')}（{'显著' if row.get('significant') else '不显著'}）"
+                mark = "是" if row.get("is_current_horizon") else "—"
+                lines.append(
+                    f"| {row.get('horizon_days')} 日 | {mark} | {ic_txt} | {hr_txt} | {sig} | "
+                    f"{'✅' if row.get('passed_scan_gate') else '❌'} |"
+                )
+        if ev.get("narrative"):
+            lines.extend(["", f"- 证据结论：{ev['narrative']}"])
+        blockers = hdec.get("blockers") or []
+        if blockers:
+            lines.append("- 阻塞项：")
+            lines.extend([f"  - {b}" for b in blockers])
+        lines.extend([
+            "",
+            "> ⚠️ 决策单**不改变**门禁口径与放行结论；即使 `status=confirmed`，"
+            "切换仍须人工修改 `data.prediction_horizons` 并重做泄漏/偏差审查。",
+        ])
+    else:
+        lines.append(
+            f"- 不可用：{hdec.get('error') or hdec.get('reason') or '未生成'}"
+            f"（{hdec.get('hint', '')}）"
         )
     lines.append("")
 
