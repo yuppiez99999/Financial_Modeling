@@ -1685,7 +1685,10 @@ CLI / 监控报表 / 日报 / API 的缺失与正常分支；配置段存在且�
   同一批样本 / 同一组折 / 同一 LightGBM 配置 / 同一标签（现行 `target_{h}d`，一次只变
   一个变量）下做特征增量 A/B：基准臂 = 现行特征集，对照臂 = +`factor_a158_*`。
   判定与 S12 label-ab 同一保守口径（IC 与命中率**同向**变好才算改善迹象）。
-  真实 26 标的池实测数字待补入 `00_kickoff/qlib_alpha158_conclusion.md`。
+  真实 26 标的池实测（2026-09-11，3 折）：5/10 日无增量（ΔIC 为负）、
+  20 日微弱改善（ΔIC +0.0008，低于噪声）—— **整体不支持纳入主线**，
+  数字与解读已入库 `00_kickoff/qlib_alpha158_conclusion.md`；
+  数据层（26 标的 → 20423 行 .bin）与压缩因子链路作为工程能力保留。
 - **T13.4 🔶**：`docs/THIRD_PARTY.md` 已登记 microsoft/qlib（MIT，表达式级对齐复现，
   未引 qlib 运行时、未复制源码）；「是否纳入主线」为人工检查点，**pending**。
 - **⚠️ 不改门禁**：`affects_gate` 恒为 False；`model.factors.qlib_alpha158.enabled`
@@ -1723,6 +1726,31 @@ CLI / 监控报表 / 日报 / API 的缺失与正常分支；配置段存在且�
   时静默跳过（`ImportError`），链路行为与升级前完全一致，CI 离线可跑。
 - **待人工决策**：① 回退链顺序（akshare 是否维持在腾讯之前）；
   ② 期货/外汇是否正式纳入**训练主线**（当前 `enabled: true` 会进 `collect_all()`）。
+
+---
+
+**S15 落地记录（2026-09-11，G5 调参与概率预测）**：
+
+- **T15.1 ✅ optuna 超参搜索**：新增 `src/eval/hyperopt_tuner.py` + CLI
+  `python main.py tune`。与 qlib-ab / label-ab **完全同口径**（同数据、同特征列、
+  同一组 walk-forward 折）；搜索目标为**全部测试折 IC 均值**（用训练集指标选超参
+  = 泄漏，明确禁止）；study 以 SQLite 持久化（`reports/optuna_studies/`），
+  可断点续跑、可审计；另附现行超参同折基线与末折 OOT 复评。**26 标的实测
+  （10 trials/周期）**：三周期最优 IC +0.073/+0.080/+0.124，较现行超参基线
+  +0.016~+0.034 —— **IC 增量真实，但 OOT 命中率仍 <50%**，IC↔命中率脱节
+  未解。详见 `00_kickoff/hyperopt_confidence_conclusion.md`。
+- **T15.2 ✅ 置信度阈值曲线**：新增 `src/eval/confidence_curve.py` + CLI
+  `python main.py confidence`。沿阈值网格扫描「覆盖率 × 命中率 × IC」完整曲线，
+  与 Q4 风控 `withheld` 语义一致（低置信不给信号）；neuralforecast 概率区间
+  的换算机制（`confidence_from_interval`）已先行抽象，接入时无需改链路。
+  **实测**：三周期命中率随阈值单调上升（5 日 thr=0.7 时 75.5%，但仅覆盖 1.3%
+  样本）；thr ∈ [0.4, 0.5] 在 13%~38% 覆盖下命中率 53%~56% —— 是 T15.3
+  最值得评审的区间。
+- **⚠️ 不改门禁、不自动落地**：`affects_gate` 恒为 false，最优超参与置信度
+  阈值**一个配置字段都不改**；两次扫描均已登记试验（S13 试验登记，防多重比较
+  自由度失控）。optuna 为**可选依赖**（未安装时明确报错，不静默降级），CI 离线可跑。
+- **待人工决策（T15.3 检查点）**：① 是否以 ≥50 trials 重跑并落地最优超参；
+  ② 置信度门槛 thr 取值与"覆盖率换命中率"是否可接受（建议先在独立保留期复验）。
 
 ---
 
