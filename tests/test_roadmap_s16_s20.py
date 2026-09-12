@@ -39,11 +39,22 @@ def test_round2_stages_exist():
 
 
 def test_round2_stages_are_pending_not_fake_completed():
-    """规划期不得出现「已排期即已完成」的假进度。"""
+    """不得出现「已排期即已完成」的假进度。
+
+    S16 已真实开工（T16.3 提前交付，2026-09-12，Issue #29）：开工须有
+    started_at 证据；completed 任务须有 completed_at 与 result；
+    人工检查点任务恒 pending（不可自动通过）。
+    """
     for s in _round2_stages():
-        assert s["status"] == "pending", f"{s['id']} 应为 pending，实际 {s['status']}"
+        if s["status"] != "pending":
+            assert s.get("started_at"), f"{s['id']} 非 pending 却无 started_at"
         for t in s["tasks"]:
-            assert t["status"] == "pending", f"{t['id']} 应为 pending"
+            if t["id"] in (s.get("manual_checkpoint") or []):
+                assert t["status"] == "pending", \
+                    f"{t['id']} 是人工检查点，不得自动完成"
+            elif t["status"] == "completed":
+                assert t.get("completed_at") and t.get("result"), \
+                    f"{t['id']} 标 completed 却无 completed_at/result"
 
 
 def test_round2_stages_have_required_fields():
