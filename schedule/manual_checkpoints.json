@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-09-12T02:30:00+00:00",
-  "source": "Issue #29（高质量项目集成）· 本轮遗留人工检查点决策包",
+  "source": "Issue #29（高质量项目集成）· Issue #40（高质量项目集成2）· G/H 轮遗留人工检查点决策包",
   "doc": "00_kickoff/manual_checkpoints_round_g_h.md",
   "policy": {
     "npc_may_decide": false,
@@ -36,13 +36,15 @@
       "current_default": "model.factors.conformal.enabled=false（不进生产链路）",
       "evidence": [
         "reports/calibration/conformal_interval.json",
-        "reports/calibration/conformal_vs_proba.json"
+        "reports/calibration/conformal_vs_proba.json",
+        "reports/confidence_rolling_verify.json"
       ],
       "doc": "00_kickoff/conformal_interval_conclusion.md#四",
       "blocks": [
         "S19/H4 校准层接入方式"
       ],
-      "status": "pending"
+      "status": "pending",
+      "known_gap": "null 结构与 mapie 未安装时 backend=native，覆盖率承诺不成立；区间置信分粒度只有 {0, 0.5} 两档（与概率距离口径的连续刻度不同口径），对照判定 mixed，不择优"
     },
     {
       "id": "T17.4",
@@ -65,7 +67,7 @@
       "id": "T18.4",
       "stage": "S18",
       "priority": 4,
-      "question": "市场状态用于特征 / 评估风控分层 / 都不用",
+      "question": "市场状态用于特征 / 评估风控分层 / 都不用（三选一）",
       "current_default": "model.factors.regime.enabled=false（不进生产链路）",
       "evidence": [
         "reports/regime/regime_stratification.json",
@@ -133,6 +135,58 @@
       "blocks": [
         "所有净收益读数"
       ],
+      "status": "pending"
+    },
+    {
+      "id": "T19.4",
+      "stage": "S19",
+      "priority": 9,
+      "question": "校准层（isotonic / Platt）是否进主推理链路",
+      "current_default": "model.calibration.enabled=false（校准参数已固化但缺省不套用；API 仅追加只读字段）",
+      "evidence": [
+        "reports/calibration/calibration_ablation.json",
+        "reports/probability_calibration_5d.json",
+        "reports/probability_calibration_10d.json",
+        "reports/probability_calibration_20d.json"
+      ],
+      "doc": "00_kickoff/probability_calibration_conclusion.md",
+      "blocks": [
+        "主推理链路概率语义",
+        "T18.4 / T15.3 阈值语义"
+      ],
+      "known_gap": "ECE/Brier 改善幅度随周期递减（20d isotonic 的 Brier 反而略升）；决策读数消融见 reports/calibration/calibration_ablation.json",
+      "status": "pending"
+    },
+    {
+      "id": "T20.1",
+      "stage": "S20",
+      "priority": 10,
+      "question": "3 个 LLM 投研候选的调研结论是否采纳（TradingAgents / TradingAgents-CN / QuantMind）",
+      "current_default": "不采纳（0/3 满足准入：A股适配 + 离线可复现 + 许可证明确）",
+      "evidence": [
+        "reports/research_assist_evaluation.json"
+      ],
+      "doc": "00_kickoff/research_assist_conclusion.md",
+      "blocks": [
+        "T20.4 是否保留链路"
+      ],
+      "known_gap": "评估基于公开仓库自述与依赖清单，未做本地实装验证（未安装即不声称可用）",
+      "status": "pending"
+    },
+    {
+      "id": "T20.4",
+      "stage": "S20",
+      "priority": 11,
+      "question": "LLM 投研只读链路是否保留（含成本与噪声风险）",
+      "current_default": "默认 cancel（附注只挂报告层，affects_signal 恒 false）",
+      "evidence": [
+        "reports/research_assist_decision.json"
+      ],
+      "doc": "00_kickoff/research_assist_conclusion.md",
+      "blocks": [
+        "H5 是否继续投入"
+      ],
+      "known_gap": "离线对照不可量化（附注不参与打分 → 差异结构性为 0），已如实记为 unverifiable",
       "status": "pending"
     }
   ]
