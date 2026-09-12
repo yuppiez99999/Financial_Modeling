@@ -987,31 +987,34 @@
     {
       "id": "S17",
       "name": "评估防过拟合加固（H2：CPCV + 试验多重比较记账）",
-      "status": "pending",
-      "started_at": null,
+      "status": "in_progress",
+      "started_at": "2026-09-12T01:30:00Z",
       "completed_at": null,
       "scheduled_dates": "2026-10-12 ~ 2026-10-18",
       "tasks": [
         {
           "id": "T17.1",
           "name": "组合式净化交叉验证（CPCV）实现：purge/embargo 对齐 leakage_checklist，产出 DSR/PSR 类过拟合概率指标，接入 src/eval/",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-12T01:30:00Z",
+          "result": "src/eval/cpcv.py：CPCV 组合式路径（N=6,k=2 → C(6,2)=15 条）+ purge/embargo 对齐 leakage_checklist；DSR 风格选择偏差收缩指标（方法名如实标注 cpcv_shrinkage，不冒充精确解）与 PBO；无前视：折生成只用索引、净化只做剔除。CLI `python main.py overfit-audit`。"
         },
         {
           "id": "T17.2",
           "name": "把 trials 登记（append-only）与 CPCV/多重比较校正打通：报告里自动标注「本次读数已扫描 N 次」的选择自由度",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-12T01:30:00Z",
+          "result": "src/eval/overfit_audit.py：统一试验预算（跨命令累计，asof 无前视口径），报告自动标注「本次读数已扫描 N 次（历史 X + 本次 Y）」；登记不可用时如实标注「校正强度可能被低估」。"
         },
         {
           "id": "T17.3",
           "name": "对 S11~S15 全部历史读数回算校正后显著性，如实入库（预期多数结论维持否定）",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-12T01:30:00Z",
+          "result": "对 S11~S15 历史读数（horizon_decision / feature_experiment / qlib_ab / label_ab / confidence_gate_decision）逐条 Bonferroni 回算，raw p → 校正 p → 是否仍显著；只读不改写既有报告，报告缺失如实标注不猜。"
         },
         {
           "id": "T17.4",
@@ -1029,7 +1032,7 @@
       "manual_checkpoint": [
         "T17.4"
       ],
-      "note": "延续 S11 多重比较校正口径，把「选择自由度」从事后补记升级为流水线内建。属方法论加固，不直接动模型。",
+      "note": "延续 S11 多重比较校正口径，把「选择自由度」从事后补记升级为流水线内建。属方法论加固，不直接动模型。 | S17 于 2026-09-12 提前开工（Issue #29 排期指令）：T17.1~T17.3 自动任务交付，T17.4 人工检查点保持 pending。",
       "source": "Issue #40 高质量项目集成2 · H2（Advances in Financial ML 方法论 · CPCV/DSR）",
       "depends_on": [
         "S11",
