@@ -171,9 +171,10 @@ class TestManifestConsistency:
         assert not missing, f"决策包缺少遗留检查点: {sorted(missing)}"
 
     def test_manifest_ids_are_real_manual_checkpoints(self):
-        real = _all_checkpoint_ids() | {
-            t["id"] for s in _plan()["stages"] if _is_in_scope(s)
-            for t in s["tasks"] if t["id"] in (s.get("manual_checkpoint") or [])}
+        # 「真实人工检查点」的判定是**全排期**口径：任一阶段 manual_checkpoint
+        # 列出的任务 id 都是合法引用（I 轮 S21~S25 的规划期检查点同样有效）。
+        real = {t["id"] for s in _plan()["stages"]
+                for t in s["tasks"] if t["id"] in (s.get("manual_checkpoint") or [])}
         for cp in _manifest()["checkpoints"]:
             assert cp["id"] in real, f"{cp['id']} 不在 plan.json 的人工检查点里"
 

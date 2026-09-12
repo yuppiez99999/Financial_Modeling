@@ -45,6 +45,18 @@ def _manifest() -> dict:
     return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
 
+def _decision_entries() -> list[dict]:
+    """已签字决策包条目（G/H 轮收官确认，全部必须 confirmed）。"""
+    return [cp for cp in _manifest()["checkpoints"]
+            if cp.get("phase", "decision") == "decision"]
+
+
+def _planning_entries() -> list[dict]:
+    """规划期检查点（后续轮次 I 轮起，必须 pending 且禁止预签）。"""
+    return [cp for cp in _manifest()["checkpoints"]
+            if cp.get("phase") == "planning"]
+
+
 def _stage(sid: str) -> dict:
     return next(s for s in _plan()["stages"] if s["id"] == sid)
 
@@ -111,11 +123,11 @@ class TestConfirmationTraceability:
                                      "confirmed_at", "issue", "rationale",
                                      "boundary"])
     def test_manifest_entry_has_traceability_field(self, key: str):
-        for cp in _manifest()["checkpoints"]:
+        for cp in _decision_entries():
             assert cp.get(key), f"{cp['id']} 缺少可追溯字段 {key}"
 
     def test_decisions_use_closed_vocabulary(self):
-        for cp in _manifest()["checkpoints"]:
+        for cp in _decision_entries():
             assert cp["decision"] in DECISION_WORDS, (
                 f"{cp['id']} 决策词表外取值 {cp['decision']}")
 
@@ -134,6 +146,33 @@ class TestConfirmationTraceability:
         for cp in _manifest()["checkpoints"]:
             assert isinstance(cp["out_of_scope"], list) and cp["out_of_scope"], (
                 f"{cp['id']} 未声明「不在确认范围」的内容")
+
+
+# ----------------------------------------------------------------------
+# 二·补、规划期检查点（后续轮次）：必须 pending，且严禁预签
+# ----------------------------------------------------------------------
+class TestPlanningPhaseEntries:
+    def test_planning_entries_stay_pending(self):
+        """规划期检查点只能 pending：confirmed/completed 都等于预签。"""
+        for cp in _planning_entries():
+            assert cp["status"] == "pending", (
+                f"{cp['id']} 规划期检查点状态非法: {cp['status']}（只允许 pending）")
+
+    def test_planning_entries_carry_no_signature(self):
+        """规划期条目不得携带任何签署字段——签字只发生在对应阶段交付之后。"""
+        for cp in _planning_entries():
+            for key in ("decision", "confirmed_by", "confirmed_at",
+                        "decision_basis", "scope"):
+                assert not cp.get(key), (
+                    f"{cp['id']} 规划期却带签署字段 {key}（疑似预签）")
+
+    def test_planning_entries_are_traceable_to_round(self):
+        for cp in _planning_entries():
+            for key in ("question", "current_default", "issue", "round", "doc",
+                        "stage", "priority", "out_of_scope"):
+                assert cp.get(key), f"{cp['id']} 缺少规划期字段 {key}"
+            assert "/issues/54" in cp["issue"], (
+                f"{cp['id']} 规划期检查点未挂到本轮 Issue #54")
 
 
 # ----------------------------------------------------------------------
@@ -236,8 +275,12 @@ class TestNoSignatureDrift:
         assert not bad, f"人工检查点被标 completed（代签）: {bad}"
 
     def test_no_pending_among_the_eleven(self):
-        for cp in _manifest()["checkpoints"]:
+        """决策包条目（G/H 轮）必须全部 confirmed；规划期条目必须全部 pending。"""
+        for cp in _decision_entries():
             assert cp["status"] == "confirmed", f"{cp['id']} 仍未确认: {cp['status']}"
+        for cp in _planning_entries():
+            assert cp["status"] == "pending", (
+                f"{cp['id']} 规划期条目只允许 pending: {cp['status']}")
 
     def test_confirmed_tasks_are_not_auto_run(self):
         for _, t in _checkpoint_tasks():

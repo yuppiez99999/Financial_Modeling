@@ -429,6 +429,116 @@
         "evidence": "reports/research_assist_evaluation.json",
         "doc": "00_kickoff/manual_checkpoints_round_g_h.md#十一h-轮收口附录issues-40--s16s20"
       }
+    },
+    {
+      "id": "T21.4",
+      "stage": "S21",
+      "priority": 12,
+      "question": "组合口径（portfolio-backtest 净值/回撤/换手/夏普）是否纳入标准评估集",
+      "current_default": "默认 pending（无人工签字不放行）",
+      "evidence": [],
+      "doc": "00_kickoff/high_value_projects_round3_candidates.md",
+      "blocks": [
+        "评估量尺是否扩容"
+      ],
+      "known_gap": "规划期检查点：对应阶段尚未启动，无已交付证据",
+      "status": "pending",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/54",
+      "round": "I1",
+      "phase": "planning",
+      "out_of_scope": [
+        "签字仅确认「现状默认值」本身，不含门禁/阈值/超参的任何变更",
+        "strategy_gate 逐字段零改动，affects_gate 恒为 false",
+        "对应阶段未启动前不得预签：规划期检查点必须保持 pending"
+      ]
+    },
+    {
+      "id": "T22.4",
+      "stage": "S22",
+      "priority": 13,
+      "question": "组合加权方式（等权 / ATR 倒数 / 校准置信度）是否进入报表默认口径",
+      "current_default": "默认 pending（无人工签字不放行）",
+      "evidence": [],
+      "doc": "00_kickoff/high_value_projects_round3_candidates.md",
+      "blocks": [
+        "报表默认口径"
+      ],
+      "known_gap": "规划期检查点：对应阶段尚未启动，无已交付证据",
+      "status": "pending",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/54",
+      "round": "I2",
+      "phase": "planning",
+      "out_of_scope": [
+        "签字仅确认「现状默认值」本身，不含门禁/阈值/超参的任何变更",
+        "strategy_gate 逐字段零改动，affects_gate 恒为 false",
+        "对应阶段未启动前不得预签：规划期检查点必须保持 pending"
+      ]
+    },
+    {
+      "id": "T23.4",
+      "stage": "S23",
+      "priority": 14,
+      "question": "漂移监控是否纳入 health_report 常规输出",
+      "current_default": "默认 pending（无人工签字不放行）",
+      "evidence": [],
+      "doc": "00_kickoff/high_value_projects_round3_candidates.md",
+      "blocks": [
+        "健康报表输出范围"
+      ],
+      "known_gap": "规划期检查点：对应阶段尚未启动，无已交付证据",
+      "status": "pending",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/54",
+      "round": "I3",
+      "phase": "planning",
+      "out_of_scope": [
+        "签字仅确认「现状默认值」本身，不含门禁/阈值/超参的任何变更",
+        "strategy_gate 逐字段零改动，affects_gate 恒为 false",
+        "对应阶段未启动前不得预签：规划期检查点必须保持 pending"
+      ]
+    },
+    {
+      "id": "T24.4",
+      "stage": "S24",
+      "priority": 15,
+      "question": "TreeSHAP 状态×特征归因是否纳入例行报告",
+      "current_default": "默认 pending（无人工签字不放行）",
+      "evidence": [],
+      "doc": "00_kickoff/high_value_projects_round3_candidates.md",
+      "blocks": [
+        "例行报告范围"
+      ],
+      "known_gap": "规划期检查点：对应阶段尚未启动，无已交付证据",
+      "status": "pending",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/54",
+      "round": "I4",
+      "phase": "planning",
+      "out_of_scope": [
+        "签字仅确认「现状默认值」本身，不含门禁/阈值/超参的任何变更",
+        "strategy_gate 逐字段零改动，affects_gate 恒为 false",
+        "对应阶段未启动前不得预签：规划期检查点必须保持 pending"
+      ]
+    },
+    {
+      "id": "T25.4",
+      "stage": "S25",
+      "priority": 16,
+      "question": "组合层是否引入过拟合概率下限（DSR 校正后仍为正才采信）",
+      "current_default": "默认 pending（无人工签字不放行）",
+      "evidence": [],
+      "doc": "00_kickoff/high_value_projects_round3_candidates.md",
+      "blocks": [
+        "组合回测读数的采信标准"
+      ],
+      "known_gap": "规划期检查点：对应阶段尚未启动，无已交付证据",
+      "status": "pending",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/54",
+      "round": "I5",
+      "phase": "planning",
+      "out_of_scope": [
+        "签字仅确认「现状默认值」本身，不含门禁/阈值/超参的任何变更",
+        "strategy_gate 逐字段零改动，affects_gate 恒为 false",
+        "对应阶段未启动前不得预签：规划期检查点必须保持 pending"
+      ]
     }
   ],
   "scope_note": "G 轮（S11~S15，Issue #29）与 H 轮（S16~S20，Issue #40）人工检查点统一收口：H 轮自动任务已全部交付（收口字段见 plan.json 各阶段 closing），H 轮人工检查点**全部进清单**——至此再无「已交付但未登记」；11 项均已由用户指令于 Issue #40 确认（确认对象 = 现状默认值）。",
@@ -476,6 +586,11 @@
   },
   "rounds_covered": [
     "G 轮（S11~S15）",
-    "H 轮（S16~S20）"
+    "H 轮（S16~S20）",
+    "I1",
+    "I2",
+    "I3",
+    "I4",
+    "I5"
   ]
 }

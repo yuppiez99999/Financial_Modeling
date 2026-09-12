@@ -258,10 +258,20 @@ class TestDecisionMaterialsNotDangling:
         assert "affects_gate" in doc
 
     def test_decision_doc_declares_count_eleven(self):
-        """文档声明的条目数必须与清单一致（防文档与清单漂移）。"""
+        """文档声明的条目数必须与清单一致（防文档与清单漂移）。
+
+        2026-09-13 起清单扩展为两段：G/H 轮**已签字决策包 11 条**（本文档
+        对应）+ I 轮（Issue #54）**规划期检查点 5 条**（必须 pending、严禁
+        预签，见 tests/test_manual_checkpoints_confirmation.py）。本断言钉住
+        两侧数量，任何一侧变动都必须显式改这里。
+        """
         doc = DOC_PATH.read_text(encoding="utf-8")
         assert "11 条" in doc, "决策包文档声明的条目数与清单不一致"
-        assert len(_manifest()["checkpoints"]) == 11
+        manifest = _manifest()["checkpoints"]
+        decision = [c for c in manifest if c.get("phase", "decision") == "decision"]
+        planning = [c for c in manifest if c.get("phase") == "planning"]
+        assert len(decision) == 11, f"决策包必须保持 11 条: {len(decision)}"
+        assert len(planning) == 5, f"规划期检查点必须为 I 轮 5 条: {len(planning)}"
 
 
 # ----------------------------------------------------------------------
