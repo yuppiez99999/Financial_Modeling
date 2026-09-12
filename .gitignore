@@ -57,6 +57,8 @@ models/exported/
 
 # 训练产物模型（保留占位模型由 scripts 生成，不提交训练产物）
 models/**/*.pkl
+# S19 概率校准参数：由本机数据拟合，属运行产物（main.py calibration 重新生成）
+models/probability_calibration_*.json
 models/**/*.onnx
 
 # Jupyter

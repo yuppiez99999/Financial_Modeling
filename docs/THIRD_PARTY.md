@@ -90,9 +90,23 @@ qlib 官方 Alpha158（`qlib/contrib/data/loader.py`）共 158 个表达式 =
 | scikit-learn（校准器） | https://github.com/scikit-learn/scikit-learn | BSD-3-Clause | S19 / H4（计划） | `CalibratedClassifierCV`（isotonic / Platt）概率校准 | 既有依赖，无需新增；校准器仅在独立保留期验证，不自动落地 |
 | TradingAgents 系（评估中） | https://github.com/TauricResearch/TradingAgents · https://github.com/hsliuping/TradingAgents-CN · https://github.com/qusong0627/QuantMind | Apache-2.0 / 部分仓库 NOASSERTION | S20 / H5（待 T20.1 评估） | LLM 投研辅助结论（**只读报告附注**） | **未确定引入**：T20.1 评估不通过则整阶段取消。若引入，严禁进入信号路径与门禁 |
 
-### 规划期合规说明
+### 落地状态更新（2026-09-12，S16~S20 自动任务交付后）
 
-- H1~H4 全部为 sklearn 风格轻量库或既有依赖，符合「零重型依赖、CI 离线可跑」纪律；
-- H5 涉及的 LLM Agent 框架依赖较重且输出不可量化，**登记为待评估而非待引入**，
-  评估结论（含许可证逐项核查）落 `00_kickoff/` 后另行追加运行时版本号；
+> 以下为**实际落地事实**（不是计划）：只登记"真的用了什么"。
+
+| 组件 | 最终状态 | 说明 |
+|------|---------|------|
+| MAPIE | **未引入运行时** | S16 保形预测按 Vovk/分割保形口径**自实现**（`src/eval/conformal.py`），有限样本分位数修正与 MAPIE 同源；未 `pip install mapie`，报告 `backend=native` 如实标注，不冒充 MAPIE 结果 |
+| hmmlearn | **可选依赖（auto 后端）** | `src/eval/regime.py` 优先用 `GaussianHMM`（BSD-3-Clause）；未安装时**如实降级**为滚动趋势规则口径并标 `backend=rules`。已做状态占比 / 协方差退化检查，避免吸收成离群态 |
+| scikit-learn（isotonic / Platt） | **既有依赖，已实际使用** | S19 校准层用 `IsotonicRegression` 与 `LogisticRegression`（logit 变换）；校准参数固化到 `models/probability_calibration_<horizon>.json`，推理期只读 |
+| TradingAgents 系 | **不引入（整链路默认 cancel）** | S20 评估结论：0 个候选同时满足「A 股适配 + 离线可复现 + 许可证明确」。离线对照结构性不可量化 → 记 `unverifiable` 并止损。见 `00_kickoff/round2_integration_conclusion.md` |
+
+### 合规说明
+
+- S16~S20 全部实现均为 **sklearn 风格轻量库 / 自实现 / 既有依赖**，无新增重型依赖，
+  符合「零重型依赖、CI 离线可跑」纪律（全部测试用合成数据，不触网）；
+- CPCV / DSR 属于**方法论引入**（López de Prado《Advances in Financial ML》口径），
+  未复制源码；收缩指标自实现且如实标注为**一阶近似**（`method=cpcv_shrinkage`），
+  不冒充 Sharpe DSR 精确解；
+- 落地结论与实测读数见 `00_kickoff/round2_integration_conclusion.md`；
 - 配套候选评估与淘汰理由见 `00_kickoff/high_value_projects_round2_candidates.md`。

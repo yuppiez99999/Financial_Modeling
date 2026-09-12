@@ -96,7 +96,15 @@
 - **试验登记** — `trials` append-only，研究者自由度透明化（S13）
 - **发布态检查** — `release-check` 收敛阻塞项与告警路由（S14）
 - **调参与门槛** — optuna 超参搜索 + 置信度阈值曲线（S15/G5）；真实池 60-trials 收敛复跑 + 独立保留期阈值复验已完成；**T15.3 双指标门禁结构重构已交付**（`python main.py confidence-gate`，决策单 `reports/confidence_gate_decision.json`，`affects_gate=false`，**是否切换门禁结构待人工签字**）
+<<<<<<< HEAD
 - **保留期证据链** — `python main.py confidence-holdout`（S16/T16.3）：决策单证据源 `reports/confidence_holdout_verify.json` 首次有可复现生成命令（训练只用前 70%，保留期从未参与训练/扫描/调参）；同时把保留期切成 n 个互不重叠时段做滚动复验（`--no-rolling` 可关），检验 thr∈[0.2,0.3] 命中率优势是否跨时段稳定，stable/unstable/insufficient 三态如实输出（`reports/confidence_rolling_verify.json`，补充证据）；`affects_gate=false`，挑阈值与签字仍属人工检查点
+=======
+- **概率区间校准** — 保形预测给覆盖率保证（S16/H1）：`python main.py conformal`；多时段滚动保留期复验**未能复现** T15.3 的单时段结论，如实入库
+- **过拟合审计** — CPCV 净化交叉验证 + 统一试验预算 + 历史读数回算（S17/H2）：`python main.py overfit-audit`
+- **市场状态分层** — HMM 牛/熊/震荡识别 + 状态内评估（S18/H3）：`python main.py regime`；实测**熊市命中率 62.55% vs 震荡市 48.72%（差 13.83pp）**
+- **概率校准层** — isotonic / Platt 校准 + API 追加 `calibrated_probability` / `uncertainty`（S19/H4）：`python main.py calibration`；实测 **ECE 0.104 → 0.0025**
+- **投研辅助只读接入** — LLM 投研结论只挂报告层，**结构性不进信号路径**（S20/H5）：`python main.py research-assist`；评估结论为无候选满足准入，**默认取消**
+>>>>>>> bb4e5c3 (feat(s16-s20): 高质量项目集成2 自动任务落地)
 
 </td>
 </tr>
