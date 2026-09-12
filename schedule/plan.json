@@ -569,9 +569,9 @@
     {
       "id": "S12",
       "name": "标签重构（G2：三重障碍法 + 无前视测试 + A/B 实验）",
-      "status": "completed",
+      "status": "in_progress",
       "started_at": null,
-      "completed_at": "2026-09-11T07:30:34.522041+00:00",
+      "completed_at": null,
       "scheduled_dates": "2026-09-15 ~ 2026-09-19",
       "tasks": [
         {
@@ -592,11 +592,11 @@
         },
         {
           "id": "T12.3",
-          "name": "同一 LightGBM 配置下新标签 vs 旧标签 IC/命中率 A/B 对比，结论不管好坏如实入库（人工检查点）",
-          "status": "completed",
+          "name": "同一 LightGBM 配置下新标签 vs 旧标签 IC/命中率 A/B 对比，结论不管好坏如实入库（**人工检查点：结论已入库，是否纳入训练主线待人工定稿**）",
+          "status": "pending",
           "auto_run": false,
-          "completed_at": "2026-09-11T07:30:34.522041+00:00",
-          "result": "同一 LightGBM 配置下新标签 vs 旧标签 IC/命中率 A/B 对比，结论不管好坏如实入库（人工检查点）：自动任务已交付"
+          "completed_at": null,
+          "result": null
         }
       ],
       "auto_acceptable": [
@@ -606,7 +606,7 @@
       "manual_checkpoint": [
         "T12.3"
       ],
-      "note": "唯一有望直接改变门禁判定的一步。里程碑 09-19：拿到『标签重构是否有效』的硬结论。",
+      "note": "唯一有望直接改变门禁判定的一步。里程碑 09-19：拿到『标签重构是否有效』的硬结论。 | T12.3 已更正为人工检查点（此前误标 completed）：A/B 结论已如实入库（00_kickoff/label_ab_conclusion.md，10 日 IC +0.061/命中 52.88% 正向、5 日混合），「是否纳入训练主线」恒为人工决策，未获签字前保持 pending（fail-close）。",
       "source": "Issue #29 高质量项目集成 · G2（machine-learning-for-trading 三重障碍法）",
       "depends_on": [
         "S11"
@@ -670,9 +670,9 @@
     {
       "id": "S14",
       "name": "数据源升级（G4：akshare 升 P1 + 期货外汇开启）",
-      "status": "completed",
+      "status": "in_progress",
       "started_at": "2026-09-11T10:00:00+00:00",
-      "completed_at": "2026-09-11T10:20:00+00:00",
+      "completed_at": null,
       "scheduled_dates": "2026-09-27 ~ 2026-09-29",
       "tasks": [
         {
@@ -693,11 +693,11 @@
         },
         {
           "id": "T14.3",
-          "name": "回退链验收（人工检查点）：实测 38/38 标的 + 5/5 宏观 = 100% ≥95%，报告 reports/s14_data_source_acceptance.json；**待人工定稿**：① 回退链顺序 ② 期货/外汇是否纳入训练主线 （见 00_kickoff/akshare_data_source_conclusion.md 第六节）",
-          "status": "completed",
+          "name": "回退链验收（人工检查点）：实测 38/38 标的 + 5/5 宏观 = 100% ≥95%，报告 reports/s14_data_source_acceptance.json；**验收数字已达标，但「① 回退链顺序 ② 期货/外汇是否纳入训练主线」仍待人工定稿**（见 00_kickoff/akshare_data_source_conclusion.md 第六节）",
+          "status": "pending",
           "auto_run": false,
-          "completed_at": "2026-09-11T10:20:00+00:00",
-          "result": "回退链验收（人工检查点）：实测 38/38 标的 + 5/5 宏观 = 100% ≥95%，报告 reports/s14_data_source_acceptance.json；**待人工定稿**：① 回退链顺序 ② 期货/外汇是否纳入训练主线 （见 00_kickoff/akshare_data_source_conclusion.md 第六节）：自动任务已交付"
+          "completed_at": null,
+          "result": null
         }
       ],
       "auto_acceptable": [
@@ -707,194 +707,7 @@
       "manual_checkpoint": [
         "T14.3"
       ],
-      "note": "无前置依赖，可与 S12/S13 并行。里程碑 09-29：数据侧不再是瓶颈。实测：标的池 38/38 + 宏观 5/5 = 100%（验收线 95%），期货 10/10、外汇 2/2 全部真实可取；结论见 00_kickoff/akshare_data_source_conclusion.md。不改门禁。",
-      "source": "Issue #29 高质量项目集成 · G4（akfamily/akshare）",
-      "depends_on": []
-    },
-    {
-      "id": "S11",
-      "name": "评估量尺先行（G1：因子诊断 / 成本敏感性 / FinRL 结论补全）",
-      "status": "in_progress",
-      "started_at": "2026-09-11T07:00:24.658860+00:00",
-      "completed_at": null,
-      "scheduled_dates": "2026-09-12 ~ 2026-09-14",
-      "tasks": [
-        {
-          "id": "T11.1",
-          "name": "新增 src/eval/factor_metrics.py：按周期衰减 / 分层收益 / 换手 / IC 置信区间",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T07:00:24.658860+00:00",
-          "result": "新增 src/eval/factor_metrics.py：按周期衰减 / 分层收益 / 换手 / IC 置信区间：自动任务已交付"
-        },
-        {
-          "id": "T11.2",
-          "name": "成交成本敏感性：佣金/滑点/换手三档扫描（口径定稿，人工检查点）",
-          "status": "pending",
-          "auto_run": false,
-          "completed_at": null
-        },
-        {
-          "id": "T11.3",
-          "name": "补全 00_kickoff/finrl_comparison_conclusion.md 状态字段",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T07:00:24.658860+00:00",
-          "result": "补全 00_kickoff/finrl_comparison_conclusion.md 状态字段：自动任务已交付"
-        }
-      ],
-      "auto_acceptable": [
-        "T11.1",
-        "T11.3"
-      ],
-      "manual_checkpoint": [
-        "T11.2"
-      ],
-      "note": "统一评估量尺：没有统一量尺，后续所有改动无法判断是否变好。本轮所有新模块默认 report_only，不改门禁结论。 进展（2026-09-11）：T11.1 因子健康度量尺（src/eval/factor_metrics.py + main.py ic --detail）与 T11.3 FinRL 结论补全已完成；T11.2 成本敏感性三档口径以草案形式落地（参数为常量，待人工定稿）。",
-      "source": "Issue #29 高质量项目集成 · G1（machine-learning-for-trading 三重障碍法 / alphalens 因子诊断理念）"
-    },
-    {
-      "id": "S12",
-      "name": "标签重构（G2：三重障碍法 + 无前视测试 + A/B 实验）",
-      "status": "completed",
-      "started_at": null,
-      "completed_at": "2026-09-11T07:30:34.522041+00:00",
-      "scheduled_dates": "2026-09-15 ~ 2026-09-19",
-      "tasks": [
-        {
-          "id": "T12.1",
-          "name": "新增 src/data/labeling.py：三重障碍法（止盈/止损/时间），波动率自适应，替代固定 5/10/20 日窗口",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T07:30:34.522041+00:00",
-          "result": "新增 src/data/labeling.py：三重障碍法（止盈/止损/时间），波动率自适应，替代固定 5/10/20 日窗口：自动任务已交付"
-        },
-        {
-          "id": "T12.2",
-          "name": "对照 leakage_checklist.md 扩展 tests/『标签无前视』用例",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T07:30:34.522041+00:00",
-          "result": "对照 leakage_checklist.md 扩展 tests/『标签无前视』用例：自动任务已交付"
-        },
-        {
-          "id": "T12.3",
-          "name": "同一 LightGBM 配置下新标签 vs 旧标签 IC/命中率 A/B 对比，结论不管好坏如实入库（人工检查点）",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-11T07:30:34.522041+00:00",
-          "result": "同一 LightGBM 配置下新标签 vs 旧标签 IC/命中率 A/B 对比，结论不管好坏如实入库（人工检查点）：自动任务已交付"
-        }
-      ],
-      "auto_acceptable": [
-        "T12.1",
-        "T12.2"
-      ],
-      "manual_checkpoint": [
-        "T12.3"
-      ],
-      "note": "唯一有望直接改变门禁判定的一步。里程碑 09-19：拿到『标签重构是否有效』的硬结论。",
-      "source": "Issue #29 高质量项目集成 · G2（machine-learning-for-trading 三重障碍法）",
-      "depends_on": [
-        "S11"
-      ],
-      "result": "三重障碍法标签 + 无前视测试 + 同口径 A/B 已落地。结论（26 标的/3 折，如实入库 00_kickoff/label_ab_conclusion.md）：10 日周期 IC +0.034、命中率 52.88%（旧 49.28%），首次跨 52% 门禁线；5 日周期结论混合。affects_gate 恒 False，是否纳入主线待人工检查点 T12.3 定稿。"
-    },
-    {
-      "id": "S13",
-      "name": "qlib 因子库与数据层接入（G3：数据层 → 因子导出 → 增量验证）",
-      "status": "in_progress",
-      "started_at": "2026-09-11T09:20:00+00:00",
-      "completed_at": null,
-      "scheduled_dates": "2026-09-20 ~ 2026-09-26",
-      "tasks": [
-        {
-          "id": "T13.1",
-          "name": "独立目录 integrations/qlib/：qlib 数据转 .bin → 导出横截面因子为 parquet",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T09:20:00+00:00",
-          "result": "独立目录 integrations/qlib/：qlib 数据转 .bin → 导出横截面因子为 parquet：自动任务已交付"
-        },
-        {
-          "id": "T13.2",
-          "name": "新增 src/factors/qlib_factor_provider.py，因子喂进现有 factor_library / factor_model",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T09:20:00+00:00",
-          "result": "新增 src/factors/qlib_factor_provider.py，因子喂进现有 factor_library / factor_model：自动任务已交付"
-        },
-        {
-          "id": "T13.3",
-          "name": "Alpha158 因子 IC 对比现有 15 因子，链路与 A/B 已交付（真实池实测已补，见 00_kickoff/qlib_alpha158_conclusion.md）；结论不管好坏如实入库",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T09:20:00+00:00",
-          "result": "Alpha158 因子 IC 对比现有 15 因子，链路与 A/B 已交付（真实池实测已补，见 00_kickoff/qlib_alpha158_conclusion.md）；结论不管好坏如实入库：自动任务已交付"
-        },
-        {
-          "id": "T13.4",
-          "name": "是否纳入主线决策（人工检查点，pending）+ docs/THIRD_PARTY.md 登记来源与版本（已完成）",
-          "status": "pending",
-          "auto_run": false,
-          "completed_at": null
-        }
-      ],
-      "auto_acceptable": [
-        "T13.1",
-        "T13.2",
-        "T13.3"
-      ],
-      "manual_checkpoint": [
-        "T13.4"
-      ],
-      "note": "qlib 为 MIT 许可，与本项目『禁止商用』对外授权限制不冲突，但必须登记来源与版本。工程量最大，收益最大。",
-      "source": "Issue #29 高质量项目集成 · G3（microsoft/qlib）",
-      "depends_on": [
-        "S12"
-      ]
-    },
-    {
-      "id": "S14",
-      "name": "数据源升级（G4：akshare 升 P1 + 期货外汇开启）",
-      "status": "completed",
-      "started_at": "2026-09-11T10:00:00+00:00",
-      "completed_at": "2026-09-11T10:20:00+00:00",
-      "scheduled_dates": "2026-09-27 ~ 2026-09-29",
-      "tasks": [
-        {
-          "id": "T14.1",
-          "name": "akshare 从可选依赖升为 P1，回退链 wind → akshare → tencent → simulation",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T10:20:00+00:00",
-          "result": "akshare 从可选依赖升为 P1，回退链 wind → akshare → tencent → simulation：自动任务已交付"
-        },
-        {
-          "id": "T14.2",
-          "name": "新增 tests/test_akshare_client.py，期货/外汇标的开启",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T10:20:00+00:00",
-          "result": "新增 tests/test_akshare_client.py，期货/外汇标的开启：自动任务已交付"
-        },
-        {
-          "id": "T14.3",
-          "name": "回退链验收（人工检查点）：实测 38/38 标的 + 5/5 宏观 = 100% ≥95%，报告 reports/s14_data_source_acceptance.json；**待人工定稿**：① 回退链顺序 ② 期货/外汇是否纳入训练主线 （见 00_kickoff/akshare_data_source_conclusion.md 第六节）",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-11T10:20:00+00:00",
-          "result": "回退链验收（人工检查点）：实测 38/38 标的 + 5/5 宏观 = 100% ≥95%，报告 reports/s14_data_source_acceptance.json；**待人工定稿**：① 回退链顺序 ② 期货/外汇是否纳入训练主线 （见 00_kickoff/akshare_data_source_conclusion.md 第六节）：自动任务已交付"
-        }
-      ],
-      "auto_acceptable": [
-        "T14.1",
-        "T14.2"
-      ],
-      "manual_checkpoint": [
-        "T14.3"
-      ],
-      "note": "无前置依赖，可与 S12/S13 并行。里程碑 09-29：数据侧不再是瓶颈。实测：标的池 38/38 + 宏观 5/5 = 100%（验收线 95%），期货 10/10、外汇 2/2 全部真实可取；结论见 00_kickoff/akshare_data_source_conclusion.md。不改门禁。",
+      "note": "无前置依赖，可与 S12/S13 并行。里程碑 09-29：数据侧不再是瓶颈。实测：标的池 38/38 + 宏观 5/5 = 100%（验收线 95%），期货 10/10、外汇 2/2 全部真实可取；结论见 00_kickoff/akshare_data_source_conclusion.md。不改门禁。 | T14.3 已更正为人工检查点（此前误标 completed）：验收数字 100% 已达标并入库，但回退链顺序/期货外汇是否进主线仍待人工定稿，未签字前保持 pending（fail-close）。",
       "source": "Issue #29 高质量项目集成 · G4（akfamily/akshare）",
       "depends_on": []
     },
@@ -958,16 +771,16 @@
           "name": "接入 MAPIE（scikit-learn-contrib/MAPIE，BSD-3-Clause）：在现行 LightGBM 上用保形预测产出带覆盖率保证的预测区间，输出校准曲线到 reports/calibration/",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-12T00:58:49.498077+00:00",
-          "result": "src/eval/conformal.py：分割保形预测（有限样本分位数修正）+ 三段式覆盖率校准报告，落盘 reports/calibration/conformal_<h>d.json；native 后端如实标注"
+          "completed_at": "2026-09-12T01:20:00+00:00",
+          "result": "src/eval/conformal_probability.py：三段切分（约 60/10/30，保留期与 T16.3 holdout_split 完全同段）+ MAPIE SplitConformalClassifier（LAC，prefit）产带覆盖率保证的预测集合 → [0,1] 区间 → 置信分（复用 S15 的 confidence_from_interval）；覆盖率审计（目标 vs 实测 + bootstrap 95% CI）、可靠性曲线（Brier/ECE + isotonic 参考臂）、区间宽度校准；落盘 reports/calibration/conformal_interval.json。mapie 1.5.0 为可选运行时依赖，未安装时明确报错不降级"
         },
         {
           "id": "T16.2",
           "name": "把区间宽度经既有 confidence_from_interval 换算为置信分，与现行 |p-0.5|×2 口径做同数据同折对照",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-12T00:58:49.498077+00:00",
-          "result": "src/eval/calibration_ab.py：同数据同折对照「概率距离」与「保形区间宽度」两种置信口径，给出分离能力判定与逐阈值并排表"
+          "completed_at": "2026-09-12T01:20:00+00:00",
+          "result": "compare_interval_vs_proba：区间置信分与现行 |p−0.5|×2 放进同一条 sweep_confidence 链路，同数据/同折/同模型，逐阈值并排对照；保守口径四态判定（improved/degraded/mixed/insufficient_samples，一升一降一律 mixed 不择优）；落盘 reports/calibration/conformal_vs_proba.json；tests/test_roadmap_s16_t161.py 覆盖无前视硬校验与全部判定态"
         },
         {
           "id": "T16.3",
@@ -993,7 +806,7 @@
       "manual_checkpoint": [
         "T16.4"
       ],
-      "note": "直接回应 T15.3 遗留项：保留期只有一个 + neuralforecast 未实装。区间换算机制在 S15 已抽象就绪（confidence_from_interval），本轮只喂数据不改链路。 T16.3 提前交付（Issue #29「选择最优方案」指令）：src/eval/confidence_holdout.py + main.py confidence-holdout 提供保留期复验报告的可复现生成命令 + 多时段滚动复验。 S16 自动任务已交付：src/eval/conformal.py + calibration_ab.py（保形预测覆盖率校准 + 区间/概率距离口径对照 + 滚动复验）；main.py conformal；tests/test_roadmap_s16.py（18 passed）。 T16.4 区间口径 vs 概率距离口径取舍定稿（人工检查点，含覆盖率下限与信号量权衡）",
+      "note": "直接回应 T15.3 遗留项：保留期只有一个 + neuralforecast 未实装。区间换算机制在 S15 已抽象就绪（confidence_from_interval），本轮只喂数据不改链路。 T16.3 提前交付（Issue #29「选择最优方案」指令）。 | T16.1/T16.2 已交付（2026-09-12，Issue #29「已合并 签字继续」）：新增 src/eval/conformal_probability.py 与 `python main.py conformal-interval`（--confidence-levels/--no-compare/--holdout-ratio）；MAPIE split conformal（LAC）+ 覆盖率审计 + Brier/ECE + 区间宽度校准，落盘 reports/calibration/；区间口径 vs 概率距离口径同折对照；configs model.factors.conformal.enabled 缺省 false、affects_gate 恒 false；T16.4 人工检查点仍 pending。",
       "source": "Issue #40 高质量项目集成2 · H1（scikit-learn-contrib/MAPIE + Nixtla/neuralforecast）",
       "depends_on": [
         "S15"
@@ -1060,7 +873,7 @@
       "id": "S18",
       "name": "市场状态分层（H3：HMM 状态识别 + 状态内分层评估）",
       "status": "in_progress",
-      "started_at": "2026-09-12T00:58:49.498077+00:00",
+      "started_at": "2026-09-12T02:20:00+00:00",
       "completed_at": null,
       "scheduled_dates": "2026-10-19 ~ 2026-10-25",
       "tasks": [
@@ -1069,24 +882,24 @@
           "name": "接入 hmmlearn 做市场状态识别（牛/熊/震荡），状态标签严格只用当日及之前信息（无前视）",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-12T00:58:49.498077+00:00",
-          "result": "src/eval/regime.py：hmmlearn GaussianHMM 状态识别（分位初始化 + 状态占比/协方差退化检查 + 前向滤波无前视），不可用时如实降级规则口径并标 backend=rules"
+          "completed_at": "2026-09-12T02:20:00+00:00",
+          "result": "src/eval/regime.py：GaussianHMM(bull/range/bear) 状态识别，expanding 无前视口径（第 t 天只用 [0,t] 观测重训）+ full_sample 有前视对照口径（明确标注）；固定 3 态防选择自由度回流"
         },
         {
           "id": "T18.2",
           "name": "按状态分层评估现行三周期模型命中率，回答「模型是否只在特定状态有效」——这是 README 已知限制「按标的分层」的状态维度补充",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-12T00:58:49.498077+00:00",
-          "result": "src/eval/regime.py stratified_by_regime：按状态分层算 IC/命中率/样本数；实测熊市 62.55% vs 震荡市 48.72%（差 13.83pp）"
+          "completed_at": "2026-09-12T02:20:00+00:00",
+          "result": "按状态分层评估保留期样本：逐状态 IC/命中率/样本数 + summarize_regime_spread（uniform/differentiated/marginal/insufficient）；样本不足不发指标"
         },
         {
           "id": "T18.3",
           "name": "状态作为特征的增量验证（同口径 A/B：仅加一个变量），结论好坏如实入库",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-12T00:58:49.498077+00:00",
-          "result": "src/eval/regime.py regime_feature_increment + main.py regime：状态 one-hot 作特征的同口径单变量对照；实测 delta_ic=-0.0090、delta_hit_rate=0.0，不纳入主线"
+          "completed_at": "2026-09-12T02:20:00+00:00",
+          "result": "状态 one-hot 单变量增量 A/B：同数据同折同模型，保守四态判定（一升一降一律 mixed）"
         },
         {
           "id": "T18.4",
@@ -1104,12 +917,12 @@
       "manual_checkpoint": [
         "T18.4"
       ],
-      "note": "与 S9 分池（资产类别维度）正交：S9 解决「谁的池」，H3 解决「什么时候」。用于解释「IC 为正但命中率卡线」的时间维度成因。 | 自动可执行任务已交付（src/eval/regime.py；main.py regime；tests/test_roadmap_s18.py（16 passed））；T18.4 状态分层是否进入信号门禁 / 风控 withheld 语义（人工检查点）",
+      "note": "与 S9 分池（资产类别维度）正交：S9 解决「谁的池」，H3 解决「什么时候」。用于解释「IC 为正但命中率卡线」的时间维度成因。 | T18.1~T18.3 已交付（`python main.py regime`，hmmlearn 0.3.3）：无前视用 expanding 重训口径；单标的冒烟 10d 分层 differentiated（极差 0.38）、状态特征 A/B degraded；T18.4 人工检查点保持 pending。",
       "source": "Issue #40 高质量项目集成2 · H3（hmmlearn 市场状态识别）",
       "depends_on": [
         "S16"
       ],
-      "result": "自动任务已交付：HMM/规则 市场状态分层 + 状态增量 A/B（T18.4 待签字）"
+      "result": "s18_h3_t18_1_t18_3_delivered_t18_4_pending"
     },
     {
       "id": "S19",
@@ -1226,13 +1039,7 @@
   "current_task_index": 0,
   "last_run_date": "2026-09-12",
   "next_run_date": "2026-09-12",
-  "blockers": [
-    "S16 待人工定稿：区间口径 vs 概率距离口径取舍（T16.4）",
-    "S17 待人工决策：是否引入过拟合概率下限（T17.4）",
-    "S18 待人工决策：状态分层是否进入门禁 / 风控 withheld 语义（T18.4）",
-    "S19 待人工决策：校准层是否进主推理链路（T19.4）",
-    "S20 待人工决策：投研辅助链路是否保留（T20.4）；评估结论为无候选满足准入，默认 cancel"
-  ],
-  "result": "s16_s20_auto_tasks_delivered_manual_checkpoints_pending",
-  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。 | S16~S20 自动可执行任务已全部交付（Issue #40）：保形预测覆盖率校准 + 口径对照 + 多时段复验；CPCV 净化交叉验证 + 统一试验预算 + 历史读数回算；HMM/规则 市场状态分层；isotonic/Platt 概率校准层 + API 向后兼容字段；投研辅助只读接入评估（结论：无候选满足准入，默认 cancel）。全部阶段 affects_gate 恒 false，strategy_gate 零改动；人工检查点 T16.4/T17.4/T18.4/T19.4/T20.4 全部保持 pending，未代签。 | 上游 S16/T16.3 交付：s15_g5_t15_1_t15_2_supplementary_verified"
+  "blockers": [],
+  "result": "s15_g5_t15_1_t15_2_supplementary_verified",
+  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。 | S18(H3) 市场状态分层 T18.1~T18.3 已交付（src/eval/regime.py + python main.py regime）：HMM 三态识别走 expanding 无前视口径，状态分层评估 + 状态特征单变量 A/B 全部 report_only；T18.4 状态是否进门禁保持人工 pending。遗留人工检查点累计 8 个（含新增 T18.4）。"
 }
