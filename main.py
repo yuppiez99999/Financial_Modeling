@@ -1916,117 +1916,6 @@ def run_conformal_interval(config: dict, symbols: list[str] | None = None,
     return payload
 
 
-def run_overfit_audit(config: dict, n_this_run: int = 1,
-                      n_blocks: int = 6, k_test: int = 2,
-                      embargo: int = 5) -> dict:
-    """过拟合审计（S17 / H2，T17.2 / T17.3）：统一试验预算 + CPCV + 历史读数回算。
-
-    三件事一次做完（全部只读、不改门禁）：
-      1. **统一试验预算**（T17.2）：从 append-only 登记里读**跨命令**累计次数，
-         报告里自动标注「本次读数已扫描 N 次（历史 X + 本次 Y）」——
-         S13 的登记是逐命令的，研究者自由度**跨命令累积**的盲区在这里补上；
-      2. **CPCV 净化交叉验证**（T17.1）：组合式路径（N 组取 k 组作测试）
-         + purge/embargo（对齐 leakage_checklist），给出路径净化审计、
-         得分分布、选择偏差收缩指标（DSR 风格一阶近似，如实标注方法名）
-         与 PBO（回测过拟合概率）；
-      3. **历史读数回算**（T17.3）：对 S11~S15 已入库结论做统一 Bonferroni
-         校正后的显著性回算，如实呈现（预期多数维持否定，不修饰）。
-
-    ⚠️ **不改门禁**（`affects_gate=false`）；是否引入过拟合概率下限属 T17.4 人工检查点。
-    落盘 ``reports/overfit_audit.json``（历史回算）与 ``reports/cpcv_evaluation.json``（CPCV）。
-
-    用法：
-      python main.py overfit-audit                    # 缺省 N=6, k=2, embargo=5
-      python main.py overfit-audit --n-blocks 8 --k-test 3
-    """
-    import scripts.evaluate_models as ev
-    from src.data.preprocessor import FeatureEngineer
-    from src.eval import overfit_audit as oa
-    from src.eval.cpcv import cpcv_evaluate, cpcv_paths
-    from src.inference.ic import spearman_ic
-    from sklearn.preprocessing import StandardScaler
-
-    logger.info("过拟合审计（H2 / S17）：CPCV + 试验预算 + 历史回算")
-    symbols = _config_symbols(config)
-    data = ev.load_market_data(config, symbols)
-
-    cpcv_summary: dict = {"available": False, "reason": "无可用行情数据"}
-    if data:
-        horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
-        days = next((int(v.get("days", 5)) for v in horizons_cfg.values()
-                     if isinstance(v, dict)), 5)
-        combined = ev.build_supervised(data, config, int(days))
-        if combined.empty:
-            cpcv_summary = {"available": False, "reason": "no_supervised_data"}
-        else:
-            fe = FeatureEngineer(config)
-            cols = [c for c in fe.get_feature_columns(combined, int(days))
-                    if not str(c).startswith("_")]
-            X = combined[cols].to_numpy(dtype=float)
-            y = combined[f"target_{int(days)}d"].to_numpy(dtype=int)
-            fwd = combined["_fwd_ret"].to_numpy(dtype=float)
-            paths = cpcv_paths(len(X), n_blocks=n_blocks, k_test=k_test,
-                               horizon_days=int(days), embargo=embargo)
-            if not paths:
-                cpcv_summary = {"available": False,
-                                "reason": f"CPCV 路径不足（样本 {len(X)}）"}
-            else:
-                scores: list[float] = []
-                try:
-                    import lightgbm as lgb
-
-                    from src.eval.hyperopt_tuner import current_lightgbm_params
-                    base_params = current_lightgbm_params(config)
-                    params = {k: (int(v) if k in ("num_leaves", "max_depth", "n_estimators")
-                                  else float(v)) for k, v in base_params.items()}
-                    for p in paths:
-                        scaler = StandardScaler()
-                        X_tr = scaler.fit_transform(X[p["train_idx"]])
-                        X_te = scaler.transform(X[p["test_idx"]])
-                        clf = lgb.LGBMClassifier(objective="binary", verbose=-1,
-                                                random_state=42, **params)
-                        clf.fit(X_tr, y[p["train_idx"]])
-                        scores.append(spearman_ic(clf.predict_proba(X_te)[:, 1],
-                                                  fwd[p["test_idx"]]))
-                except Exception as e:  # noqa: BLE001 - 无 lightgbm 时如实降级为仅路径审计
-                    logger.warning(f"[overfit-audit] CPCV 打分失败（降级为仅路径审计）: {e}")
-                budget = oa.effective_trial_budget(config)
-                n_trials = max(1, int(budget.get("count", 1))) if budget.get("available") else 1
-                cpcv_report = cpcv_evaluate(
-                    [s for s in scores if s is not None],
-                    n_samples=len(X), n_blocks=n_blocks, k_test=k_test,
-                    horizon_days=int(days), embargo=embargo, n_trials=n_trials)
-                cpcv_summary = {
-                    "available": bool(cpcv_report.get("available")),
-                    "horizon_days": int(days),
-                    "n_paths": cpcv_report.get("n_paths"),
-                    "purge_audit_ok": (cpcv_report.get("purge_audit") or {}).get("ok"),
-                    "score_mean": cpcv_report.get("score_mean"),
-                    "shrinkage": cpcv_report.get("shrinkage"),
-                    "pbo": cpcv_report.get("pbo"),
-                }
-                out_dir = Path("reports")
-                out_dir.mkdir(exist_ok=True)
-                (out_dir / "cpcv_evaluation.json").write_text(
-                    json.dumps(cpcv_report, ensure_ascii=False, indent=2),
-                    encoding="utf-8")
-
-    report = oa.build_report(config, n_this_run=n_this_run, cpcv_summary=cpcv_summary)
-    path = oa.save(report)
-
-    _record_trial(config, "overfit-audit", {
-        "n_trials_effective": report["selection_freedom"].get("n_trials_effective"),
-        "cpcv_paths": cpcv_summary.get("n_paths"),
-        "pbo": (cpcv_summary.get("pbo") or {}).get("pbo"),
-    })
-
-    print(json.dumps({
-        "selection_freedom": report["selection_freedom"],
-        "cpcv": cpcv_summary,
-        "summary": report["summary"],
-    }, ensure_ascii=False, indent=2))
-    print(f"\n过拟合审计报告已保存: {path}")
-    return report
 def run_regime(config: dict, symbols: list[str] | None = None,
                horizons: list[int] | None = None,
                refit_every: int | None = None,
@@ -3847,11 +3736,6 @@ def main():
             confidence_levels=_lv,
             holdout_ratio=float(getattr(args, "holdout_ratio", 0.3) or 0.3),
             compare=not bool(getattr(args, "no_compare", False)))
-    elif args.command == "overfit-audit":
-        run_overfit_audit(config,
-                          n_blocks=int(getattr(args, "n_blocks", 6) or 6),
-                          k_test=int(getattr(args, "k_test", 2) or 2),
-                          embargo=int(getattr(args, "embargo", 5) or 5))
     elif args.command == "regime":
         _h = None
         _raw_h = getattr(args, "trials_horizons", None)

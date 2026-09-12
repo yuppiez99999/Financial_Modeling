@@ -43,6 +43,53 @@ except ImportError:  # pragma: no cover - 取决于运行环境
 
 logger = logging.getLogger(__name__)
 
+
+# 默认允许的跨域来源（本地开发）。生产通过 api.cors_origins 显式配置。
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost", "http://localhost:3000", "http://localhost:8000",
+    "http://127.0.0.1", "http://127.0.0.1:3000", "http://127.0.0.1:8000",
+]
+
+
+def _cors_settings() -> tuple[list[str], bool]:
+    """解析 CORS 配置。
+
+    真实缺陷（安全）：原实现硬编码 ``allow_origins=["*"]``。该 API 提供
+    ``/api/v1/predict``、``/api/v1/strategy/gate`` 等**无鉴权**的读写端点，
+    配合通配来源，任意网页都能静默读取本机服务返回的持仓/信号数据。
+    这里改为**默认白名单**，需要放开时用 ``api.cors_origins`` 显式声明；
+    显式通配 ``["*"]`` 仍允许（保持向后兼容），但会记 WARNING 留痕，
+    且按规范**不使用** ``allow_credentials``（通配来源 + 携带凭证是被浏览器
+    拒绝、且属于危险组合的配置）。
+    """
+    origins = (_config or {}).get("api", {}).get("cors_origins")
+    if not origins:
+        return list(DEFAULT_CORS_ORIGINS), False
+    if isinstance(origins, str):
+        origins = [origins]
+    origins = [str(o) for o in origins]
+    if "*" in origins:
+        logger.warning(
+            "[api] CORS allow_origins 配置为通配 '*'，任意站点均可读取本服务响应"
+            "（api.cors_origins）：生产环境请改为显式来源白名单"
+        )
+        return ["*"], False
+    return origins, False
+
+
+def _internal_error(message: str, exc: Exception) -> Exception:
+    """构造对外可读、对内可诊断的 500 错误（**不回显内部异常文本**）。
+
+    真实缺陷：原实现一律 ``HTTPException(500, f"...: {e}")``。异常文本里
+    可能含**绝对路径、模型/配置内容、上游数据源返回体**（乃至凭据片段），
+    等于把内部实现细节交给任意调用方。这里改为：对外只回一句稳定文案 +
+    由 ``logger.exception`` 把完整堆栈写进服务端日志，两者用同一句
+    message 关联，排障不受影响。
+    """
+    logger.exception("[api] %s: %s", message, exc)
+    return HTTPException(500, message)
+
+
 # 全局引擎实例（线程安全初始化）
 _engine = None
 _config = None
@@ -115,11 +162,13 @@ def create_app(config_path: str | None = None):
         version="2.0.0",
         lifespan=lifespan,
     )
+    _cors_origins, _cors_credentials = _cors_settings()
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
+        allow_credentials=_cors_credentials,
     )
     # 复用同一组路由定义（装饰器注册在模块级 app 上，这里整体挂载）
     application.router.routes = list(app.router.routes)
@@ -134,11 +183,13 @@ if _HAS_FASTAPI:
         lifespan=lifespan,
     )
 
+    _cors_origins, _cors_credentials = _cors_settings()
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
+        allow_credentials=_cors_credentials,
     )
 else:  # pragma: no cover - 未安装 FastAPI 的降级分支
     app = None
@@ -217,7 +268,7 @@ async def predict_symbol(
 
         return result
     except Exception as e:
-        raise HTTPException(500, f"预测失败: {e}")
+        raise _internal_error("预测失败", e)
 
 
 @app.post("/api/v1/predict/batch")
@@ -296,7 +347,7 @@ async def get_monitor_report():
 
         return ModelMonitor(_config or {}).collect().to_dict()
     except Exception as e:
-        raise HTTPException(500, f"监控报表生成失败: {e}")
+        raise _internal_error("监控报表生成失败", e)
 
 
 # ==================== Q5 路线：信号衰减监控 ====================
@@ -319,7 +370,7 @@ async def get_ic_trend():
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(500, f"IC 趋势报告读取失败: {e}")
+        raise _internal_error("IC 趋势报告读取失败", e)
     payload["available"] = True
     payload["source"] = str(path)
     return payload
@@ -339,7 +390,7 @@ async def get_pool_gate():
     try:
         return StratifiedEvaluator(_config or {}).load()
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(500, f"分池门禁报告读取失败: {e}")
+        raise _internal_error("分池门禁报告读取失败", e)
 
 
 @app.get("/api/v1/strategy/pool-train")
@@ -353,7 +404,7 @@ async def get_pool_train():
     try:
         manifest = StratifiedTrainer(_config or {}).load_manifest()
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(500, f"分池模型清单读取失败: {e}")
+        raise _internal_error("分池模型清单读取失败", e)
     if manifest.get("available"):
         manifest["rows"] = summarize_manifest(manifest)
     return manifest
@@ -375,7 +426,7 @@ async def get_horizon_scan():
         scanner = HorizonScanner(_config or {})
         payload = scanner.load()
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(500, f"多周期扫描报告读取失败: {e}")
+        raise _internal_error("多周期扫描报告读取失败", e)
     if payload.get("available"):
         payload["rows"] = scanner.summarize_rows(payload)
         payload["vs_current"] = compare_with_current(payload)
@@ -400,7 +451,7 @@ async def get_horizon_decision():
 
         record = hd.load(_config or {})
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(500, f"周期切换决策单读取失败: {e}")
+        raise _internal_error("周期切换决策单读取失败", e)
     if not record:
         return {
             "available": False,
@@ -427,7 +478,7 @@ async def get_feature_experiment():
 
         payload = load(_config or {})
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(500, f"特征扩充实验报告读取失败: {e}")
+        raise _internal_error("特征扩充实验报告读取失败", e)
     if not payload:
         return {
             "available": False,
@@ -492,7 +543,7 @@ async def get_factors(symbol: str):
         }
         return {"symbol": symbol, "weighter": combiner.weighter, "horizons": horizons_out}
     except Exception as e:
-        raise HTTPException(500, f"多因子组合失败: {e}")
+        raise _internal_error("多因子组合失败", e)
 
 
 @app.get("/api/v1/factor-model")
@@ -524,7 +575,7 @@ async def get_factor_model():
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, f"多因子模型查询失败: {e}")
+        raise _internal_error("多因子模型查询失败", e)
 
 
 @app.get("/api/v1/config/markets")
@@ -563,7 +614,7 @@ async def get_signal(symbol: str):
         }
         return {"symbol": symbol, "signal": sig.to_dict(), "calibration": cal}
     except Exception as e:
-        raise HTTPException(500, f"信号生成失败: {e}")
+        raise _internal_error("信号生成失败", e)
 
 
 @app.get("/api/v1/trade/{symbol}")
@@ -578,7 +629,7 @@ async def get_trade(symbol: str):
         adapter = TradingAdapter(_config, predictor=_engine)
         return adapter.process_symbol(symbol)
     except Exception as e:
-        raise HTTPException(500, f"交易适配失败: {e}")
+        raise _internal_error("交易适配失败", e)
 
 
 def build_portfolio_summary(engine: Any, config: dict, symbol_list: list[str]) -> dict[str, Any]:
@@ -650,7 +701,7 @@ async def get_stream_status():
 
         return ModelMonitor(_config)._collect_streaming()
     except Exception as e:
-        raise HTTPException(500, f"实时流状态获取失败: {e}")
+        raise _internal_error("实时流状态获取失败", e)
 
 
 @app.get("/api/v1/stream/{symbol}")
@@ -673,7 +724,7 @@ async def get_stream_signal(symbol: str):
         snapshot = predictor.quote_client.fetch_quotes([symbol]).get(symbol)
         return predictor.build(symbol, daily_df, snapshot).to_dict()
     except Exception as e:
-        raise HTTPException(500, f"盘中信号生成失败: {e}")
+        raise _internal_error("盘中信号生成失败", e)
 
 
 @app.get("/api/v1/consistency/{symbol}")
@@ -705,7 +756,7 @@ async def get_consistency(symbol: str):
             factor_score=factor_score,
         ).to_dict()
     except Exception as e:
-        raise HTTPException(500, f"一致性校验失败: {e}")
+        raise _internal_error("一致性校验失败", e)
 
 
 # ==================== Q4 智能风控建议接口 ====================
@@ -746,7 +797,7 @@ async def get_risk_advice(symbol: str):
             plan.suggested_qty = budget.suggested_qty
         return plan.to_dict()
     except Exception as e:
-        raise HTTPException(500, f"风控建议生成失败: {e}")
+        raise _internal_error("风控建议生成失败", e)
 
 
 @app.get("/api/v1/risk/advice")
@@ -788,7 +839,7 @@ async def get_risk_advice_batch(
             })
         return advisor.advise_portfolio(items)
     except Exception as e:
-        raise HTTPException(500, f"风控建议批量生成失败: {e}")
+        raise _internal_error("风控建议批量生成失败", e)
 
 
 @app.get("/api/v1/portfolio/summary")

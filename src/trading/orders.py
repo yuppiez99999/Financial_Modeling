@@ -9,7 +9,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # 仅类型检查期导入：避免与风险模块形成运行期循环依赖
+    from src.trading.risk import RiskBudget
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +70,12 @@ class OrderGenerator:
             return []
 
         orders: list[Order] = []
-        # 主单
-        price = budget.take_price  # 不适用；主单价格取决于订单类型与外部行情，这里填 None 由执行端决定
-        price = None
+        # 主单价格：取决于订单类型与外部行情，这里恒为 None 由执行端决定。
+        # （原先有一行 `price = budget.take_price` 被下一行立刻覆盖，是死代码，
+        #   且把止盈价误当主单价读入 —— 语义错误，一并移除。）
+        price: float | None = None
         if self.order_type == LIMIT:
-            # 限价单：需要用户提供期望价格；未提供时回退为市价
+            # 限价单：需要调用方提供期望价格；本方法无该入参，由执行端补齐
             price = None
         main = Order(
             symbol=budget.symbol,

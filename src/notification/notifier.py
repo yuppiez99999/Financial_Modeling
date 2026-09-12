@@ -40,9 +40,28 @@ class SignalNotifier:
         if isinstance(self.email_to, str):
             self.email_to = [self.email_to]
 
+        # TLS 口径（安全修复）：默认**保持证书与主机名校验**。
+        #
+        # 原实现无条件执行 `check_hostname = False` + `verify_mode = CERT_NONE`，
+        # 等于对**所有** webhook 与 SMTP 连接关闭 TLS 校验——中间人可解密、
+        # 篡改推送内容（预测信号、账户与邮件配置）而不被发现，且失败时
+        # 与正常推送**不可区分**。这是一处默认不安全的配置，不是"可选降级"。
+        #
+        # 若确有自签名内网端点，通过配置显式放行：
+        #   notification.insecure_skip_tls_verify: true
+        # 显式开关必须留痕（WARNING 日志），沉默降级才是真风险。
+        self.insecure_skip_tls_verify = bool(
+            notify_cfg.get("insecure_skip_tls_verify", False)
+        )
         self._ssl_ctx = ssl.create_default_context()
-        self._ssl_ctx.check_hostname = False
-        self._ssl_ctx.verify_mode = ssl.CERT_NONE
+        if self.insecure_skip_tls_verify:
+            logger.warning(
+                "[notify] 已按配置关闭 TLS 证书校验"
+                "（notification.insecure_skip_tls_verify=true）："
+                "webhook/SMTP 连接存在中间人风险，仅限可信内网自签名端点使用"
+            )
+            self._ssl_ctx.check_hostname = False
+            self._ssl_ctx.verify_mode = ssl.CERT_NONE
 
     def notify(self, predictions: list[dict[str, Any]]) -> dict[str, bool]:
         """推送预测信号，返回各渠道发送结果"""
