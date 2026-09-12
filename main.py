@@ -1743,6 +1743,432 @@ def run_confidence_gate(config: dict, decided_by: str = "",
 
 
 
+def run_conformal_interval(config: dict, symbols: list[str] | None = None,
+                           horizons: list[int] | None = None,
+                           confidence_levels: list[float] | None = None,
+                           holdout_ratio: float = 0.3,
+                           compare: bool = True) -> dict:
+    """保形预测区间（S16 / T16.1 + T16.2）：给概率配上覆盖率保证的区间，
+    并与现行 |p−0.5|×2 口径做同数据同折对照。
+
+    为什么需要（T15.3 遗留，Issue #40 H1）：
+      现行置信度建立在**未校准**的概率上（无 Brier/ECE、无覆盖承诺），
+      而 S15 把 `confidence_from_interval`（区间宽度 → 置信分）抽象就绪后
+      **一直没喂过真实区间** —— 本命令补的正是这一步。
+
+    本命令做的事：
+      1. T16.1 三段切分（缺省 60%/10%/30%）→ LightGBM 拟合 →
+         MAPIE split conformal（LAC，单周期二分类唯一严格有效的保形分数）
+         → 逐覆盖率档的预测集合 → [0,1] 区间 → 置信分；
+      2. 覆盖率审计（目标 vs 实测 + bootstrap 95% CI）、可靠性曲线
+         （Brier/ECE，含 isotonic 参考臂）、区间宽度校准；
+      3. T16.2 把区间置信分与 `|p−0.5|×2` 放进**同一条**阈值链路并排对照，
+         保守口径判定（IC 与命中率同向变好才算改善迹象）；
+      4. 落盘 `reports/calibration/conformal_interval.json`（区间报告，与 T16.3
+         的置信度曲线报告**同折同保留期**，可交叉引用）、
+         `reports/calibration/conformal_vs_proba.json`（对照报告）。
+
+    ⚠️ **不改门禁**（`affects_gate=false`）；`model.conformal.enabled` 缺省
+    false —— 区间口径**不进生产特征/信号链路**；口径取舍属 T16.4 人工检查点。
+
+    用法：
+      python main.py conformal-interval                    # 区间 + 对照（默认）
+      python main.py conformal-interval --confidence-levels 0.8,0.9
+      python main.py conformal-interval --no-compare       # 只出区间报告
+    """
+    import scripts.evaluate_models as ev
+    from src.data.preprocessor import FeatureEngineer
+    from src.eval import conformal_probability as cp
+
+    logger.info("保形预测区间 + 概率口径对照（T16.1 / T16.2）")
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    if not cp.mapie_available():
+        payload = {"error": "未安装 mapie（可选依赖）：pip install mapie",
+                   "hint": "保形预测区间需要 MAPIE，缺省不静默降级",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    cfg_cc = (((config.get("model", {}) or {}).get("factors", {}) or {})
+              .get("conformal", {}) or {})
+    levels = confidence_levels or [float(x) for x in
+                                   (cfg_cc.get("confidence_levels")
+                                    or cp.DEFAULT_CONFIDENCE_LEVELS)]
+    if not holdout_ratio or holdout_ratio == 0.3:
+        holdout_ratio = float(cfg_cc.get("holdout_ratio", holdout_ratio) or holdout_ratio)
+    horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+    horizon_map = horizons or [int(v.get("days", 5)) for v in horizons_cfg.values()
+                               if isinstance(v, dict)]
+    if not horizon_map:
+        horizon_map = [5, 10, 20]
+
+    import lightgbm as lgb
+    from sklearn.preprocessing import StandardScaler
+
+    interval_horizons: dict = {}
+    compare_horizons: dict = {}
+    for days in horizon_map:
+        combined = ev.build_supervised(data, config, int(days))
+        if combined.empty:
+            interval_horizons[f"{days}d"] = {"available": False,
+                                             "reason": "no_supervised_data"}
+            continue
+        fe = FeatureEngineer(config)
+        cols = [c for c in fe.get_feature_columns(combined, int(days))
+                if not str(c).startswith("_")]
+        n = len(combined)
+        split = cp.three_way_split(n, holdout_ratio)
+        if not split.available:
+            interval_horizons[f"{days}d"] = {
+                "available": False,
+                "reason": split.meta.get("reason", "split_unavailable"),
+                "split": split.as_dict()}
+            continue
+
+        fitted = cp.train_and_conformal(
+            combined, cols, f"target_{int(days)}d", split, config=config,
+            confidence_levels=levels, lgb_module=lgb, scaler_cls=StandardScaler)
+        y_true = fitted["y_true"]
+        proba = fitted["proba"]
+        ret = fitted["returns"]
+
+        entry: dict = {"available": True, "split": split.as_dict(),
+                       "holdout_samples": int(len(split.holdout)),
+                       "levels": {}}
+        conf_by_level: dict = {}
+        for lv, sets in fitted["sets"].items():
+            conf = cp.interval_confidence(sets)
+            conf_by_level[float(lv)] = conf
+            cov = cp.coverage_report(y_true, sets, lv)
+            widths = (cp.interval_from_prediction_sets(sets)[1]
+                      - cp.interval_from_prediction_sets(sets)[0])
+            entry["levels"][f"{lv:g}"] = {
+                "coverage": cov,
+                "confidence_mean": round(float(np.mean(conf)), 6),
+                "confidence_max": round(float(np.max(conf)), 6),
+                "confidence_distinct": int(len(np.unique(np.round(conf, 6)))),
+                "width_confident_mean": round(float(np.mean(widths)), 6),
+            }
+            if cov.get("available"):
+                print(f"[conformal] {days}d 覆盖率档 {lv:g}: 实测 "
+                      f"{cov['empirical_coverage']:.4f}（目标 {lv:g}，{cov['verdict']}）"
+                      f" 平均集合大小 {cov['set_size_mean']}")
+
+        entry["reliability"] = cp.reliability_curve(proba, y_true)
+        entry["reliability_isotonic_reference"] = cp.reliability_curve(
+            proba, y_true, isotonic=True)
+        main_level = float(levels[0])
+        lo, hi = cp.interval_from_prediction_sets(fitted["sets"][main_level])
+        entry["width_calibration"] = cp.coverage_width_curve(
+            np.abs(proba - y_true), hi - lo)
+        interval_horizons[f"{days}d"] = entry
+
+        if compare:
+            cmp_res = cp.compare_interval_vs_proba(
+                proba, ret, conf_by_level[main_level],
+                grid=(0.0, 0.1, 0.2, 0.3, 0.4, 0.5))
+            cmp_res["compared_level"] = main_level
+            cmp_res["holdout_samples"] = int(len(split.holdout))
+            compare_horizons[f"{days}d"] = cmp_res
+            print(f"[conformal] {days}d 对照（覆盖率档 {main_level:g}）: "
+                  f"{cmp_res['verdict']}（可用阈值行 {cmp_res['usable_thresholds']}）")
+
+    meta = {"symbols": len(data), "holdout_ratio": float(holdout_ratio),
+            "confidence_levels": [float(x) for x in levels],
+            "command": "conformal-interval"}
+    out_dir = cp.calibration_dir(config)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    interval_path = cp.interval_report_path(config)
+    interval_path.write_text(
+        json.dumps(cp.build_interval_report(interval_horizons, meta=meta),
+                   ensure_ascii=False, indent=2), encoding="utf-8")
+    payload: dict = {"interval_report": str(interval_path),
+                     "horizons": list(interval_horizons.keys()),
+                     "affects_gate": False}
+    if compare and compare_horizons:
+        cmp_meta = dict(meta)
+        cmp_meta["compared_level"] = float(levels[0])
+        cmp_meta["verdicts"] = {h: v.get("verdict") for h, v in compare_horizons.items()}
+        cmp_path = cp.comparison_report_path(config)
+        cmp_path.write_text(
+            json.dumps(cp.build_comparison_report(compare_horizons, meta=cmp_meta),
+                       ensure_ascii=False, indent=2), encoding="utf-8")
+        payload["comparison_report"] = str(cmp_path)
+        payload["verdicts"] = cmp_meta["verdicts"]
+
+    _record_trial(config, "conformal-interval", {
+        "symbols": len(data), "horizons": list(interval_horizons.keys()),
+        "confidence_levels": [float(x) for x in levels],
+        "holdout_ratio": float(holdout_ratio),
+    })
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    print(f"\n区间报告已保存: {interval_path}")
+    if payload.get("comparison_report"):
+        print(f"对照报告已保存: {payload['comparison_report']}")
+    print("注意: 区间口径是否纳入生产属 T16.4 人工检查点，本命令不自动落地（affects_gate=false）")
+    return payload
+
+
+def run_regime(config: dict, symbols: list[str] | None = None,
+               horizons: list[int] | None = None,
+               refit_every: int | None = None,
+               compare_full_sample: bool = True,
+               ab: bool = True) -> dict:
+    """市场状态分层（S18 / H3，T18.1 + T18.2 + T18.3）：HMM 状态识别 → 状态内分层评估。
+
+    为什么需要（S15 / S17 遗留，Issue #29 / #40 的 H3 定义）：
+      S15 收敛重跑后三周期 IC 为正、OOT 命中率却全部 < 52%；S17 的 CPCV
+      收缩指标显示「选择偏差没吃掉全部 IC」。两轮指向同一句：**IC 为正但
+      命中率卡线**。S9 已从资产维度分池回答「谁的池」，本命令补的是
+      **时间维度**：「什么时候」。
+
+    本命令做的事：
+      1. T18.1 逐周期构建市场层观测（日收益 + 20 日滚动波动，只用历史）→
+         GaussianHMM（固定 3 态）→ `bull/range/bear` 标签。
+         **缺省 expanding 口径**：第 t 天只用 [0, t] 观测重训（严格无前视）；
+         `--full-sample` 另出**有前视**的全样本口径作差异对照（明确标注）；
+      2. T18.2 用保留期（后 30%，与 T16.3/T16.1 同段）样本按状态分组，
+         逐状态给 IC / 命中率 / 样本数，并压一句「状态是否真的分得开」；
+      3. T18.3 同数据 / 同折 / 同模型、**只加状态 one-hot 一个变量**的 A/B，
+         保守口径判定（IC 与命中率同向变好才算改善迹象）；
+      4. 落盘 `reports/regime/regime_stratification.json` 与
+         `reports/regime/regime_feature_ab.json`。
+
+    ⚠️ **不改门禁**（`affects_gate=false`）；`model.regime.enabled` 缺省 false
+    —— 状态**不进生产特征/信号链路**；状态是否进门禁 / 风控 withheld 语义
+    属 T18.4 人工检查点。
+
+    用法：
+      python main.py regime                       # expanding 无前视 + 分层 + A/B
+      python main.py regime --refit-every 10      # 更频繁重训（更贴无前视，更慢）
+      python main.py regime --no-ab               # 只做状态分层，不做特征 A/B
+      python main.py regime --no-full-sample      # 不出有前视的对照口径
+    """
+    import scripts.evaluate_models as ev
+    from src.data.preprocessor import FeatureEngineer
+    from src.eval import regime as rg
+
+    logger.info("市场状态分层（H3 / S18）：HMM 状态识别 + 状态内分层评估")
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    if not rg.hmmlearn_available():
+        payload = {"error": "未安装 hmmlearn（可选依赖）：pip install hmmlearn",
+                   "hint": "市场状态识别需要 hmmlearn，缺省不静默降级为规则口径",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    cfg_rg = (((config.get("model", {}) or {}).get("factors", {}) or {})
+              .get("regime", {}) or {})
+    refit = int(refit_every if refit_every is not None
+                else cfg_rg.get("refit_every", rg.DEFAULT_REFIT_EVERY) or rg.DEFAULT_REFIT_EVERY)
+    window = int(cfg_rg.get("window", rg.DEFAULT_WINDOW) or rg.DEFAULT_WINDOW)
+    holdout_ratio = float(cfg_rg.get("holdout_ratio", 0.3) or 0.3)
+
+    horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+    horizon_map = horizons or [int(v.get("days", 5)) for v in horizons_cfg.values()
+                               if isinstance(v, dict)]
+    if not horizon_map:
+        horizon_map = [5, 10, 20]
+
+    import lightgbm as lgb
+    from sklearn.preprocessing import StandardScaler
+
+    strat_horizons: dict = {}
+    ab_horizons: dict = {}
+
+    # ---- 市场层状态：由**组合等权市场收益**拟合（一次），供各周期共用 ----
+    market_series = _build_market_series(data)
+    obs = rg.build_observations(market_series["close"], window=window)
+    market_meta: dict = {"symbols_used": int(market_series["n_symbols"]),
+                         "window": int(window),
+                         "observations": int(len(obs["X"])),
+                         "observations_valid": int(np.sum(obs["valid"]))}
+    if obs.get("reason"):
+        market_meta["reason"] = obs["reason"]
+
+    reg = rg.regime_labels(obs["X"], obs["valid"], refit_every=refit)
+    market_meta["regime"] = dict(reg["meta"], mode="expanding")
+    regime_dates = market_series["dates"]
+    labels_by_date = {d: lab for d, lab in zip(regime_dates, reg["labels"])}
+    if compare_full_sample:
+        full = rg.regime_labels_full_sample(obs["X"], obs["valid"])
+        market_meta["regime_full_sample_reference"] = dict(full["meta"])
+        fs_labels = {d: lab for d, lab in zip(regime_dates, full["labels"])}
+    else:
+        fs_labels = {}
+
+    print(f"[regime] 市场层观测 {market_meta['observations_valid']}/"
+          f"{market_meta['observations']} 有效；expanding 重训 "
+          f"{market_meta['regime'].get('refits')} 次；状态可用="
+          f"{market_meta['regime'].get('available')}")
+
+    for days in horizon_map:
+        combined = ev.build_supervised(data, config, int(days))
+        if combined.empty:
+            strat_horizons[f"{days}d"] = {"available": False,
+                                          "reason": "no_supervised_data"}
+            continue
+        fe = FeatureEngineer(config)
+        cols = [c for c in fe.get_feature_columns(combined, int(days))
+                if not str(c).startswith("_")]
+        n = len(combined)
+        train_idx = np.arange(0, max(int(n * (1.0 - holdout_ratio)), 1))
+        hold_idx = np.arange(len(train_idx), n)
+        if len(hold_idx) < rg.MIN_STATE_SAMPLES:
+            strat_horizons[f"{days}d"] = {"available": False,
+                                          "reason": "holdout_too_small"}
+            continue
+
+        X = combined[cols].to_numpy(dtype=float)
+        y = combined[f"target_{int(days)}d"].to_numpy(dtype=int)
+        fwd = combined["_fwd_ret"].to_numpy(dtype=float)
+        dates = pd.to_datetime(combined["date"], errors="coerce")
+
+        scaler = StandardScaler()
+        X_tr = scaler.fit_transform(X[train_idx])
+        X_ho = scaler.transform(X[hold_idx])
+        clf = lgb.LGBMClassifier(objective="binary", verbose=-1, random_state=42)
+        clf.fit(X_tr, y[train_idx])
+        proba = clf.predict_proba(X_ho)[:, 1]
+
+        base_ic = _ic(proba, fwd[hold_idx])
+        base_hit = float(np.mean(np.sign(np.nan_to_num(proba, nan=0.5) - 0.5)
+                                 == np.sign(np.nan_to_num(fwd[hold_idx], nan=0.0))))
+
+        # ---- T18.2 状态分层（保留期，与 T16.3/T16.1 同段）----
+        hold_labels = [labels_by_date.get(d) for d in dates.iloc[hold_idx]]
+        strat = rg.stratified_by_regime(hold_labels, proba, fwd[hold_idx],
+                                        y_true=y[hold_idx])
+        strat["summary"] = rg.summarize_regime_spread(strat)
+        strat["holdout_samples"] = int(len(hold_idx))
+        strat["lookahead_policy"] = "expanding"
+        if fs_labels:
+            fs_labels_hold = [fs_labels.get(d) for d in dates.iloc[hold_idx]]
+            strat["full_sample_reference"] = {
+                "note": "有前视口径，仅作差异对照，不得作达标证据",
+                "summary": rg.summarize_regime_spread(
+                    rg.stratified_by_regime(fs_labels_hold, proba, fwd[hold_idx],
+                                            y_true=y[hold_idx]))}
+        strat["baseline"] = {"ic": round(base_ic, 6), "hit_rate": round(base_hit, 6)}
+        strat_horizons[f"{days}d"] = strat
+        print(f"[regime] {days}d 分层: {strat['summary']['verdict']}"
+              f"（可用状态 {strat['usable_states']}，极差 "
+              f"{strat['summary']['spread']}）")
+
+        # ---- T18.3 状态 one-hot 增量 A/B（只加一个变量）----
+        if ab:
+            feats = rg.regime_features([labels_by_date.get(d)
+                                        for d in dates])
+            Xa = np.hstack([X, feats])
+            scaler_a = StandardScaler()
+            Xa_tr = scaler_a.fit_transform(Xa[train_idx])
+            Xa_ho = scaler_a.transform(Xa[hold_idx])
+            clf_a = lgb.LGBMClassifier(objective="binary", verbose=-1, random_state=42)
+            clf_a.fit(Xa_tr, y[train_idx])
+            proba_a = clf_a.predict_proba(Xa_ho)[:, 1]
+            aug_ic = _ic(proba_a, fwd[hold_idx])
+            aug_hit = float(np.mean(np.sign(np.nan_to_num(proba_a, nan=0.5) - 0.5)
+                                    == np.sign(np.nan_to_num(fwd[hold_idx], nan=0.0))))
+            cmp_res = rg.compare_regime_feature(
+                base_ic, base_hit, aug_ic, aug_hit,
+                min_samples_ok=len(hold_idx) >= rg.MIN_STATE_SAMPLES)
+            cmp_res["holdout_samples"] = int(len(hold_idx))
+            cmp_res["added_features"] = rg.regime_feature_columns()
+            ab_horizons[f"{days}d"] = cmp_res
+            print(f"[regime] {days}d 状态特征 A/B: {cmp_res['verdict']}"
+                  f"（ΔIC={cmp_res['delta_ic']}，Δhit={cmp_res['delta_hit']}）")
+
+    meta = {"symbols": len(data), "holdout_ratio": float(holdout_ratio),
+            "refit_every": int(refit), "command": "regime",
+            "market_layer": market_meta,
+            "hmmlearn_version": rg.hmmlearn_version()}
+    out_dir = rg.regime_dir(config)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    strat_path = rg.regime_report_path(config)
+    strat_path.write_text(
+        json.dumps(rg.build_regime_report(strat_horizons, meta=meta),
+                   ensure_ascii=False, indent=2), encoding="utf-8")
+    payload: dict = {"regime_report": str(strat_path),
+                     "horizons": list(strat_horizons.keys()),
+                     "stratified_verdicts": {h: (v.get("summary") or {}).get("verdict")
+                                             for h, v in strat_horizons.items()
+                                             if isinstance(v, dict)},
+                     "affects_gate": False}
+    if ab and ab_horizons:
+        ab_path = rg.ab_report_path(config)
+        ab_path.write_text(
+            json.dumps(rg.build_ab_report(ab_horizons, meta=meta),
+                       ensure_ascii=False, indent=2), encoding="utf-8")
+        payload["ab_report"] = str(ab_path)
+        payload["ab_verdicts"] = {h: v.get("verdict") for h, v in ab_horizons.items()}
+
+    _record_trial(config, "regime", {
+        "symbols": len(data), "horizons": list(strat_horizons.keys()),
+        "refit_every": int(refit),
+        "stratified_verdicts": payload["stratified_verdicts"],
+        "ab_verdicts": payload.get("ab_verdicts"),
+    })
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    print(f"\n状态分层报告已保存: {strat_path}")
+    if payload.get("ab_report"):
+        print(f"状态特征 A/B 报告已保存: {payload['ab_report']}")
+    print("注意: 状态是否进门禁/风控属 T18.4 人工检查点，本命令不自动落地（affects_gate=false）")
+    return payload
+
+
+def _build_market_series(data: dict) -> dict:
+    """把多标的行情压成一条**等权市场层**价格序列（状态识别的观测源）。
+
+    做法：逐标的取日收益 → 按日期对齐后**等权平均** → 累乘回价格。
+    只依赖当日及之前的价格（无前视）；收益缺失的标的当日按可用标的均值。
+    """
+    import pandas as pd
+
+    frames = []
+    for sym, df in data.items():
+        if df is None or len(df) < 2 or "close" not in df.columns:
+            continue
+        s = df[["date", "close"]].copy()
+        s["date"] = pd.to_datetime(s["date"], errors="coerce")
+        s = s.dropna(subset=["date"]).sort_values("date")
+        s["ret"] = s["close"].astype(float).pct_change()
+        frames.append(s[["date", "ret"]].rename(columns={"ret": sym}))
+    if not frames:
+        return {"close": np.array([0.0, 1.0]), "dates": [], "n_symbols": 0}
+    mkt = frames[0]
+    for f in frames[1:]:
+        mkt = mkt.merge(f, on="date", how="outer")
+    mkt = mkt.sort_values("date").reset_index(drop=True)
+    ret_cols = [c for c in mkt.columns if c != "date"]
+    mean_ret = mkt[ret_cols].mean(axis=1, skipna=True).fillna(0.0).to_numpy(dtype=float)
+    close = np.cumprod(1.0 + mean_ret)
+    return {"close": close, "dates": list(mkt["date"]), "n_symbols": len(ret_cols)}
+
+
+def _ic(proba: np.ndarray, fwd_ret: np.ndarray) -> float:
+    """IC 简写（与评估口径同源，失败返回 0.0）。"""
+    from src.inference.ic import spearman_ic
+
+    try:
+        return float(spearman_ic(proba, fwd_ret))
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
 def run_confidence_holdout(config: dict, symbols: list[str] | None = None,
                            horizons: list[int] | None = None,
                            train_ratio: float = 0.7, n_periods: int = 3,
@@ -2241,6 +2667,8 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py confidence               # 置信度阈值曲线（高置信样本命中率，S15/G5）
   python main.py confidence-gate          # 置信度子集门禁决策单（双指标，须人工签字，S15/G5）
   python main.py confidence-holdout      # 置信度保留期复验 + 多时段滚动（T16.3，决策单证据源）
+  python main.py conformal-interval      # 保形预测区间 + 概率口径对照（T16.1/T16.2，report_only）
+  python main.py regime                  # 市场状态分层：HMM 状态识别 + 状态内分层评估（T18.1~T18.3）
         """,
     )
     parser.add_argument("command", choices=[
@@ -2251,6 +2679,7 @@ def build_parser() -> argparse.ArgumentParser:
         "ic", "ic-trend", "ic-pool", "pool-train", "horizon-scan", "horizon-decision",
         "feature-experiment", "label-ab", "qlib-ab", "trials", "release-check",
         "tune", "confidence", "confidence-gate", "confidence-holdout",
+        "conformal-interval", "regime",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -2308,6 +2737,18 @@ def build_parser() -> argparse.ArgumentParser:
                         help="confidence-holdout 命令：保留期滚动复验时段数（缺省 3）")
     parser.add_argument("--no-rolling", dest="no_rolling", action="store_true",
                         help="confidence-holdout 命令：只出保留期报告，不做多时段滚动复验")
+    parser.add_argument("--confidence-levels", dest="confidence_levels", default=None,
+                        help="conformal-interval 命令：逗号分隔的覆盖率档位，如 0.8,0.9")
+    parser.add_argument("--no-compare", dest="no_compare", action="store_true",
+                        help="conformal-interval 命令：只出区间报告，不做区间置信分 vs 概率距离对照")
+    parser.add_argument("--holdout-ratio", dest="holdout_ratio", type=float, default=0.3,
+                        help="conformal-interval 命令：保留期占比（缺省 0.3，与 T16.3 对齐）")
+    parser.add_argument("--refit-every", dest="refit_every", type=int, default=None,
+                        help="regime 命令：expanding 口径的重训步长（交易日，缺省 20）")
+    parser.add_argument("--no-ab", dest="no_ab", action="store_true",
+                        help="regime 命令：只做状态分层，不做状态特征增量 A/B")
+    parser.add_argument("--no-full-sample", dest="no_full_sample", action="store_true",
+                        help="regime 命令：不出有前视的全样本口径对照（缺省出，明确标注）")
     parser.add_argument("--trials-horizons", dest="trials_horizons", default=None,
                         help="tune / confidence 命令：逗号分隔的预测周期（交易日），如 5,10；缺省用配置")
     parser.add_argument("--host", default=None, help="API 服务地址")
@@ -2503,6 +2944,39 @@ def main():
             config, symbols=_cli_symbols(args), horizons=_h,
             n_periods=int(getattr(args, "n_periods", 3) or 3),
             rolling=not bool(getattr(args, "no_rolling", False)))
+    elif args.command == "conformal-interval":
+        _h = None
+        _raw_h = getattr(args, "trials_horizons", None)
+        if _raw_h:
+            try:
+                _h = [int(x.strip()) for x in str(_raw_h).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--trials-horizons 解析失败，改用配置 prediction_horizons: {_raw_h}")
+        _lv = None
+        _raw_lv = getattr(args, "confidence_levels", None)
+        if _raw_lv:
+            try:
+                _lv = [float(x.strip()) for x in str(_raw_lv).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--confidence-levels 解析失败，改用缺省 0.8/0.9: {_raw_lv}")
+        run_conformal_interval(
+            config, symbols=_cli_symbols(args), horizons=_h,
+            confidence_levels=_lv,
+            holdout_ratio=float(getattr(args, "holdout_ratio", 0.3) or 0.3),
+            compare=not bool(getattr(args, "no_compare", False)))
+    elif args.command == "regime":
+        _h = None
+        _raw_h = getattr(args, "trials_horizons", None)
+        if _raw_h:
+            try:
+                _h = [int(x.strip()) for x in str(_raw_h).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--trials-horizons 解析失败，改用配置 prediction_horizons: {_raw_h}")
+        run_regime(
+            config, symbols=_cli_symbols(args), horizons=_h,
+            refit_every=getattr(args, "refit_every", None),
+            compare_full_sample=not bool(getattr(args, "no_full_sample", False)),
+            ab=not bool(getattr(args, "no_ab", False)))
     elif args.command == "confidence-gate":
         _ct = getattr(args, "chosen_threshold", None)
         run_confidence_gate(
