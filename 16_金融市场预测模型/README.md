@@ -476,6 +476,11 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 
 > 完整读数与边界见 [00_kickoff/round2_integration_conclusion.md](../00_kickoff/round2_integration_conclusion.md)。
 > 全部阶段 `affects_gate=false`，`strategy_gate` 零改动；人工检查点一律保持 `pending`。
+>
+> **收口字段**：S16~S20 各阶段已补齐 `round`（H1~H5）/ `auto_acceptable_completed_at` /
+> `auto_acceptable_verified` / `closing`（`auto_scope` · `manual_scope` · `evidence` · `affects_gate`），
+> 见 `schedule/plan.json`。**自动部分交付 ≠ 阶段完成**：人工签字前阶段 `status` 恒为 `in_progress`
+> （守卫测试钉死）。
 
 | 阶段 | 命令 | 实测读数（本机池） | 结论 |
 |:---:|:---|:---|:---|
@@ -500,12 +505,23 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 - T16.4 — 区间口径 vs 概率距离口径取舍（含覆盖率下限与信号量权衡）· 代码已交付，待签字
 - T17.4 — 门禁是否引入过拟合概率下限 · 代码已交付，待签字
 - T18.4 — 状态分层是否进入信号门禁 / 风控 `withheld` 语义（**证据较强：熊市 62.55% vs 震荡 48.72%**）· 待签字
-- T19.4 — 校准层是否进主推理链路（**证据较强：ECE 0.104 → 0.0025**）· 待签字
+- T19.4 — 校准层是否进主推理链路（**证据较强：5d ECE 0.1042→0.0025 / 10d 0.1258→0.0463 / 20d 0.0710→0.0530，platt**）· 待签字
 - T20.1 / T20.4 — LLM 投研辅助是否引入 / 是否保留（评估结论：无候选满足准入，默认取消）· 待签字
 
+> ⚠️ **耦合提醒**：T15.3（阈值语义）、T19.4（概率语义）、T18.4（状态与概率的关系）
+> 操作的是同一条「**概率 → 阈值 → 信号**」链 —— 校准层一旦成为默认语义，同一组 `thr ∈ [0.2, 0.3]`
+> 的**物理含义就会变**（对应子集 ≠ 原先子集，覆盖率与命中率都会漂移）。**建议一起看、一起签**。
+> 详见 [00_kickoff/manual_checkpoints_round_g_h.md](../00_kickoff/manual_checkpoints_round_g_h.md) §11.2。
+
+> 📋 **H 轮检查点已全部登记**：`schedule/manual_checkpoints.json` 共 **11 条**（priority 1..11 连续），
+> 含 H 轮 T16.4 / T17.4 / T18.4 / T19.4 / T20.1 / T20.4 —— 至此再无「已交付但未登记」的检查点。
+> 决策材料：H4 见 [00_kickoff/probability_calibration_conclusion.md](../00_kickoff/probability_calibration_conclusion.md)，
+> H5 见 [00_kickoff/research_assist_conclusion.md](../00_kickoff/research_assist_conclusion.md)。
+
 > **H 轮收口状态**：S16~S20 的 `auto_acceptable` 任务已全部交付、证据已落盘、守卫测试通过；
-> **5 项 H 轮检查点全部保持 `pending`**，NPC 不代签。逐条材料（含签/不签后果与复现命令）
-> 见 [`00_kickoff/manual_checkpoints_round_g_h.md`](../00_kickoff/manual_checkpoints_round_g_h.md) §十一。
+> H 轮 5 项检查点（T16.4 / T17.4 / T18.4 / T19.4 / T20.4）已由用户于 Issue #40 确认落定为
+> `confirmed`（确认对象 = 现状默认值，非改配置授权），NPC 不代签。逐条材料（含签/不签后果与复现命令）
+> 见 [`00_kickoff/manual_checkpoints_round_g_h.md`](../00_kickoff/manual_checkpoints_round_g_h.md) §11 与 §14。
 
 > **T15.3 现状**：双指标判定 + 决策单代码已交付（`python main.py confidence-gate`，
 > 落盘 `reports/confidence_gate_decision.json`，`affects_gate=false`，`freeze_structure=true`）。

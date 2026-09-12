@@ -2031,7 +2031,8 @@ def run_regime(config: dict, symbols: list[str] | None = None,
                horizons: list[int] | None = None,
                refit_every: int | None = None,
                compare_full_sample: bool = True,
-               ab: bool = True) -> dict:
+               ab: bool = True,
+               holdout_evidence: bool = False) -> dict:
     """市场状态分层（S18 / H3，T18.1 + T18.2 + T18.3）：HMM 状态识别 → 状态内分层评估。
 
     为什么需要（S15 / S17 遗留，Issue #29 / #40 的 H3 定义）：
@@ -2155,6 +2156,8 @@ def run_regime(config: dict, symbols: list[str] | None = None,
         clf = lgb.LGBMClassifier(objective="binary", verbose=-1, random_state=42)
         clf.fit(X_tr, y[train_idx])
         proba = clf.predict_proba(X_ho)[:, 1]
+        # 同一拟合对整段序列的预测（仅在合成留出段上读数，不参与训练）
+        proba_all = clf.predict_proba(scaler.transform(X))[:, 1]
 
         base_ic = _ic(proba, fwd[hold_idx])
         base_hit = float(np.mean(np.sign(np.nan_to_num(proba, nan=0.5) - 0.5)
@@ -2179,6 +2182,46 @@ def run_regime(config: dict, symbols: list[str] | None = None,
         print(f"[regime] {days}d 分层: {strat['summary']['verdict']}"
               f"（可用状态 {strat['usable_states']}，极差 "
               f"{strat['summary']['spread']}）")
+
+        # ---- T18.4 补充证据（可选）：**合成留出**状态分层 ----
+        # T18.4 的现状证据是"单标的冒烟"，而上游完整跑 `regime` 需要 38 标的
+        # 真实行情（CI 离线环境没有）。这里复用**同一次拟合**，在整段序列的
+        # 后 `holdout_evidence_ratio` 上做合成留出分层：模型只在前段拟合，
+        # 状态标签严格取自同一套 expanding 口径（无前视）。
+        # 不是新增口径、不选参数、不改门禁，只是把既有机制跑出全池读数。
+        if holdout_evidence:
+            ev_ratio = float(cfg_rg.get("holdout_evidence_ratio", 0.3) or 0.3)
+            ev_ratio = min(max(ev_ratio, 0.1), 0.5)
+            cut = max(int(n * (1.0 - ev_ratio)), 1)
+            ev_idx = np.arange(cut, n)
+            if len(ev_idx) >= rg.MIN_STATE_SAMPLES:
+                ev_labels = [labels_by_date.get(d) for d in dates.iloc[ev_idx]]
+                ev_strat = rg.stratified_by_regime(
+                    ev_labels, proba_all[ev_idx], fwd[ev_idx], y_true=y[ev_idx])
+                ev_strat["summary"] = rg.summarize_regime_spread(ev_strat)
+                ev_strat["holdout_samples"] = int(len(ev_idx))
+                ev_strat["lookahead_policy"] = "expanding"
+                ev_strat["evidence_scope"] = (
+                    f"合成留出（整段后 {ev_ratio:.0%}，模型只在前段拟合）"
+                    "；非真实全池 38 标的读数，不得替代上游 `python main.py regime`")
+                ev_strat["baseline"] = {
+                    "ic": round(_ic(proba_all[ev_idx], fwd[ev_idx]), 6),
+                    "hit_rate": round(float(np.mean(
+                        np.sign(np.nan_to_num(proba_all[ev_idx], nan=0.5) - 0.5)
+                        == np.sign(np.nan_to_num(fwd[ev_idx], nan=0.0)))), 6),
+                }
+                strat_horizons[f"{days}d"]["synthetic_holdout"] = ev_strat
+                print(f"[regime] {days}d 合成留出分层: "
+                      f"{ev_strat['summary']['verdict']}"
+                      f"（可用状态 {ev_strat['usable_states']}，极差 "
+                      f"{ev_strat['summary']['spread']}，样本 {len(ev_idx)}）")
+            else:
+                strat_horizons[f"{days}d"]["synthetic_holdout"] = {
+                    "available": False,
+                    "reason": f"合成留出样本不足（{len(ev_idx)}"
+                              f"<{rg.MIN_STATE_SAMPLES}），不猜",
+                }
+
 
         # ---- T18.3 状态 one-hot 增量 A/B（只加一个变量）----
         if ab:
@@ -2679,6 +2722,159 @@ def run_calibration(config: dict, symbols: list[str] | None = None,
     print(f"校准参数已固化到: {model_dir}/probability_calibration_<horizon>.json")
     return reports
 
+
+
+def run_calibration_ablation(config: dict, symbols: list[str] | None = None,
+                             horizons: list[int] | None = None, folds: int = 3,
+                             grid: tuple = (0.0, 0.1, 0.2, 0.3, 0.4, 0.5)) -> dict:
+    """校准层消融对照（S19 / H4，T19.4 决策证据）。
+
+    为什么需要：
+      T19.1/T19.2 只证明了「概率更准」（ECE/Brier 下降），但 T19.4 要定的是
+      「校准层要不要进**主推理链路**」——判据是**决策读数**（命中率 / IC /
+      阈值子集），不是概率质量。二者可以脱节：校准是单调映射，全样本口径下
+      方向命中率恒等，差异只会出现在**阈值子集**口径上。
+
+    本命令做的事：
+      1. 与 `calibration` 完全同口径地跑 walk-forward，拿到复验段概率；
+      2. **同一次拟合**产出 base / platt / isotonic 三条腿（只变"是否校准"）；
+      3. 逐指标并排：门禁点命中率 / IC / AUC / Brier / ECE / 阈值子集命中率，
+         保守判定（一升一降不择优），负面读数如实入库；
+      4. 落盘 `reports/calibration/calibration_ablation.json`。
+
+    ⚠️ 不改主推理链路（`affects_gate=false`）；是否进链路属 T19.4 人工检查点。
+
+    用法：
+      python main.py calibration-ablation
+      python main.py calibration-ablation --horizons 5d,10d
+    """
+    import scripts.evaluate_models as ev
+    from src.data.preprocessor import FeatureEngineer
+    from src.eval import calibration_ablation as ca
+    from src.eval.hyperopt_tuner import current_lightgbm_params
+    from src.eval.probability_calibration import (
+        METHOD_ISOTONIC, METHOD_PLATT, fit_calibrator,
+    )
+
+    logger.info("校准层消融对照（S19/H4 · T19.4 证据）")
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+    horizon_map = horizons or _horizon_days_list(horizons_cfg)
+    if not horizon_map:
+        horizon_map = [5, 10]
+
+    import lightgbm as lgb
+    from sklearn.preprocessing import StandardScaler
+
+    base_params = current_lightgbm_params(config)
+    params = {k: (int(v) if k in ("num_leaves", "max_depth", "n_estimators")
+                  else float(v)) for k, v in base_params.items()}
+
+    horizons_out: dict = {}
+    ca.report_path(config).parent.mkdir(parents=True, exist_ok=True)
+
+    for days in horizon_map:
+        combined = ev.build_supervised(data, config, int(days))
+        if combined.empty:
+            horizons_out[f"{days}d"] = {"available": False,
+                                        "reason": "no_supervised_data"}
+            continue
+        fe = FeatureEngineer(config)
+        cols = [c for c in fe.get_feature_columns(combined, int(days))
+                if not str(c).startswith("_")]
+        splits = ev.walk_forward_splits(len(combined), folds)
+        if not splits:
+            horizons_out[f"{days}d"] = {"available": False, "reason": "no_splits"}
+            continue
+        X = combined[cols].to_numpy(dtype=float)
+        y = combined[f"target_{int(days)}d"].to_numpy(int)
+        fwd = combined["_fwd_ret"].to_numpy(dtype=float)
+
+        proba_parts, y_parts, ret_parts = [], [], []
+        for train_idx, test_idx in splits:
+            scaler = StandardScaler()
+            X_tr = scaler.fit_transform(X[train_idx])
+            X_te = scaler.transform(X[test_idx])
+            clf = lgb.LGBMClassifier(objective="binary", verbose=-1,
+                                     random_state=42, **params)
+            clf.fit(X_tr, y[train_idx])
+            proba_parts.append(clf.predict_proba(X_te)[:, 1])
+            y_parts.append(y[test_idx])
+            ret_parts.append(fwd[test_idx])
+        if not proba_parts:
+            horizons_out[f"{days}d"] = {"available": False, "reason": "empty_parts"}
+            continue
+        proba = np.concatenate(proba_parts)
+        y_all = np.concatenate(y_parts)
+        ret = np.concatenate(ret_parts)
+
+        # 三段式（与 `calibration` 同口径）：校准器只在**校准段**拟合，
+        # 全部读数只在**复验段**产生（无前视）
+        n = len(proba)
+        n_train = int(n * 0.5)
+        n_cal = max(50, int(n * 0.25))
+        cal_start, cal_end = n_train, n_train + n_cal
+        if cal_end >= n or (cal_end - cal_start) < 2:
+            horizons_out[f"{days}d"] = {
+                "available": False,
+                "reason": f"校准段/复验段样本不足（n={n}，cal={cal_end - cal_start}）",
+                "affects_gate": False}
+            continue
+        p_cal, y_cal = proba[cal_start:cal_end], y_all[cal_start:cal_end]
+        p_ver, y_ver, r_ver = proba[cal_end:], y_all[cal_end:], ret[cal_end:]
+
+        legs: dict = {"base": ca.build_leg_payload(p_ver, y_ver, r_ver)}
+        for method in (METHOD_PLATT, METHOD_ISOTONIC):
+            fitted = fit_calibrator(p_cal, y_cal, method=method)
+            if not fitted.get("available"):
+                legs[method] = {"available": False,
+                                "reason": fitted.get("reason", "fit_failed")}
+                continue
+            legs[method] = ca.build_leg_payload(
+                np.asarray(fitted["transform"](p_ver), dtype=float), y_ver, r_ver)
+
+        rep = ca.build_ablation_report(
+            legs, meta={"symbols": len(data), "folds": int(folds),
+                        "horizon_days": int(days), "command": "calibration-ablation",
+                        "segments": {"n_total": int(n), "n_train": int(n_train),
+                                     "n_calibration": int(cal_end - cal_start),
+                                     "n_verify": int(n - cal_end)}},
+            grid=grid)
+        horizons_out[f"{days}d"] = rep
+        for leg, v in (rep.get("criteria") or {}).items():
+            print(f"[calibration-ablation] {days}d {leg}: {v['verdict']}"
+                  f"（{v['reason']}）")
+
+    report = {
+        "kind": "calibration_ablation",
+        "generated_at": ca._now(),
+        "evidence_for": "T19.4（校准层是否进主推理链路）",
+        "grid": [float(g) for g in grid],
+        "horizons": horizons_out,
+        "affects_gate": False,
+        "note": ("同一拟合、同一复验段，只变「概率是否被校准」；"
+                 "逐指标对照不合成总分、不择优；是否切换属 T19.4 人工检查点。"),
+    }
+    out_path = ca.report_path(config)
+    out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2),
+                        encoding="utf-8")
+    _record_trial(config, "calibration-ablation", {
+        "symbols": len(data), "folds": int(folds),
+        "horizons": list(horizons_out.keys()),
+        "verdicts": {h: {k: v.get("verdict") for k, v in (r.get("criteria") or {}).items()}
+                     for h, r in horizons_out.items()},
+    })
+    print(f"\n消融对照报告已保存: {out_path}")
+    print("注意: 校准层是否进主推理链路属 T19.4 人工检查点，本命令不自动落地"
+          "（affects_gate=false）")
+    return report
 
 def run_research_assist(config: dict, symbols: list[str] | None = None,
                         horizons: list[int] | None = None, folds: int = 3,
@@ -3323,6 +3519,7 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py overfit-audit            # 过拟合审计：CPCV + 统一试验预算 + 历史读数回算（S17/H2，report_only）
   python main.py regime                  # 市场状态分层：HMM 状态识别 + 状态内分层评估（T18.1~T18.3）
   python main.py calibration              # 概率校准层：isotonic/Platt + Brier/ECE（S19/H4）
+  python main.py calibration-ablation     # 校准层消融对照：base/platt/isotonic 决策读数并排（T19.4 证据）
   python main.py research-assist          # 投研辅助只读接入评估：候选调研 + 离线对照 + 决策单（S20/H5）
         """,
     )
@@ -3335,7 +3532,7 @@ def build_parser() -> argparse.ArgumentParser:
         "feature-experiment", "label-ab", "qlib-ab", "trials", "release-check",
         "tune", "confidence", "confidence-gate", "confidence-holdout",
         "conformal", "conformal-interval", "overfit-audit", "regime",
-        "calibration", "research-assist",
+        "calibration", "calibration-ablation", "research-assist",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -3391,6 +3588,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="tune 命令：optuna 试验数（缺省 20）")
     parser.add_argument("--n-periods", dest="n_periods", type=int, default=3,
                         help="confidence-holdout 命令：保留期滚动复验时段数（缺省 3）")
+    parser.add_argument("--holdout-evidence", dest="holdout_evidence",
+                        action="store_true",
+                        help="regime 命令：额外补 T18.4 的**合成留出**状态分层证据"
+                             "（复用同一次拟合，非真实全池 38 标的读数）")
     parser.add_argument("--no-rolling", dest="no_rolling", action="store_true",
                         help="confidence-holdout 命令：只出保留期报告，不做多时段滚动复验")
     parser.add_argument("--confidence-levels", dest="confidence_levels", default=None,
@@ -3663,7 +3864,8 @@ def main():
             config, symbols=_cli_symbols(args), horizons=_h,
             refit_every=getattr(args, "refit_every", None),
             compare_full_sample=not bool(getattr(args, "no_full_sample", False)),
-            ab=not bool(getattr(args, "no_ab", False)))
+            ab=not bool(getattr(args, "no_ab", False)),
+            holdout_evidence=bool(getattr(args, "holdout_evidence", False)))
     elif args.command == "calibration":
         _h = None
         _raw_h = getattr(args, "trials_horizons", None)
@@ -3674,6 +3876,15 @@ def main():
                 logger.warning(f"--trials-horizons 解析失败，改用配置 prediction_horizons: {_raw_h}")
         run_calibration(config, symbols=_cli_symbols(args), horizons=_h,
                         method=str(getattr(args, "calibration_method", "both") or "both"))
+    elif args.command == "calibration-ablation":
+        _ca_h = None
+        _raw_ca = getattr(args, "horizons", None)
+        if _raw_ca:
+            try:
+                _ca_h = [int(x.strip()) for x in str(_raw_ca).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--horizons 解析失败，改用配置 prediction_horizons: {_raw_ca}")
+        run_calibration_ablation(config, symbols=_cli_symbols(args), horizons=_ca_h)
     elif args.command == "research-assist":
         run_research_assist(
             config, symbols=_cli_symbols(args),
