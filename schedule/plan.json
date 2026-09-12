@@ -940,16 +940,18 @@
         {
           "id": "T16.1",
           "name": "接入 MAPIE（scikit-learn-contrib/MAPIE，BSD-3-Clause）：在现行 LightGBM 上用保形预测产出带覆盖率保证的预测区间，输出校准曲线到 reports/calibration/",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-12T01:20:00+00:00",
+          "result": "src/eval/conformal_probability.py：三段切分（约 60/10/30，保留期与 T16.3 holdout_split 完全同段）+ MAPIE SplitConformalClassifier（LAC，prefit）产带覆盖率保证的预测集合 → [0,1] 区间 → 置信分（复用 S15 的 confidence_from_interval）；覆盖率审计（目标 vs 实测 + bootstrap 95% CI）、可靠性曲线（Brier/ECE + isotonic 参考臂）、区间宽度校准；落盘 reports/calibration/conformal_interval.json。mapie 1.5.0 为可选运行时依赖，未安装时明确报错不降级"
         },
         {
           "id": "T16.2",
           "name": "把区间宽度经既有 confidence_from_interval 换算为置信分，与现行 |p-0.5|×2 口径做同数据同折对照",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-12T01:20:00+00:00",
+          "result": "compare_interval_vs_proba：区间置信分与现行 |p−0.5|×2 放进同一条 sweep_confidence 链路，同数据/同折/同模型，逐阈值并排对照；保守口径四态判定（improved/degraded/mixed/insufficient_samples，一升一降一律 mixed 不择优）；落盘 reports/calibration/conformal_vs_proba.json；tests/test_roadmap_s16_t161.py 覆盖无前视硬校验与全部判定态"
         },
         {
           "id": "T16.3",
@@ -975,7 +977,7 @@
       "manual_checkpoint": [
         "T16.4"
       ],
-      "note": "直接回应 T15.3 遗留项：保留期只有一个 + neuralforecast 未实装。区间换算机制在 S15 已抽象就绪（confidence_from_interval），本轮只喂数据不改链路。 T16.3 提前交付（Issue #29「选择最优方案」指令）。",
+      "note": "直接回应 T15.3 遗留项：保留期只有一个 + neuralforecast 未实装。区间换算机制在 S15 已抽象就绪（confidence_from_interval），本轮只喂数据不改链路。 T16.3 提前交付（Issue #29「选择最优方案」指令）。 | T16.1/T16.2 已交付（2026-09-12，Issue #29「已合并 签字继续」）：新增 src/eval/conformal_probability.py 与 `python main.py conformal-interval`（--confidence-levels/--no-compare/--holdout-ratio）；MAPIE split conformal（LAC）+ 覆盖率审计 + Brier/ECE + 区间宽度校准，落盘 reports/calibration/；区间口径 vs 概率距离口径同折对照；configs model.factors.conformal.enabled 缺省 false、affects_gate 恒 false；T16.4 人工检查点仍 pending。",
       "source": "Issue #40 高质量项目集成2 · H1（scikit-learn-contrib/MAPIE + Nixtla/neuralforecast）",
       "depends_on": [
         "S15"

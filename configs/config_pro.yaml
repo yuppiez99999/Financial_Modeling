@@ -179,6 +179,15 @@ model:
     qlib_alpha158:
       enabled: false
       families: [momentum, trend, volatility, volume, reversal]
+    # S16/H1：保形预测区间（report_only，缺省关闭）
+    # true 时**不改** FeatureEngineer / 信号链路 —— 区间与置信分只在
+    # `python main.py conformal-interval` 命令内计算；纳入生产须 T16.4 人工检查点。
+    conformal:
+      enabled: false
+      confidence_levels: [0.8, 0.9]   # 目标覆盖率档位（1 − alpha）
+      conformity_score: "lac"         # 单周期二分类唯一严格有效的保形分数
+      holdout_ratio: 0.3              # 保留期占比（与 T16.3 holdout_split 同段）
+      calib_ratio_of_train_pool: 0.166667  # calibration 占训练池比例 → 整体约 60/10/30
     # 类级加权组合：最终得分 = Σ w_class × 该类得分
     ensemble:
       classes: [factor, tree, sequence]

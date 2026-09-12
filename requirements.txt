@@ -8,3 +8,4 @@ pyarrow>=12.0.0
 # lightgbm>=4.0.0      # 训练/评估/tune/confidence（sklearn 降级可用）
 # optuna>=3.0.0        # S15/G5 超参搜索（python main.py tune）
 # neuralforecast>=1.0.0 # S15/G5 概率区间（接入时解注释，见 docs/THIRD_PARTY.md）
+# mapie>=1.5.0         # S16/H1 保形预测区间（python main.py conformal-interval）

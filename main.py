@@ -1743,6 +1743,179 @@ def run_confidence_gate(config: dict, decided_by: str = "",
 
 
 
+def run_conformal_interval(config: dict, symbols: list[str] | None = None,
+                           horizons: list[int] | None = None,
+                           confidence_levels: list[float] | None = None,
+                           holdout_ratio: float = 0.3,
+                           compare: bool = True) -> dict:
+    """保形预测区间（S16 / T16.1 + T16.2）：给概率配上覆盖率保证的区间，
+    并与现行 |p−0.5|×2 口径做同数据同折对照。
+
+    为什么需要（T15.3 遗留，Issue #40 H1）：
+      现行置信度建立在**未校准**的概率上（无 Brier/ECE、无覆盖承诺），
+      而 S15 把 `confidence_from_interval`（区间宽度 → 置信分）抽象就绪后
+      **一直没喂过真实区间** —— 本命令补的正是这一步。
+
+    本命令做的事：
+      1. T16.1 三段切分（缺省 60%/10%/30%）→ LightGBM 拟合 →
+         MAPIE split conformal（LAC，单周期二分类唯一严格有效的保形分数）
+         → 逐覆盖率档的预测集合 → [0,1] 区间 → 置信分；
+      2. 覆盖率审计（目标 vs 实测 + bootstrap 95% CI）、可靠性曲线
+         （Brier/ECE，含 isotonic 参考臂）、区间宽度校准；
+      3. T16.2 把区间置信分与 `|p−0.5|×2` 放进**同一条**阈值链路并排对照，
+         保守口径判定（IC 与命中率同向变好才算改善迹象）；
+      4. 落盘 `reports/calibration/conformal_interval.json`（区间报告，与 T16.3
+         的置信度曲线报告**同折同保留期**，可交叉引用）、
+         `reports/calibration/conformal_vs_proba.json`（对照报告）。
+
+    ⚠️ **不改门禁**（`affects_gate=false`）；`model.conformal.enabled` 缺省
+    false —— 区间口径**不进生产特征/信号链路**；口径取舍属 T16.4 人工检查点。
+
+    用法：
+      python main.py conformal-interval                    # 区间 + 对照（默认）
+      python main.py conformal-interval --confidence-levels 0.8,0.9
+      python main.py conformal-interval --no-compare       # 只出区间报告
+    """
+    import scripts.evaluate_models as ev
+    from src.data.preprocessor import FeatureEngineer
+    from src.eval import conformal_probability as cp
+
+    logger.info("保形预测区间 + 概率口径对照（T16.1 / T16.2）")
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    if not cp.mapie_available():
+        payload = {"error": "未安装 mapie（可选依赖）：pip install mapie",
+                   "hint": "保形预测区间需要 MAPIE，缺省不静默降级",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    cfg_cc = (((config.get("model", {}) or {}).get("factors", {}) or {})
+              .get("conformal", {}) or {})
+    levels = confidence_levels or [float(x) for x in
+                                   (cfg_cc.get("confidence_levels")
+                                    or cp.DEFAULT_CONFIDENCE_LEVELS)]
+    if not holdout_ratio or holdout_ratio == 0.3:
+        holdout_ratio = float(cfg_cc.get("holdout_ratio", holdout_ratio) or holdout_ratio)
+    horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+    horizon_map = horizons or [int(v.get("days", 5)) for v in horizons_cfg.values()
+                               if isinstance(v, dict)]
+    if not horizon_map:
+        horizon_map = [5, 10, 20]
+
+    import lightgbm as lgb
+    from sklearn.preprocessing import StandardScaler
+
+    interval_horizons: dict = {}
+    compare_horizons: dict = {}
+    for days in horizon_map:
+        combined = ev.build_supervised(data, config, int(days))
+        if combined.empty:
+            interval_horizons[f"{days}d"] = {"available": False,
+                                             "reason": "no_supervised_data"}
+            continue
+        fe = FeatureEngineer(config)
+        cols = [c for c in fe.get_feature_columns(combined, int(days))
+                if not str(c).startswith("_")]
+        n = len(combined)
+        split = cp.three_way_split(n, holdout_ratio)
+        if not split.available:
+            interval_horizons[f"{days}d"] = {
+                "available": False,
+                "reason": split.meta.get("reason", "split_unavailable"),
+                "split": split.as_dict()}
+            continue
+
+        fitted = cp.train_and_conformal(
+            combined, cols, f"target_{int(days)}d", split, config=config,
+            confidence_levels=levels, lgb_module=lgb, scaler_cls=StandardScaler)
+        y_true = fitted["y_true"]
+        proba = fitted["proba"]
+        ret = fitted["returns"]
+
+        entry: dict = {"available": True, "split": split.as_dict(),
+                       "holdout_samples": int(len(split.holdout)),
+                       "levels": {}}
+        conf_by_level: dict = {}
+        for lv, sets in fitted["sets"].items():
+            conf = cp.interval_confidence(sets)
+            conf_by_level[float(lv)] = conf
+            cov = cp.coverage_report(y_true, sets, lv)
+            widths = (cp.interval_from_prediction_sets(sets)[1]
+                      - cp.interval_from_prediction_sets(sets)[0])
+            entry["levels"][f"{lv:g}"] = {
+                "coverage": cov,
+                "confidence_mean": round(float(np.mean(conf)), 6),
+                "confidence_max": round(float(np.max(conf)), 6),
+                "confidence_distinct": int(len(np.unique(np.round(conf, 6)))),
+                "width_confident_mean": round(float(np.mean(widths)), 6),
+            }
+            if cov.get("available"):
+                print(f"[conformal] {days}d 覆盖率档 {lv:g}: 实测 "
+                      f"{cov['empirical_coverage']:.4f}（目标 {lv:g}，{cov['verdict']}）"
+                      f" 平均集合大小 {cov['set_size_mean']}")
+
+        entry["reliability"] = cp.reliability_curve(proba, y_true)
+        entry["reliability_isotonic_reference"] = cp.reliability_curve(
+            proba, y_true, isotonic=True)
+        main_level = float(levels[0])
+        lo, hi = cp.interval_from_prediction_sets(fitted["sets"][main_level])
+        entry["width_calibration"] = cp.coverage_width_curve(
+            np.abs(proba - y_true), hi - lo)
+        interval_horizons[f"{days}d"] = entry
+
+        if compare:
+            cmp_res = cp.compare_interval_vs_proba(
+                proba, ret, conf_by_level[main_level],
+                grid=(0.0, 0.1, 0.2, 0.3, 0.4, 0.5))
+            cmp_res["compared_level"] = main_level
+            cmp_res["holdout_samples"] = int(len(split.holdout))
+            compare_horizons[f"{days}d"] = cmp_res
+            print(f"[conformal] {days}d 对照（覆盖率档 {main_level:g}）: "
+                  f"{cmp_res['verdict']}（可用阈值行 {cmp_res['usable_thresholds']}）")
+
+    meta = {"symbols": len(data), "holdout_ratio": float(holdout_ratio),
+            "confidence_levels": [float(x) for x in levels],
+            "command": "conformal-interval"}
+    out_dir = cp.calibration_dir(config)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    interval_path = cp.interval_report_path(config)
+    interval_path.write_text(
+        json.dumps(cp.build_interval_report(interval_horizons, meta=meta),
+                   ensure_ascii=False, indent=2), encoding="utf-8")
+    payload: dict = {"interval_report": str(interval_path),
+                     "horizons": list(interval_horizons.keys()),
+                     "affects_gate": False}
+    if compare and compare_horizons:
+        cmp_meta = dict(meta)
+        cmp_meta["compared_level"] = float(levels[0])
+        cmp_meta["verdicts"] = {h: v.get("verdict") for h, v in compare_horizons.items()}
+        cmp_path = cp.comparison_report_path(config)
+        cmp_path.write_text(
+            json.dumps(cp.build_comparison_report(compare_horizons, meta=cmp_meta),
+                       ensure_ascii=False, indent=2), encoding="utf-8")
+        payload["comparison_report"] = str(cmp_path)
+        payload["verdicts"] = cmp_meta["verdicts"]
+
+    _record_trial(config, "conformal-interval", {
+        "symbols": len(data), "horizons": list(interval_horizons.keys()),
+        "confidence_levels": [float(x) for x in levels],
+        "holdout_ratio": float(holdout_ratio),
+    })
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    print(f"\n区间报告已保存: {interval_path}")
+    if payload.get("comparison_report"):
+        print(f"对照报告已保存: {payload['comparison_report']}")
+    print("注意: 区间口径是否纳入生产属 T16.4 人工检查点，本命令不自动落地（affects_gate=false）")
+    return payload
+
+
 def run_confidence_holdout(config: dict, symbols: list[str] | None = None,
                            horizons: list[int] | None = None,
                            train_ratio: float = 0.7, n_periods: int = 3,
@@ -2241,6 +2414,7 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py confidence               # 置信度阈值曲线（高置信样本命中率，S15/G5）
   python main.py confidence-gate          # 置信度子集门禁决策单（双指标，须人工签字，S15/G5）
   python main.py confidence-holdout      # 置信度保留期复验 + 多时段滚动（T16.3，决策单证据源）
+  python main.py conformal-interval      # 保形预测区间 + 概率口径对照（T16.1/T16.2，report_only）
         """,
     )
     parser.add_argument("command", choices=[
@@ -2251,6 +2425,7 @@ def build_parser() -> argparse.ArgumentParser:
         "ic", "ic-trend", "ic-pool", "pool-train", "horizon-scan", "horizon-decision",
         "feature-experiment", "label-ab", "qlib-ab", "trials", "release-check",
         "tune", "confidence", "confidence-gate", "confidence-holdout",
+        "conformal-interval",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -2308,6 +2483,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="confidence-holdout 命令：保留期滚动复验时段数（缺省 3）")
     parser.add_argument("--no-rolling", dest="no_rolling", action="store_true",
                         help="confidence-holdout 命令：只出保留期报告，不做多时段滚动复验")
+    parser.add_argument("--confidence-levels", dest="confidence_levels", default=None,
+                        help="conformal-interval 命令：逗号分隔的覆盖率档位，如 0.8,0.9")
+    parser.add_argument("--no-compare", dest="no_compare", action="store_true",
+                        help="conformal-interval 命令：只出区间报告，不做区间置信分 vs 概率距离对照")
+    parser.add_argument("--holdout-ratio", dest="holdout_ratio", type=float, default=0.3,
+                        help="conformal-interval 命令：保留期占比（缺省 0.3，与 T16.3 对齐）")
     parser.add_argument("--trials-horizons", dest="trials_horizons", default=None,
                         help="tune / confidence 命令：逗号分隔的预测周期（交易日），如 5,10；缺省用配置")
     parser.add_argument("--host", default=None, help="API 服务地址")
@@ -2503,6 +2684,26 @@ def main():
             config, symbols=_cli_symbols(args), horizons=_h,
             n_periods=int(getattr(args, "n_periods", 3) or 3),
             rolling=not bool(getattr(args, "no_rolling", False)))
+    elif args.command == "conformal-interval":
+        _h = None
+        _raw_h = getattr(args, "trials_horizons", None)
+        if _raw_h:
+            try:
+                _h = [int(x.strip()) for x in str(_raw_h).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--trials-horizons 解析失败，改用配置 prediction_horizons: {_raw_h}")
+        _lv = None
+        _raw_lv = getattr(args, "confidence_levels", None)
+        if _raw_lv:
+            try:
+                _lv = [float(x.strip()) for x in str(_raw_lv).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--confidence-levels 解析失败，改用缺省 0.8/0.9: {_raw_lv}")
+        run_conformal_interval(
+            config, symbols=_cli_symbols(args), horizons=_h,
+            confidence_levels=_lv,
+            holdout_ratio=float(getattr(args, "holdout_ratio", 0.3) or 0.3),
+            compare=not bool(getattr(args, "no_compare", False)))
     elif args.command == "confidence-gate":
         _ct = getattr(args, "chosen_threshold", None)
         run_confidence_gate(

@@ -34,7 +34,7 @@
 
 | 阶段 | 候选项目 | star / 许可证 | 解决本项目什么问题 | 现有卡点证据 |
 |:---:|------|------|------|------|
-| **H1** | `scikit-learn-contrib/MAPIE`（+ 已登记的 `Nixtla/neuralforecast`） | 1.6k / BSD-3-Clause | 给概率**覆盖率保证**；把 S15 就绪但未实装的 `confidence_from_interval` 真正喂上数据 | T15.3 遗留：「保留期只有一个，多时段滚动复验是下一轮值得做的验证」「neuralforecast 概率区间机制已就绪但未实装」 |
+| **H1** ✅ | `scikit-learn-contrib/MAPIE`（+ 已登记的 `Nixtla/neuralforecast`） | 1.6k / BSD-3-Clause | 给概率**覆盖率保证**；把 S15 就绪但未实装的 `confidence_from_interval` 真正喂上数据 | T15.3 遗留：「保留期只有一个，多时段滚动复验是下一轮值得做的验证」「neuralforecast 概率区间机制已就绪但未实装」。**已实装（2026-09-12，S16/T16.1+T16.2）**：`src/eval/conformal_probability.py` + `python main.py conformal-interval`，MAPIE 1.5.0 split conformal（LAC）；结论 `00_kickoff/conformal_interval_conclusion.md`，对照判定 mixed（置信分粒度限制），口径取舍待 T16.4 人工定稿 |
 | **H2** | 方法论引入（Advances in Financial ML · CPCV/DSR），不引入重型包 | 方法论 / MIT 级 | 把「选择自由度」从事后补记变为流水线内建；检验 S11~S15 结论在校正后是否仍成立 | S11 只做了「多重比较校正」一次性检查；S15 明确「阈值读数未经多重比较校正，不得直接引用为达标证据」 |
 | **H3** | `hmmlearn`（HMM 市场状态识别） | 成熟 sklearn 风格库 | 解释「IC 为正但命中率卡线」的**时间维度**成因；与 S9 资产维度分池正交 | S15 结论二：「IC 与命中率脱节在收敛搜索后依旧存在」；README 已知限制提出「按标的分层」，缺时间状态维度 |
 | **H4** | `scikit-learn` 校准器（isotonic/Platt） | 既有依赖 | 让「置信度」建立在**校准过的概率**上，而非未校准的原始输出 | S15 置信度机制建立在 `|p−0.5|×2` 上，p 本身未做校准验证（Brier/ECE 缺失） |
@@ -54,6 +54,7 @@
   neuralforecast：Apache-2.0；TradingAgents 系：Apache-2.0 / 部分 NOASSERTION（需逐项核）。
 - 引入时按 `docs/THIRD_PARTY.md`「append 风格、不删历史」同步登记来源与版本；
   未实际 `pip install` 前不得声称已引入运行时。
+- **H1/MAPIE 已完成运行时登记**（mapie 1.5.0，2026-09-12）；H2~H4 仍为规划期登记。
 
 ## 五、对齐既有纪律
 
