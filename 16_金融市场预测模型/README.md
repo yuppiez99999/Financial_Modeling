@@ -459,11 +459,18 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 
 | 阶段 | 内容 | 依据 | 排期 | 状态 |
 |:---:|:---|:---|:---:|:---:|
-| S16 / H1 | 概率区间校准：MAPIE 保形预测 + 多时段滚动保留期复验 | T15.3 遗留项（保留期只有一个 / 区间机制未实装） | 10-05 ~ 10-11 | ✅ 自动任务已交付（T16.4 待签字） |
-| S17 / H2 | 评估防过拟合加固：CPCV 净化交叉验证 + 试验多重比较记账打通 | S15 自述「阈值读数未经多重比较校正，不得引用为达标证据」 | 10-12 ~ 10-18 | ✅ 自动任务已交付（T17.4 待签字） |
-| S18 / H3 | 市场状态分层：HMM 牛/熊/震荡识别 + 状态内分层评估 + 状态特征增量 A/B | S15「IC 与命中率脱节」的时间维度成因 | 10-19 ~ 10-25 | ✅ 自动任务已交付（T18.4 待签字） |
-| S19 / H4 | 推理链路概率校准：isotonic / Platt 校准 + API 暴露 calibrated_probability / uncertainty | 置信度门槛建立在**未校准概率**之上 | 10-26 ~ 10-30 | ✅ 自动任务已交付（T19.4 待签字） |
-| S20 / H5 | 投研辅助链路：LLM 投研 Agent **只读**接入 + 离线对照 | 优先级最低，评估不通过则整阶段取消 | 10-31 ~ 11-06 | ⛔ 评估不通过，默认取消（T20.4 待签字） |
+| S16 / H1 | 概率区间校准：MAPIE 保形预测 + 多时段滚动保留期复验 | T15.3 遗留项（保留期只有一个 / 区间机制未实装） | 10-05 ~ 10-11 | ✅ auto 任务收官 · 🔶 T16.4 待签字 |
+| S17 / H2 | 评估防过拟合加固：CPCV 净化交叉验证 + 试验多重比较记账打通 | S15 自述「阈值读数未经多重比较校正，不得引用为达标证据」 | 10-12 ~ 10-18 | ✅ auto 任务收官 · 🔶 T17.4 待签字 |
+| S18 / H3 | 市场状态分层：HMM 牛/熊/震荡识别 + 状态内分层评估 + 状态特征增量 A/B | S15「IC 与命中率脱节」的时间维度成因 | 10-19 ~ 10-25 | ✅ auto 任务收官 · 🔶 T18.4 待签字 |
+| S19 / H4 | 推理链路概率校准：isotonic / Platt 校准 + API 暴露 calibrated_probability / uncertainty | 置信度门槛建立在**未校准概率**之上 | 10-26 ~ 10-30 | ✅ auto 任务收官 · 🔶 T19.4 待签字 |
+| S20 / H5 | 投研辅助链路：LLM 投研 Agent **只读**接入 + 离线对照 | 优先级最低，评估不通过则整阶段取消 | 10-31 ~ 11-06 | ⛔ 评估不通过，默认取消 · 🔶 T20.4 待签字 |
+
+> **「auto 任务收官」的含义**：本阶段 `auto_acceptable` 任务**全部已交付并通过守卫测试**，
+> `plan.json` 已落 `auto_acceptable_completed_at` / `auto_acceptable_verified` / `closing` 字段。
+> **阶段 `status` 仍为 `in_progress`** —— 人工检查点签字前不会被标 `completed`（守卫测试钉死）。
+> 5 个人工检查点（T16.4 / T17.4 / T18.4 / T19.4 / T20.4）已全部进决策包
+> [`schedule/manual_checkpoints.json`](../schedule/manual_checkpoints.json)（10 条，priority 唯一），
+> 决策材料见 [`00_kickoff/manual_checkpoints_round_g_h.md`](../00_kickoff/manual_checkpoints_round_g_h.md)。
 
 #### 10.4.1 落地结果（自动任务，2026-09-12）
 
@@ -477,6 +484,8 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 | S18 | `python main.py regime` | **熊市命中率 62.55% / IC +0.1104**，震荡市 48.72%，差 **13.83pp** | 解释了「IC 为正但命中率卡线」的时间维度成因；状态增量 A/B 为负，不纳主线 |
 | S19 | `python main.py calibration` | **ECE 0.1042 → 0.0025（platt）**，Brier 0.2650 → 0.2498 | 现行概率存在系统性高估/低估，校准层有实质价值；API 追加字段且向后兼容 |
 | S20 | `python main.py research-assist` | 0/3 候选满足三项准入；离线对照结构性 `unverifiable` | **整链路默认取消**，不编造效果、不进信号路径 |
+
+> 完整证据链：`00_kickoff/probability_calibration_conclusion.md`（H4）、`00_kickoff/research_assist_conclusion.md`（H5）。
 
 > 🔒 **本轮边界**：门禁 `strategy_gate` 零改动，所有 `affects_gate` 恒为 false；H5 结论严禁进入信号路径。
 > 🚫 **明确淘汰**（不在本轮引入）：qlib 运行时（S13 已定表达式级对齐）、timesfm/FinGPT/FinRobot（模型族非瓶颈 + 重型依赖）、backtesting.py/rqalpha/hikyuu（S1 已落地 vectorbt）、adata/Ashare/free-stockdb（数据通道已闭环）、tsfresh 类特征库（S12 已否掉）。
@@ -493,6 +502,10 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 - T18.4 — 状态分层是否进入信号门禁 / 风控 `withheld` 语义（**证据较强：熊市 62.55% vs 震荡 48.72%**）· 待签字
 - T19.4 — 校准层是否进主推理链路（**证据较强：ECE 0.104 → 0.0025**）· 待签字
 - T20.1 / T20.4 — LLM 投研辅助是否引入 / 是否保留（评估结论：无候选满足准入，默认取消）· 待签字
+
+> **H 轮收口状态**：S16~S20 的 `auto_acceptable` 任务已全部交付、证据已落盘、守卫测试通过；
+> **5 项 H 轮检查点全部保持 `pending`**，NPC 不代签。逐条材料（含签/不签后果与复现命令）
+> 见 [`00_kickoff/manual_checkpoints_round_g_h.md`](../00_kickoff/manual_checkpoints_round_g_h.md) §十一。
 
 > **T15.3 现状**：双指标判定 + 决策单代码已交付（`python main.py confidence-gate`，
 > 落盘 `reports/confidence_gate_decision.json`，`affects_gate=false`，`freeze_structure=true`）。

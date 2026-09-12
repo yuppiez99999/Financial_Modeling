@@ -8,7 +8,7 @@
     "statuses_allowed": [
       "pending"
     ],
-    "note": "本清单全部条目恒 pending（fail-close）；NPC 不代签、不代选、不代改配置。"
+    "note": "本清单全部条目恒 pending（fail-close）；NPC 不代签、不代选、不代改配置。H 轮（T16.4/T17.4/T18.4/T19.4/T20.4）代码已交付、证据已落盘，等待人工逐条签字。"
   },
   "checkpoints": [
     {
@@ -42,7 +42,9 @@
       "blocks": [
         "S19/H4 校准层接入方式"
       ],
-      "status": "pending"
+      "status": "pending",
+      "round": "H1",
+      "known_gap": "多时段滚动复验为 partially_stable —— T15.3 的单时段结论未能跨时段复现，不得只引用单时段读数"
     },
     {
       "id": "T17.4",
@@ -59,7 +61,8 @@
         "S19/H4 门禁叙事"
       ],
       "known_gap": "PBO 需多候选×路径矩阵，本轮未扫多候选 → available=false，不冒充",
-      "status": "pending"
+      "status": "pending",
+      "round": "H2"
     },
     {
       "id": "T18.4",
@@ -75,12 +78,53 @@
       "blocks": [
         "H3 是否继续投入"
       ],
-      "status": "pending"
+      "status": "pending",
+      "round": "H3",
+      "known_gap": "状态特征 one-hot 单变量 A/B 为 degraded（ΔIC<0）→ 状态作特征无增量；本条只讨论「分层/风控」用途"
+    },
+    {
+      "id": "T19.4",
+      "stage": "S19",
+      "round": "H4",
+      "question": "校准层（isotonic / Platt）是否进主推理链路（影响 calibrated_probability / uncertainty 的消费）",
+      "current_default": "推理期只读套用：缺 models/probability_calibration_*.json 时不校准不猜；既有字段逐字段不变",
+      "evidence": [
+        "reports/probability_calibration_<h>d.json",
+        "models/probability_calibration_<horizon>.json",
+        "src/inference/probability_calibrator.py"
+      ],
+      "doc": "00_kickoff/probability_calibration_conclusion.md#五",
+      "blocks": [
+        "置信度门槛的阈值语义（T15.3/T16.4）",
+        "28 侧对 calibrated_probability 字段的消费"
+      ],
+      "known_gap": "三段式样本外读数只在本机池成立；跨时段/跨标的稳定性未复验，不得外推为普适结论",
+      "status": "pending",
+      "priority": 5
+    },
+    {
+      "id": "T20.4",
+      "stage": "S20",
+      "round": "H5",
+      "question": "LLM 投研辅助链路是否保留（成本与噪声风险）",
+      "current_default": "默认 cancel：3 个候选 0 个满足「A 股适配 + 离线可复现 + 许可证明确」三项准入",
+      "evidence": [
+        "reports/research_assist_evaluation.json",
+        "reports/research_assist_contrast.json",
+        "reports/research_assist_decision.json"
+      ],
+      "doc": "00_kickoff/research_assist_conclusion.md#四",
+      "blocks": [
+        "H5 是否继续投入"
+      ],
+      "known_gap": "离线对照结构性 unverifiable（附注不参与打分）→ 不得以「LLM 提升命中率」为由保留",
+      "status": "pending",
+      "priority": 6
     },
     {
       "id": "T12.3",
       "stage": "S12",
-      "priority": 5,
+      "priority": 7,
       "question": "三重障碍法标签是否进训练主线（替换固定窗口标签）",
       "current_default": "不进主线（target_{h}d 仍为主线）",
       "evidence": [
@@ -95,7 +139,7 @@
     {
       "id": "T13.4",
       "stage": "S13",
-      "priority": 6,
+      "priority": 8,
       "question": "factor_a158_* 是否进生产特征集",
       "current_default": "model.factors.qlib_alpha158.enabled=false",
       "evidence": [
@@ -108,7 +152,7 @@
     {
       "id": "T14.3",
       "stage": "S14",
-      "priority": 7,
+      "priority": 9,
       "question": "回退链顺序（akshare vs tencent）+ 期货/外汇是否进训练主线",
       "current_default": "wind→akshare→tencent→simulation；futures/forex enabled=true",
       "evidence": [
@@ -123,7 +167,7 @@
     {
       "id": "T11.2",
       "stage": "S11",
-      "priority": 8,
+      "priority": 10,
       "question": "成本三档（0.125%/0.075%/0.030% 单边）是否定稿",
       "current_default": "草案常量，禁止配置覆盖（建议维持）",
       "evidence": [
@@ -135,5 +179,9 @@
       ],
       "status": "pending"
     }
+  ],
+  "rounds_covered": [
+    "G 轮（S11~S15）",
+    "H 轮（S16~S20）"
   ]
 }

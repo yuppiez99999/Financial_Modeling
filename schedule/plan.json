@@ -811,7 +811,19 @@
       "depends_on": [
         "S15"
       ],
-      "result": "自动任务已交付：保形预测覆盖率校准 + 区间/概率距离口径对照 + 多时段滚动复验（T16.4 待签字）"
+      "result": "自动任务已交付：保形预测覆盖率校准 + 区间/概率距离口径对照 + 多时段滚动复验（T16.4 待签字）",
+      "auto_acceptable_completed_at": "2026-09-12T05:30:00+00:00",
+      "auto_acceptable_verified": true,
+      "round": "H1",
+      "closing": {
+        "auto_scope": "已完成：本阶段全部 auto_acceptable 任务",
+        "manual_scope": "未决策：T16.4（人工检查点恒 pending，NPC 不代签）",
+        "evidence": "reports/calibration/conformal_interval.json",
+        "checkpoint_manifest": "schedule/manual_checkpoints.json",
+        "doc": "00_kickoff/manual_checkpoints_round_g_h.md#十一h-轮s16s20收口附录自动任务已交付决策待签字",
+        "verified_at": "2026-09-12T05:30:00+00:00",
+        "affects_gate": false
+      }
     },
     {
       "id": "S17",
@@ -867,7 +879,19 @@
         "S11",
         "S16"
       ],
-      "result": "自动任务已交付：CPCV 净化交叉验证 + 统一试验预算 + 历史读数回算（T17.4 待签字）"
+      "result": "自动任务已交付：CPCV 净化交叉验证 + 统一试验预算 + 历史读数回算（T17.4 待签字）",
+      "auto_acceptable_completed_at": "2026-09-12T05:30:00+00:00",
+      "auto_acceptable_verified": true,
+      "round": "H2",
+      "closing": {
+        "auto_scope": "已完成：本阶段全部 auto_acceptable 任务",
+        "manual_scope": "未决策：T17.4（人工检查点恒 pending，NPC 不代签）",
+        "evidence": "reports/cpcv_evaluation.json",
+        "checkpoint_manifest": "schedule/manual_checkpoints.json",
+        "doc": "00_kickoff/manual_checkpoints_round_g_h.md#十一h-轮s16s20收口附录自动任务已交付决策待签字",
+        "verified_at": "2026-09-12T05:30:00+00:00",
+        "affects_gate": false
+      }
     },
     {
       "id": "S18",
@@ -922,7 +946,19 @@
       "depends_on": [
         "S16"
       ],
-      "result": "s18_h3_t18_1_t18_3_delivered_t18_4_pending"
+      "result": "s18_h3_t18_1_t18_3_delivered_t18_4_pending",
+      "auto_acceptable_completed_at": "2026-09-12T05:30:00+00:00",
+      "auto_acceptable_verified": true,
+      "round": "H3",
+      "closing": {
+        "auto_scope": "已完成：本阶段全部 auto_acceptable 任务",
+        "manual_scope": "未决策：T18.4（人工检查点恒 pending，NPC 不代签）",
+        "evidence": "reports/regime/regime_stratification.json",
+        "checkpoint_manifest": "schedule/manual_checkpoints.json",
+        "doc": "00_kickoff/manual_checkpoints_round_g_h.md#十一h-轮s16s20收口附录自动任务已交付决策待签字",
+        "verified_at": "2026-09-12T05:30:00+00:00",
+        "affects_gate": false
+      }
     },
     {
       "id": "S19",
@@ -978,7 +1014,19 @@
         "S16",
         "S18"
       ],
-      "result": "自动任务已交付：isotonic/Platt 概率校准层 + API 向后兼容字段（T19.4 待签字）"
+      "result": "自动任务已交付：isotonic/Platt 概率校准层 + API 向后兼容字段（T19.4 待签字）",
+      "auto_acceptable_completed_at": "2026-09-12T05:30:00+00:00",
+      "auto_acceptable_verified": true,
+      "round": "H4",
+      "closing": {
+        "auto_scope": "已完成：本阶段全部 auto_acceptable 任务",
+        "manual_scope": "未决策：T19.4（人工检查点恒 pending，NPC 不代签）",
+        "evidence": "reports/probability_calibration_5d.json",
+        "checkpoint_manifest": "schedule/manual_checkpoints.json",
+        "doc": "00_kickoff/manual_checkpoints_round_g_h.md#十一h-轮s16s20收口附录自动任务已交付决策待签字",
+        "verified_at": "2026-09-12T05:30:00+00:00",
+        "affects_gate": false
+      }
     },
     {
       "id": "S20",
@@ -1032,7 +1080,19 @@
       "depends_on": [
         "S19"
       ],
-      "result": "评估已交付：无候选满足准入，默认取消（T20.1 调研结论已出，T20.4 待签字）"
+      "result": "评估已交付：无候选满足准入，默认取消（T20.1 调研结论已出，T20.4 待签字）",
+      "auto_acceptable_completed_at": "2026-09-12T05:30:00+00:00",
+      "auto_acceptable_verified": true,
+      "round": "H5",
+      "closing": {
+        "auto_scope": "已完成：本阶段全部 auto_acceptable 任务",
+        "manual_scope": "未决策：T20.1/T20.4（人工检查点恒 pending，NPC 不代签）",
+        "evidence": "reports/research_assist_evaluation.json",
+        "checkpoint_manifest": "schedule/manual_checkpoints.json",
+        "doc": "00_kickoff/manual_checkpoints_round_g_h.md#十一h-轮s16s20收口附录自动任务已交付决策待签字",
+        "verified_at": "2026-09-12T05:30:00+00:00",
+        "affects_gate": false
+      }
     }
   ],
   "current_stage_index": 19,
@@ -1041,5 +1101,5 @@
   "next_run_date": "2026-09-12",
   "blockers": [],
   "result": "s15_g5_t15_1_t15_2_supplementary_verified",
-  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。 | S18(H3) 市场状态分层 T18.1~T18.3 已交付（src/eval/regime.py + python main.py regime）：HMM 三态识别走 expanding 无前视口径，状态分层评估 + 状态特征单变量 A/B 全部 report_only；T18.4 状态是否进门禁保持人工 pending。遗留人工检查点累计 8 个（含新增 T18.4）。"
+  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。 | S18(H3) 市场状态分层 T18.1~T18.3 已交付（src/eval/regime.py + python main.py regime）：HMM 三态识别走 expanding 无前视口径，状态分层评估 + 状态特征单变量 A/B 全部 report_only；T18.4 状态是否进门禁保持人工 pending。遗留人工检查点累计 8 个（含新增 T18.4）。 | H 轮（S16~S20）收口：全部 auto_acceptable 任务已交付并通过守卫测试（全量回归 977 passed / 2 skipped）；5 个人工检查点（T16.4/T17.4/T18.4/T19.4/T20.4）已全部进决策包 schedule/manual_checkpoints.json（10 条，priority 唯一），代码与证据落盘、签字仍待人工 —— NPC 不代签。"
 }

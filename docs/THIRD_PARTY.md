@@ -99,7 +99,7 @@ qlib 官方 Alpha158（`qlib/contrib/data/loader.py`）共 158 个表达式 =
 | MAPIE | **可选依赖，两条口径并存** | 主线为 `conformal-interval`（MAPIE `SplitConformalClassifier`，LAC）；另保留 `conformal` 覆盖率校准命令按 Vovk/分割保形口径**自实现**（`src/eval/conformal.py`），报告 `backend=native` 如实标注，不冒充 MAPIE 结果 |
 | hmmlearn | **可选依赖（已实装 0.3.3）** | `src/eval/regime.py` 用 `GaussianHMM`（BSD-3-Clause）拟合市场状态；`regime` 命令缺省**明确报错不静默降级**，同时保留 `detect_regimes(..., backend="rules")` 旧口径供显式调用（如实标注 `backend=rules`）。已做状态占比 / 协方差退化检查，避免吸收成离群态 |
 | scikit-learn（isotonic / Platt） | **既有依赖，已实际使用** | S19 校准层用 `IsotonicRegression` 与 `LogisticRegression`（logit 变换）；校准参数固化到 `models/probability_calibration_<horizon>.json`，推理期只读 |
-| TradingAgents 系 | **不引入（整链路默认 cancel）** | S20 评估结论：0 个候选同时满足「A 股适配 + 离线可复现 + 许可证明确」。离线对照结构性不可量化 → 记 `unverifiable` 并止损。见 `00_kickoff/round2_integration_conclusion.md` |
+| TradingAgents 系 | **不引入（整链路默认 cancel）** | S20 评估结论：0 个候选同时满足「A 股适配 + 离线可复现 + 许可证明确」。离线对照结构性不可量化 → 记 `unverifiable` 并止损。见 `00_kickoff/research_assist_conclusion.md` |
 
 ### 合规说明
 
@@ -137,8 +137,12 @@ qlib 官方 Alpha158（`qlib/contrib/data/loader.py`）共 158 个表达式 =
 ### 规划期合规说明
 
 - H1~H4 全部为 sklearn 风格轻量库或既有依赖，符合「零重型依赖、CI 离线可跑」纪律；
-- **H1（MAPIE）与 H3（hmmlearn）已由「规划期登记」转为「已实装」**：运行时版本号见上节；
-  H2/H4 仍为规划期登记，H5 待 T20.1 评估；
-- H5 涉及的 LLM Agent 框架依赖较重且输出不可量化，**登记为待评估而非待引入**，
-  评估结论（含许可证逐项核查）落 `00_kickoff/` 后另行追加运行时版本号；
-- 配套候选评估与淘汰理由见 `00_kickoff/high_value_projects_round2_candidates.md`。
+- **H1（MAPIE）/ H3（hmmlearn）/ H4（scikit-learn 校准器）已由「规划期登记」转为「已实装」**：
+  运行时版本号见上节；H2（CPCV / DSR）为**方法论引入**（不引入运行库）；
+- **H5 评估结论：不引入**（`cancel`）—— 0 个候选满足「A 股适配 + 离线可复现 +
+  许可证明确」三项准入，见 `00_kickoff/research_assist_conclusion.md`；
+  若未来出现合格候选，按同一决策单重跑 `python main.py research-assist`；
+- 配套候选评估与淘汰理由见 `00_kickoff/high_value_projects_round2_candidates.md`；
+- **H 轮收口（2026-09-12）**：S16~S20 的 `auto_acceptable` 任务全部交付，
+  运行时版本以本轮实际 `pip install` 为准；人工检查点
+  （T16.4 / T17.4 / T18.4 / T19.4 / T20.4）保持 `pending`，采纳与否待人工签字。
