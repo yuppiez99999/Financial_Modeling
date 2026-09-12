@@ -487,6 +487,15 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 > `approve` 批准的是证据，落配置 + 泄漏/偏差审查仍由人工执行。
 > 详见 `00_kickoff/hyperopt_confidence_conclusion.md` §十。
 
+> **T16.3 现状（保留期证据链补齐）**：决策单证据源 `confidence_holdout_verify.json`
+> 已有可复现生成命令 `python main.py confidence-holdout`（训练只用前 70%，
+> 保留期从未参与训练/扫描/调参，与 `confidence` 命令同口径）；并把保留期切成
+> `--n-periods` 个互不重叠时段滚动复验，逐段检验「thr∈[0.2,0.3] 子集命中率 ≥
+> 同时段全样本命中率」，stable/unstable/insufficient_samples 三态如实输出
+> （`reports/confidence_rolling_verify.json`，补充证据，不替代保留期报告）。
+> `affects_gate=false`；挑阈值与签字仍属 T15.3/T16.4 人工检查点。
+> 完整链路：`confidence-holdout` → `confidence-gate`（决策单）→ 人工签字。
+
 ---
 
 ## 十一、技术栈 🛠️

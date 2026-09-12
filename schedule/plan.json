@@ -932,8 +932,8 @@
     {
       "id": "S16",
       "name": "概率区间校准（H1：MAPIE 保形预测 + neuralforecast 区间实装）",
-      "status": "pending",
-      "started_at": null,
+      "status": "in_progress",
+      "started_at": "2026-09-12T00:48:06+00:00",
       "completed_at": null,
       "scheduled_dates": "2026-10-05 ~ 2026-10-11",
       "tasks": [
@@ -954,9 +954,10 @@
         {
           "id": "T16.3",
           "name": "多时段滚动保留期复验：逐季度切分保留期（补 T15.3 遗留限制），检验 thr∈[0.2,0.3] 命中率优势是否跨时段稳定",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-12T00:48:06+00:00",
+          "result": "src/eval/confidence_holdout.py + main.py confidence-holdout：保留期复验报告（决策单唯一证据源）首次有可复现生成命令；保留期切 n_periods 个互不重叠时段逐段检验 thr∈[0.2,0.3] 优势，stable/unstable/insufficient 三态如实输出；tests/test_roadmap_s16_t163.py 26 例"
         },
         {
           "id": "T16.4",
@@ -974,7 +975,7 @@
       "manual_checkpoint": [
         "T16.4"
       ],
-      "note": "直接回应 T15.3 遗留项：保留期只有一个 + neuralforecast 未实装。区间换算机制在 S15 已抽象就绪（confidence_from_interval），本轮只喂数据不改链路。",
+      "note": "直接回应 T15.3 遗留项：保留期只有一个 + neuralforecast 未实装。区间换算机制在 S15 已抽象就绪（confidence_from_interval），本轮只喂数据不改链路。 T16.3 提前交付（Issue #29「选择最优方案」指令）。",
       "source": "Issue #40 高质量项目集成2 · H1（scikit-learn-contrib/MAPIE + Nixtla/neuralforecast）",
       "depends_on": [
         "S15"
@@ -1198,4 +1199,5 @@
   "next_run_date": "2026-09-12",
   "blockers": [],
   "result": "s15_g5_t15_1_t15_2_supplementary_verified",
-  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。"}
+  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。"
+}

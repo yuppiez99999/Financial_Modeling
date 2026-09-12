@@ -225,3 +225,57 @@
   T14.3 回退链顺序、T15.3 门禁结构（本次交付决策单，签字待办）；
 - `neuralforecast` 概率区间 → 置信度换算已就绪（`confidence_from_interval`）
   但未实装，若人工要"模型原生不确定度"而非"概率距离"，可作为 S16+ 候选。
+
+## 十一、T16.3 补充：保留期证据链补齐 + 多时段滚动复验（2026-09-12）
+
+> Issue #29「选择最优方案」指令落地：上一节 10.4 列的两条遗留（保留期报告
+> 不可复现生成 + 单一时段软肋），本次补上**证据链基础设施**。
+
+### 11.1 交付内容（代码，`affects_gate` 恒为 false）
+
+- `src/eval/confidence_holdout.py` + `python main.py confidence-holdout`：
+  - **独立保留期复验**：与 `confidence` 命令同口径（同数据/特征/超参），但训练
+    只用前 70%，保留期 = 后 30%，从未参与任何训练/阈值扫描/超参搜索；
+    落盘 `reports/confidence_holdout_verify.json` —— 决策单（`confidence-gate`）
+    的唯一证据源**首次有可复现生成命令**（此前是临时脚本手工构造，且
+    `reports/` 在 .gitignore，换机即断）；
+  - **多时段滚动复验**（默认开，`--no-rolling` 关）：保留期切 `--n-periods`
+    个互不重叠时段，逐段检验「thr∈[0.2,0.3] 子集命中率 ≥ 同时段全样本命中率」，
+    判定三态：`stable`（候选区间内全部阈值过基准）/ `unstable`（任一阈值掉线，
+    不择优）/ `insufficient_samples`（不猜）；跨时段取多数；
+    落盘 `reports/confidence_rolling_verify.json`（**补充证据**，不替代保留期报告）；
+  - **无前视硬校验**：模型对整段保留期一次性预测（时段边界对模型不可见），
+    守卫测试里「篡改保留期标签 → 预测必须不变」已钉死为回归用例；
+  - 守卫测试 `tests/test_roadmap_s16_t163.py` 26 例，全离线合成数据。
+
+### 11.2 端到端实测（单标的冒烟，600519.SH 真实腾讯源 800 行）
+
+| 周期 | 滚动稳定性（3 时段） | 读数 |
+|------|--------------------|------|
+| 5d | insufficient_samples | stable=1 / unstable=1 / 不足=1（样本不足以构成结论） |
+| 10d | **unstable** | stable=1 / unstable=2（置信度优势非跨时段稳定） |
+| 20d | **stable** | stable=2 / unstable=1 |
+
+> 单标的冒烟 ≠ 38 标的池结论：样本量小（保留期 ~235 样本切 3 段），多数时段
+> 样本不足。**如实记录，不外推**。完整结论须在 38 标的池上跑：
+> `python main.py confidence-holdout`（默认全池 + 5/10/20 三周期）。
+
+### 11.3 签字流程（可复现链路，三步）
+
+```bash
+python main.py confidence-holdout            # ① 生成保留期报告（证据源）
+python main.py confidence-gate               # ② 出决策单（候选区间 + verdict）
+python main.py confidence-gate --chosen-threshold <thr> \
+    --decided-by <人> --reason "<理由>"       # ③ 人工挑阈值 + 签字 → confirmed
+```
+
+实测验证：① 报告生成 → ② defer/pending（有候选未挑定）→ ③ 挑 0.3 + 签字 →
+approve/confirmed。fail-close 全程未被绕过。
+
+### 11.4 边界与遗留
+
+- `affects_gate` 恒为 false；挑阈值与签字属 T15.3/T16.4 人工检查点，不代选、不代签；
+- 滚动复验的时段切分是**均匀等分**（非逐季度），`--n-periods` 可调；逐季度
+  对齐交易日历属 T16.1/T16.2（MAPIE 轮）一并处理；
+- 遗留人工检查点仍为 5 个（T11.2 / T12.3 / T13.4 / T14.3 / T15.3），
+  本轮不新增不收口。

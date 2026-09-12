@@ -1742,6 +1742,152 @@ def run_confidence_gate(config: dict, decided_by: str = "",
     return record
 
 
+
+def run_confidence_holdout(config: dict, symbols: list[str] | None = None,
+                           horizons: list[int] | None = None,
+                           train_ratio: float = 0.7, n_periods: int = 3,
+                           rolling: bool = True) -> dict:
+    """置信度保留期复验（S16 / T16.3）：补齐 T15.3 决策单的证据链。
+
+    为什么需要：`confidence-gate` 决策单消费的保留期报告
+    （reports/confidence_holdout_verify.json）此前没有可复现的生成命令，
+    且保留期只有单一时段——决策单里 `single_period_warning` 标注的最大软肋。
+
+    本命令做的事：
+      1. 与 `confidence` 命令完全同口径（同数据、同特征、同 LightGBM 超参），
+         但训练**只用前 train_ratio（默认 70%）**，保留期 = 后 30%，
+         从未参与任何训练 / 阈值扫描 / 超参搜索；
+      2. 保留期上扫阈值网格，产出曲线，落盘
+         `reports/confidence_holdout_verify.json`（决策单唯一证据源）；
+      3. `--no-rolling` 可关：默认把保留期切成 n_periods 个互不重叠时段，
+         逐时段检验「thr∈[0.2,0.3] 子集命中率 ≥ 同时段全样本命中率」是否
+         跨时段稳定，落盘 `reports/confidence_rolling_verify.json`（补充证据）。
+
+    ⚠️ **不改门禁**（`affects_gate=false`）；**不选阈值**（候选区间是范围，
+    挑阈值 + 签字属人工检查点）；模型只用训练段拟合，保留期只被评估一次。
+
+    用法：
+      python main.py confidence-holdout                     # 70/30 + 3 时段滚动
+      python main.py confidence-holdout --n-periods 4       # 保留期切 4 段
+      python main.py confidence-holdout --no-rolling        # 只出保留期报告
+    """
+    import scripts.evaluate_models as ev
+    from src.data.preprocessor import FeatureEngineer
+    from src.eval import confidence_holdout as ch
+    from src.eval.confidence_curve import sweep_confidence
+
+    logger.info("置信度保留期复验（独立保留期 + 多时段滚动，T16.3）")
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+    horizon_map = horizons or [int(v.get("days", 5)) for v in horizons_cfg.values()
+                               if isinstance(v, dict)]
+    if not horizon_map:
+        horizon_map = [5, 10, 20]
+
+    out_dir = Path("reports")
+    out_dir.mkdir(exist_ok=True)
+    all_curves: dict = {}
+    rolling_rows: dict = {}
+    rolling_summaries: dict = {}
+    meta = {"symbols": len(data), "train_ratio": float(train_ratio),
+            "n_periods": int(n_periods) if rolling else 0,
+            "command": "confidence-holdout"}
+
+    import lightgbm as lgb
+    from sklearn.preprocessing import StandardScaler
+
+    for days in horizon_map:
+        combined = ev.build_supervised(data, config, int(days))
+        if combined.empty:
+            all_curves[f"{days}d"] = {"available": False,
+                                      "reason": "no_supervised_data"}
+            continue
+        fe = FeatureEngineer(config)
+        cols = [c for c in fe.get_feature_columns(combined, int(days))
+                if not str(c).startswith("_")]
+        n = len(combined)
+        train_idx, hold_idx = ch.holdout_split(n, train_ratio)
+        if len(hold_idx) == 0:
+            all_curves[f"{days}d"] = {"available": False,
+                                      "reason": "holdout_empty"}
+            continue
+
+        proba, ret = ch.collect_predictions(
+            combined, cols, f"target_{int(days)}d", train_idx, hold_idx,
+            config=config, lgb_module=lgb, scaler_cls=StandardScaler)
+
+        curve = sweep_confidence(proba, ret, grid=ch.DEFAULT_GRID)
+        curve["horizon_days"] = int(days)
+        curve["train_samples"] = int(len(train_idx))
+        curve["holdout_samples"] = int(len(hold_idx))
+        all_curves[f"{days}d"] = curve
+
+        if rolling:
+            rows_per_period: list = []
+            summaries_per_period: list = []
+            for p_i, (start, end) in enumerate(ch.rolling_periods(hold_idx, n_periods)):
+                sub = sweep_confidence(proba[start:end], ret[start:end],
+                                       grid=ch.DEFAULT_GRID)
+                sub["period_index"] = p_i
+                sub["period_samples"] = int(end - start)
+                verdict = ch.evaluate_period_stability(sub.get("rows") or [])
+                sub["stability"] = verdict
+                rows_per_period.append(sub)
+                summaries_per_period.append(verdict)
+            rolling_rows[f"{days}d"] = rows_per_period
+            rolling_summaries[f"{days}d"] = ch.summarize_stability(summaries_per_period)
+
+        obs = curve.get("observation")
+        if obs:
+            print(f"[confidence-holdout] {days}d 观察点: thr={obs['threshold']} "
+                  f"hit={obs['hit_rate']:+.4f} cov={obs['coverage']:.2%}"
+                  f"（保留期 {len(hold_idx)} 样本；呈现用，非推荐阈值）")
+        if rolling and f"{days}d" in rolling_summaries:
+            s = rolling_summaries[f"{days}d"]
+            print(f"[confidence-holdout] {days}d 滚动稳定性: {s['verdict']}"
+                  f"（stable={s.get('stable_periods')}/"
+                  f"unstable={s.get('unstable_periods')}/"
+                  f"insufficient={s.get('insufficient_periods')}）")
+
+    report = ch.build_holdout_report(all_curves, meta=meta)
+    hold_path = ch.holdout_report_path(config)
+    hold_path.parent.mkdir(parents=True, exist_ok=True)
+    hold_path.write_text(json.dumps(report, ensure_ascii=False, indent=2),
+                         encoding="utf-8")
+    payload: dict = {"holdout_report": str(hold_path),
+                     "horizons": list(all_curves.keys()),
+                     "affects_gate": False}
+
+    if rolling and rolling_rows:
+        roll_report = ch.build_rolling_report(rolling_rows, rolling_summaries,
+                                              meta=meta)
+        roll_path = ch.rolling_report_path(config)
+        roll_path.parent.mkdir(parents=True, exist_ok=True)
+        roll_path.write_text(json.dumps(roll_report, ensure_ascii=False, indent=2),
+                             encoding="utf-8")
+        payload["rolling_report"] = str(roll_path)
+        payload["rolling_stability"] = {h: s.get("verdict")
+                                        for h, s in rolling_summaries.items()}
+
+    _record_trial(config, "confidence-holdout", {
+        "symbols": len(data), "horizons": list(all_curves.keys()),
+        "train_ratio": float(train_ratio),
+        "n_periods": int(n_periods) if rolling else 0,
+    })
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    print(f"\n保留期报告已保存: {hold_path}"
+          + (f"\n滚动复验报告已保存: {payload['rolling_report']}" if rolling else ""))
+    print("下一步: python main.py confidence-gate  # 基于保留期报告出决策单（须人工签字）")
+    return payload
+
+
 def run_factor_model(config: dict, symbol: str | None = None, top_n: int = 10) -> dict:
     """多因子模型诊断：因子权重 / 族权重 / IC 排名 / 当前因子值。
 
@@ -2094,6 +2240,7 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py tune --n-trials 50       # 更多试验数
   python main.py confidence               # 置信度阈值曲线（高置信样本命中率，S15/G5）
   python main.py confidence-gate          # 置信度子集门禁决策单（双指标，须人工签字，S15/G5）
+  python main.py confidence-holdout      # 置信度保留期复验 + 多时段滚动（T16.3，决策单证据源）
         """,
     )
     parser.add_argument("command", choices=[
@@ -2103,7 +2250,7 @@ def build_parser() -> argparse.ArgumentParser:
         "signal", "orders", "trade", "backtest", "macro", "monitor",
         "ic", "ic-trend", "ic-pool", "pool-train", "horizon-scan", "horizon-decision",
         "feature-experiment", "label-ab", "qlib-ab", "trials", "release-check",
-        "tune", "confidence", "confidence-gate",
+        "tune", "confidence", "confidence-gate", "confidence-holdout",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -2157,6 +2304,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="horizon-decision 命令：人工确认/驳回的理由（写入决策单审计字段）")
     parser.add_argument("--n-trials", dest="n_trials", type=int, default=20,
                         help="tune 命令：optuna 试验数（缺省 20）")
+    parser.add_argument("--n-periods", dest="n_periods", type=int, default=3,
+                        help="confidence-holdout 命令：保留期滚动复验时段数（缺省 3）")
+    parser.add_argument("--no-rolling", dest="no_rolling", action="store_true",
+                        help="confidence-holdout 命令：只出保留期报告，不做多时段滚动复验")
     parser.add_argument("--trials-horizons", dest="trials_horizons", default=None,
                         help="tune / confidence 命令：逗号分隔的预测周期（交易日），如 5,10；缺省用配置")
     parser.add_argument("--host", default=None, help="API 服务地址")
@@ -2340,6 +2491,18 @@ def main():
             except ValueError:
                 logger.warning(f"--trials-horizons 解析失败，改用配置 prediction_horizons: {_raw_h}")
         run_confidence(config, symbols=_cli_symbols(args), horizons=_h)
+    elif args.command == "confidence-holdout":
+        _h = None
+        _raw_h = getattr(args, "trials_horizons", None)
+        if _raw_h:
+            try:
+                _h = [int(x.strip()) for x in str(_raw_h).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--trials-horizons 解析失败，改用配置 prediction_horizons: {_raw_h}")
+        run_confidence_holdout(
+            config, symbols=_cli_symbols(args), horizons=_h,
+            n_periods=int(getattr(args, "n_periods", 3) or 3),
+            rolling=not bool(getattr(args, "no_rolling", False)))
     elif args.command == "confidence-gate":
         _ct = getattr(args, "chosen_threshold", None)
         run_confidence_gate(
