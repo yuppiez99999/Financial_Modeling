@@ -390,7 +390,7 @@ python -m pytest tests/ -q          # 全量
 python main.py --help               # 校验 CLI 的 40 个子命令
 ```
 
-测试覆盖 `tests/` 下 **38 个测试文件**：数据链路（tencent / akshare / macro）、特征与防泄漏、训练与评估量尺、API 契约、交易适配、审计与调度，以及 S7~S15 / G1~G5 各阶段专属回归（`test_roadmap_*`）。
+测试覆盖 `tests/` 下 **39 个测试文件**：数据链路（tencent / akshare / macro）、特征与防泄漏、训练与评估量尺、API 契约、交易适配、审计与调度，以及 S7~S15 / G1~G5 各阶段专属回归（`test_roadmap_*`）。
 
 ---
 
@@ -443,7 +443,7 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 | S12 / G2 | 标签重构：三重障碍法 + 无前视测试 + A/B 实验 | ✅ |
 | S13 / G3 | qlib 因子库接入（Alpha158 表达式级对齐 + 增量验证） | 🚧 进行中 |
 | S14 / G4 | 数据源升级：akshare 升 P1 + **期货 / 外汇开启** | ✅ |
-| S15 / G5 | 调参与概率预测：optuna 超参搜索 + 置信度阈值曲线 | 🚧 进行中 |
+| S15 / G5 | 调参与概率预测：optuna 超参搜索 + 置信度阈值曲线；**T15.3 双指标门禁结构重构已交付**（决策单待人工签字） | 🚧 进行中 |
 
 > ⚠️ **阶段 id 复用提示**：新 S11~S14（G1~G5 轮）与旧 S11~S14（收敛轮）id 同名但内容不同，以 `schedule/plan.json` 的 `note` / `source` 字段区分。
 >
@@ -472,12 +472,20 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 
 - T11.2 — 成本三档口径定稿
 - T12.3 — 三重障碍法标签是否纳入主线
+- T13.4 — qlib Alpha158 因子是否纳入生产特征集
+- T14.3 — akshare 回退链顺序 + 期货/外汇是否纳入训练主线
+- T15.3 — **是否按「置信度 ≥thr 子集命中率 + 覆盖率下限」双指标重构 `strategy_gate` 结构**（thr ∈ [0.2, 0.3]）
 - T16.4 — 区间口径 vs 概率距离口径取舍（含覆盖率下限与信号量权衡）
 - T17.4 — 门禁是否引入过拟合概率下限
 - T18.4 — 状态分层是否进入信号门禁 / 风控 `withheld` 语义
 - T19.4 — 校准层是否进主推理链路
 - T20.1 / T20.4 — LLM 投研辅助是否引入 / 是否保留
 
+> **T15.3 现状**：双指标判定 + 决策单代码已交付（`python main.py confidence-gate`，
+> 落盘 `reports/confidence_gate_decision.json`，`affects_gate=false`，`freeze_structure=true`）。
+> **门禁结构实际切换须人工签字**（`--decided-by`）：无签字恒为 `pending`；
+> `approve` 批准的是证据，落配置 + 泄漏/偏差审查仍由人工执行。
+> 详见 `00_kickoff/hyperopt_confidence_conclusion.md` §十。
 
 ---
 
