@@ -56,7 +56,8 @@ python main.py research-assist          # 调研 + 只读附注 + 离线对照 +
 
 **要你定什么**：这条链路**保留与否**（含成本与噪声风险）；不保留则**整阶段取消**。
 
-**现状默认**：`cancel` / `pending` —— 无人工签字不放行。
+**现状默认**：`cancel`；2026-09-12 经用户确认（Issue #40）落定为 `confirmed`
+（决策 `cancel`：整阶段取消，代码保留不启用）。
 
 理由（决策单 `blockers`）：
 
@@ -81,10 +82,11 @@ python main.py research-assist          # 调研 + 只读附注 + 离线对照 +
 | 检查点 | 一句话问题 | 证据强度 |
 |:---:|:---|:---|
 | **T20.1** | 调研结论是否采纳（3 候选全部不满足准入） | 证据明确（0/3），建议采纳「不引入」 |
-| **T20.4** | 整条链路是否保留 | 默认 cancel / pending |
+| **T20.4** | 整条链路是否保留 | 已确认 `cancel`（整阶段取消） |
 
 > ⚠️ `T20.1` 的调研**结论已交付**，但「**是否采纳**」是人工动作 ——
-> 故它在 `schedule/plan.json` 中**保持 `pending`**。
+> 2026-09-12 经用户确认（Issue #40）落定为 `confirmed`（决策 `reject`：
+> 明确不采纳，不放宽准入）。它**不得标 `completed`** ——
 > 把「结论已出」当成「已采纳」正是本项目一直在防的**假进度**。
 
 ## 六、边界与纪律
@@ -92,6 +94,6 @@ python main.py research-assist          # 调研 + 只读附注 + 离线对照 +
 1. `affects_gate` / `affects_signal` **恒为 `False`**（结构性，测试钉死）；
 2. **不调用真实 LLM**：附注由调用方注入或留空，离线优先；
 3. **不编造效果**：无法量化即 `unverifiable` + 止损理由；
-4. **不签字**：无 `decided_by` → 最多 `defer` / `cancel`；
+4. **不代签**：人工检查点只允许 `pending` / `confirmed`；`completed` 即代签（禁止）；
 5. 本阶段自动任务（T20.2/T20.3）已交付，收口字段见
    `schedule/plan.json` → `stages[S20].closing`。

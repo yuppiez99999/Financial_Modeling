@@ -63,7 +63,31 @@ python main.py calibration --calibration-method platt
 > 它是**决策材料**，不是「已达标」的结论。
 > 复现：`python main.py calibration`（落盘 `reports/probability_calibration_{5,10,20}d.json`）。
 
-## 四、待人工决策（T19.4）
+## 四、§B 决策读数（`calibration-ablation`）
+
+**为什么 §A 与 §B 必须分开看**：T19.4 要定的是"要不要进**主推理链路**"，
+其判据是**决策读数**（命中率 / IC / 阈值子集），不是概率质量。
+二者可以完全脱节 —— 校准是**单调映射**，因此：
+
+> 全样本口径下方向命中率与 AUC **恒等**；
+> 差异只可能出现在**阈值子集**口径上 —— 而那正是 T15.3 想让门禁依赖的东西。
+
+`calibration-ablation` 的对照纪律：
+
+- 三条腿共享**同一个**分类器与同一段校准样本，只变"概率是否被校准"；
+- 逐指标并排：门禁点命中率（clf=no_call 口径）/ IC / AUC / Brier / ECE /
+  阈值子集命中率；
+- **一升一降不择优、不合成总分**；负面读数如实入库；
+- 报告内含 **AUC 不变性校验**（校准是单调映射，AUC 变了说明装配有问题）。
+
+> 复现：`python main.py calibration-ablation`
+> 落盘：`reports/calibration/calibration_ablation.json`
+> ⚠️ CI 离线环境无真实行情，`reports/` 不入 git —— 该文件按需生成，
+> 缺失时视为证据未生成（不冒充）。
+
+---
+
+## 五、待人工决策（T19.4）
 
 **要你定什么**：校准后的概率是否成为**主推理链路**的默认语义 ——
 即 ① 门禁阈值吃校准概率 ② `/api/v1/portfolio/summary` 与 `/signal`
@@ -99,11 +123,12 @@ python main.py confidence-holdout                       # 用新概率重算保�
 python main.py confidence-gate                          # 再看候选阈值（覆盖/命中权衡）
 ```
 
-## 五、边界与纪律
+## 六、边界与纪律
 
 1. `affects_gate` 恒为 `false`，`strategy_gate` 判据逐字段未变；
 2. 校准器**只读**套用：`src/inference/probability_calibrator.py` 在参数文件缺失时
    如实降级为原始概率（不猜、不外推）；
-3. T19.4 **保持 `pending`**，不因「结论已出」而标 `completed`；
+3. T19.4 **不得标 `completed`**；2026-09-12 经用户确认（Issue #40）落定为
+   `confirmed`（决策 `defer`：暂不进主推理链路），带签署字段（签字，非代签）；
 4. 本阶段自动任务（T19.1/T19.2/T19.3）已交付，收口字段见
    `schedule/plan.json` → `stages[S19].closing`。

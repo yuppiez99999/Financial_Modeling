@@ -174,6 +174,46 @@ PBO 缺口需要先补「多候选矩阵」扫描（我可以下一轮做）。�
 ECE **0.1042 → 0.0025（−97.6%）**，Brier 同步下降 → **现行概率确实系统性高估/低估**，
 校准层有实质价值。**证据较强**。
 
+**证据（§A 校准质量 · §B 决策读数，两者必须分开看）**
+
+§A 校准质量（`reports/probability_calibration_*.json`，样本外/复验段）：
+
+| 周期 | 校准前 ECE | platt ECE | Brier（前→后） |
+|:---:|:---:|:---:|:---:|
+| 5d | 0.1042 | **0.0025** | 0.2650 → 0.2498 |
+| 10d | 0.1258 | 0.0463 | 0.2713 → 0.2523 |
+| 20d | 0.0710 | 0.0530 | 0.2402 → 0.2394 |
+
+> ⚠️ 负面读数一并入库：**20d isotonic 的 Brier 反而略升**（0.2402 → 0.2420）；
+> 改善幅度**随周期递减**。只看 5d 那一格就是新的选择自由度。
+
+§B 决策读数（`reports/calibration/calibration_ablation.json`）：
+`python main.py calibration-ablation` 用**同一次拟合**产出
+`base` / `platt` / `isotonic` 三条腿，逐指标并排（门禁点命中率 / IC / AUC /
+Brier / ECE / 阈值子集命中率），**一升一降不择优、不合成分数**。
+
+**结构性事实（为什么 §A 与 §B 可以脱节）**：校准是**单调映射**，
+因此全样本口径下方向命中率与 AUC **恒等**——差异只可能出现在
+**阈值子集**口径上，而那正是 T15.3 想让门禁依赖的东西。
+
+**现状默认**：`model.calibration.enabled=false`；校准参数已固化到
+`models/probability_calibration_<horizon>.json`，API 只**追加**只读字段
+（`calibrated_probability` / `uncertainty` / `calibration_applied`），既有字段逐字段不变。
+
+**确认结论（2026-09-12，见文首纪要）**：**`defer`** —— 暂不进主推理链路，维持只读字段暴露。
+- 依据：校准是单调映射，全样本口径下方向命中率与 AUC 恒等，差异只在阈值子集口径；
+  ECE/Brier 改善幅度随周期递减（20d isotonic 的 Brier 反而略升），§B 决策读数消融未给出「进链路」的充分依据；
+- 后果：概率语义维持现状，API 差异仅体现在新增字段；
+- 若日后要「签」：主链路概率语义变更**必须与 T15.3 / T18.4 一起看**（见 §14.2），且须另开 PR 逐字段 diff。
+
+**怎么落**
+```bash
+python main.py calibration-ablation     # §B 决策读数消融（同一次拟合，三腿并排）
+python main.py calibration              # §A 校准质量 + 固化参数
+```
+
+---
+
 **现状默认**：`model.factors.probability_calibration.enabled=false`；
 `calibrated_probability` / `uncertainty` 为**追加字段**，
 `probability` / `direction` / `signal` 逐字段不变（向后兼容已由测试钉死）。
@@ -276,6 +316,19 @@ ECE **0.1042 → 0.0025（−97.6%）**，Brier 同步下降 → **现行概率�
 
 **现状**：写成常量并登记在 docstring，**禁止配置覆盖** —— 否则「换一组参数就能翻盘」
 的选择自由度又回来了。**建议维持现状**（这是纪律，不是缺省）。
+
+---
+
+## 11.5 本轮补充的两种证据形态（供你判断证据充分性）
+
+| 命令 | 补的是什么 | 边界 |
+|:---|:---|:---|
+| `python main.py calibration-ablation` | T19.4 的**决策读数**（同一次拟合、三腿并排） | 不改链路、不选点；一升一降不择优 |
+| `python main.py regime --holdout-evidence` | T18.4 从「单标的冒烟」→「**合成留出**」 | **非**真实 38 标的读数，报告内显式标注 `evidence_scope` |
+
+> 两者都只为**降低决策材料的不确定性**，都不产生结论、不代签、不改门禁。
+
+---
 
 ---
 
@@ -394,3 +447,13 @@ python main.py research-assist                                 # H5 证据（T20
 
 > 每次读数前先看 `reports/trials.jsonl` 的累计次数 ——
 > 选择自由度会随扫描次数上升（S17 统一试验预算）。
+
+---
+
+## 十五、本轮新增守卫（`tests/test_roadmap_h4_h5_evidence.py`）
+
+- `calibration-ablation`：三腿**必须共用同一拟合**（AUC 不变性硬校验）、
+  逐指标**不做择优**、负面读数保留、`affects_gate` 恒 false、无前视（校准段 < 复验段）；
+- 决策包与 `plan.json`：`T19.4/T20.1/T20.4` 已进清单、priority 唯一连续、
+  引用文件/文档**不得悬空**、检查点状态只允许 `pending` / `confirmed`（`completed` 即代签）；阶段收官须带人工确认字段；
+- `T11.2` 记账：不得再出现 `completed_at`（防回潮）。
