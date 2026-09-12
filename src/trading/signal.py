@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -78,6 +79,29 @@ class SignalEngine:
         # 是否允许做空（SELL）
         self.allow_short = bool(cfg.get("allow_short", True))
 
+    @staticmethod
+    def _safe_probability(value: Any, default: float = 0.5) -> float:
+        """把任意来源的概率取成 ``[0, 1]`` 内的有限值（不可用则回退默认值）。
+
+        真实缺陷：原实现直接 ``float(payload["probability"])``。上游只要给出
+        ``probability=10``（或 NaN / inf），``_direction_value`` 就会返回
+        ``±5.7`` 乃至 ``±59.7``，**突破文档承诺的 score ∈ [-1, 1]**；
+        该越界值经 ``strength`` 传给风控，虽然 ``_sizing_fraction`` 里有
+        ``min(strength, 1.0)`` 兜底，但 ``Signal.score/strength`` 本身已被污染，
+        会原样写进日报、审计记录与 API 响应 —— 下游任何按 score 阈值
+        分支的逻辑都会拿到超出契约的数。
+
+        这里做的是**口径收口**：概率是概率，越界即视为数据异常，回退中性值，
+        而不是把异常放大成"更强"的信号方向。
+        """
+        try:
+            f = float(value)
+        except (TypeError, ValueError):
+            return default
+        if not math.isfinite(f):
+            return default
+        return min(max(f, 0.0), 1.0)
+
     def _direction_value(self, horizon_pred: dict[str, Any]) -> float:
         """把单个周期的预测折算为 [-1, 1] 的方向分。
 
@@ -88,7 +112,7 @@ class SignalEngine:
         pred = horizon_pred.get("prediction")
         if pred is None:
             return 0.0
-        proba = float(horizon_pred.get("probability", 0.5))
+        proba = self._safe_probability(horizon_pred.get("probability", 0.5))
         # 将 0.5 中性点映射到 0，向两端线性放大
         mag = (proba - 0.5) * 2.0  # [-1,1]
         return 1.0 * mag if pred == 1 else -1.0 * mag
@@ -116,13 +140,15 @@ class SignalEngine:
             weighted_sum += dv * w
             contrib[h_name] = {"direction_score": round(dv, 4), "raw": hp}
             if isinstance(hp, dict) and "error" not in hp and hp.get("prediction") is not None:
-                # 只用有实际预测的周期统计置信度
-                conf_sum += float(hp.get("confidence", 0.5)) * w
+                # 只用有实际预测的周期统计置信度（越界/非有限值同样按中性回退）
+                conf_sum += self._safe_probability(hp.get("confidence", 0.5)) * w
                 conf_weight += w
                 resolved_count += 1
 
-        score = weighted_sum  # ∈ [-1,1]
-        confidence = (conf_sum / conf_weight) if conf_weight > 0 else 0.0
+        # 逐周期方向分已收敛到 [-1,1]，权重归一化后加权和必然落在 [-1,1]；
+        # 这里再夹一次是**契约兜底**（防止未来新增周期/权重口径时越界外泄）。
+        score = min(max(weighted_sum, -1.0), 1.0)
+        confidence = min(max((conf_sum / conf_weight) if conf_weight > 0 else 0.0, 0.0), 1.0)
         strength = abs(score)
 
         # 动作映射

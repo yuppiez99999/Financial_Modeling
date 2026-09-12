@@ -28,6 +28,26 @@ $logEntry = @{
   blockers = @()
 }
 
+# 「已落定」状态集合：completed 来自自动任务，confirmed 来自人工签字。
+# 与 schedule/run_daily.py 保持同一口径 —— 人工检查点确认后的终态是
+# "confirmed" 而非 "completed"，只认 completed 会让阶段永远无法收官。
+$DoneStatuses = @("completed", "confirmed")
+
+function Test-TaskDone {
+    param($task)
+    return ($DoneStatuses -contains [string]$task.status)
+}
+
+function Test-StageDone {
+    param($stage)
+    $tasks = @($stage.tasks)
+    if ($tasks.Count -eq 0) { return $false }
+    foreach ($t in $tasks) {
+        if (-not (Test-TaskDone $t)) { return $false }
+    }
+    return $true
+}
+
 function Write-LogEntry {
     param($logEntry)
     # 上一版漏定义该函数：PowerShell 路径下走到这里必抛 CommandNotFoundException，
@@ -92,9 +112,27 @@ try {
     $stage = $plan.stages[$plan.current_stage_index]
 
     if ($stage.status -eq "completed") {
+        # 守卫：阶段标 completed 却有未落定任务时，绝不跳过（防假进度）。
+        $unfinished = @()
+        foreach ($t in @($stage.tasks)) {
+            if (-not (Test-TaskDone $t)) { $unfinished += [string]$t.id }
+        }
+        if ($unfinished.Count -gt 0) {
+            $msg = "阶段 $($stage.id) 标 completed 但仍有未落定任务：$($unfinished -join ',')（拒绝跳过，防止假进度）"
+            $logEntry.result = "blocked_inconsistent_stage"
+            $logEntry.actions += $msg
+            $logEntry.blockers += $msg
+            $plan.result = $logEntry.result
+            $plan.next_run_date = $null
+            Write-LogEntry $logEntry
+            $plan | ConvertTo-Json -Depth 6 | Set-Content $planPath
+            exit 0
+        }
+
         $found = $false
         for ($i = 0; $i -lt $plan.stages.Count; $i++) {
-            if ($plan.stages[$i].status -eq "pending") {
+            if (($plan.stages[$i].status -eq "pending" -or $plan.stages[$i].status -eq "in_progress") -and
+                -not (Test-StageDone $plan.stages[$i])) {
                 $plan.current_stage_index = $i
                 $plan.current_task_index  = 0
                 $found = $true
@@ -174,16 +212,15 @@ try {
         }
     }
     else {
-        $logEntry.actions += "人工检查点，跳过自动完成：$taskId"
-    }
-
-    $stageDone = $true
-    foreach ($t in $stage.tasks) {
-        if ($t.status -ne "completed") {
-            $stageDone = $false
-            break
+        if (Test-TaskDone $task) {
+            $logEntry.actions += "人工检查点已落定（$($task.status)），无需自动执行：$taskId"
+        }
+        else {
+            $logEntry.actions += "人工检查点，跳过自动完成：$taskId"
         }
     }
+
+    $stageDone = Test-StageDone $stage
     if ($stageDone) {
         $stage.status = "completed"
         $stage.completed_at = (Get-Date -Format "o")

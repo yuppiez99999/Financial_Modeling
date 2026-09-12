@@ -16,6 +16,7 @@ IC = 预测信号与「未来真实收益」的秩相关（Spearman），衡量�
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -308,9 +309,20 @@ class ICCalculator:
 
 
 def _isnan(value: Any) -> bool:
+    """是否为「不可用值」：NaN / ±Inf / 无法转 float。
+
+    命名沿用历史（``_isnan``），但**语义是「非有限」而非仅 NaN**。
+    原因（真实缺陷）：``value != value`` 只能识别 NaN，``float("inf")`` 会
+    被判为「可用」并进入 ``_rank``。而 ``inf`` 参与排序时只是被当成"最大
+    的一个普通值"，秩照常分配、协方差照常计算，于是**IC 被静默算成一个
+    有限的假值**，既不报错也不留痕 —— 属于最危险的"看起来正常"型缺陷。
+    门禁据此放行就等于用一个被污染的数字做了准入判决。
+    """
     try:
-        return value != value  # NaN 特性
-    except Exception:  # noqa: BLE001
+        return not math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return True
+    except Exception:  # noqa: BLE001 - 任何无法判定的值一律视为不可用（fail-close）
         return True
 
 
