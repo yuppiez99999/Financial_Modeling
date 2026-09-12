@@ -261,17 +261,21 @@ class TestDecisionMaterialsNotDangling:
         """文档声明的条目数必须与清单一致（防文档与清单漂移）。
 
         2026-09-13 起清单扩展为两段：G/H 轮**已签字决策包 11 条**（本文档
-        对应）+ I 轮（Issue #54）**规划期检查点 5 条**（必须 pending、严禁
-        预签，见 tests/test_manual_checkpoints_confirmation.py）。本断言钉住
-        两侧数量，任何一侧变动都必须显式改这里。
+        对应）+ I 轮（Issue #54）**规划期检查点 5 条**。I 轮按「签字一条、
+        转正一条」推进（planning → decision），两侧计数随之联动：
+        decision = 11 + 已签 I 轮条目数；planning = 5 − 已签 I 轮条目数。
         """
         doc = DOC_PATH.read_text(encoding="utf-8")
         assert "11 条" in doc, "决策包文档声明的条目数与清单不一致"
         manifest = _manifest()["checkpoints"]
         decision = [c for c in manifest if c.get("phase", "decision") == "decision"]
         planning = [c for c in manifest if c.get("phase") == "planning"]
-        assert len(decision) == 11, f"决策包必须保持 11 条: {len(decision)}"
-        assert len(planning) == 5, f"规划期检查点必须为 I 轮 5 条: {len(planning)}"
+        i_round = ["T21.4", "T22.4", "T23.4", "T24.4", "T25.4"]
+        confirmed_i = [c for c in decision if c["id"] in i_round]
+        assert len(decision) == 11 + len(confirmed_i), (
+            f"决策条目数异常: {len(decision)} != 11 + {len(confirmed_i)}")
+        assert len(planning) == 5 - len(confirmed_i), (
+            f"规划期条目数异常: {len(planning)} != 5 - {len(confirmed_i)}")
 
 
 # ----------------------------------------------------------------------

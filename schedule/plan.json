@@ -1318,7 +1318,7 @@
       "id": "S21",
       "round": "I1",
       "name": "组合回测闭环基线（I1：池级回测器 + 成本三档 + 口径一致性对照）",
-      "status": "in_progress",
+      "status": "completed",
       "scheduled_dates": "2026-09-15 ~ 2026-09-21",
       "source": "Issue #54 高质量项目集成3 · 组合闭环验证轮 · I1（组合回测闭环基线）",
       "depends_on": [
@@ -1362,21 +1362,50 @@
         {
           "id": "T21.4",
           "name": "组合口径是否纳入标准评估集的决策（人工检查点）",
-          "status": "pending",
-          "auto_run": false
+          "status": "confirmed",
+          "auto_run": false,
+          "decision": "keep",
+          "confirmed_by": "yuppiez328",
+          "confirmed_at": "2026-09-13T21:30:00+08:00",
+          "confirmed_in": "会话指令（对应 Issue #54 跟踪）",
+          "confirmed_script_must": "确认组合口径纳入标准评估集：portfolio-backtest（净值/回撤/换手/夏普 + 一致性对照）作为报表层标准证据与命中率口径并轨；strategy_gate 零改动、affects_gate 恒 false",
+          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）"
         }
       ],
       "affects_gate": false,
-      "note": "组合层是 G/H 轮之后唯一未验证的层级：全部既有评估停留在 IC/命中率/覆盖率，从未在扣成本后的组合 PnL 层复验。本阶段把「信号→仓位→组合净值」从单标的演示（backtest/run_minimal.py）升级为池级回测：38 标的池 × 三周期概率 × 置信度门槛 × 成本三档（T11.2 已定稿）→ 净值/回撤/换手/夏普；并复验 S15「IC 与命中率脱节」在组合 PnL 层是否仍成立。零新依赖（pandas/numpy 自研），vectorbt 仅作可选对照臂。affects_gate=false：回测是评估工具不是策略生成器。 | 交付记录（2026-09-13）：见 00_kickoff/s21_portfolio_backtest_conclusion.md；冒烟结论：命中率全部低于 0.52 门禁线的 4 标的池中 3 只净盈利，命中率口径与组合 PnL 口径存在实测背离，如实入库不择优；38 标的池 × 模型信号完整回测待跑。",
+      "note": "组合层是 G/H 轮之后唯一未验证的层级：全部既有评估停留在 IC/命中率/覆盖率，从未在扣成本后的组合 PnL 层复验。本阶段把「信号→仓位→组合净值」从单标的演示（backtest/run_minimal.py）升级为池级回测：38 标的池 × 三周期概率 × 置信度门槛 × 成本三档（T11.2 已定稿）→ 净值/回撤/换手/夏普；并复验 S15「IC 与命中率脱节」在组合 PnL 层是否仍成立。零新依赖（pandas/numpy 自研），vectorbt 仅作可选对照臂。affects_gate=false：回测是评估工具不是策略生成器。 | 交付记录（2026-09-13）：见 00_kickoff/s21_portfolio_backtest_conclusion.md；冒烟结论：命中率全部低于 0.52 门禁线的 3 标的池中 2 只净盈利，命中率口径与组合 PnL 口径存在实测背离，如实入库不择优；38 标的池 × 模型信号完整回测待跑。",
       "result": "自动任务已交付（T21.1/T21.2/T21.3）：引擎 15 测试全过 + 真实数据冒烟（4 标的 1569 交易日，三档成本净收益 0.35/0.61/0.97 分化）；T21.4 待人工签字",
       "started_at": "2026-09-12T23:27:57.569411+00:00",
-      "auto_acceptable_completed_at": "2026-09-12T23:27:57.569411+00:00"
+      "auto_acceptable_completed_at": "2026-09-12T23:27:57.569411+00:00",
+      "completed_at": "2026-09-12T23:33:45.184127+00:00",
+      "confirmed_by": "yuppiez328",
+      "confirmed_at": "2026-09-13T21:30:00+08:00",
+      "confirmed_in": "会话指令（对应 Issue #54 跟踪）",
+      "confirmed_note": "用户指令原文：「1.确认 2.继续」",
+      "closing": {
+        "auto_scope": "已完成 —— 本阶段全部 auto_acceptable 任务（T21.1/T21.2/T21.3）",
+        "manual_scope": "已确认 — T21.4",
+        "decision": "T21.4 组合口径纳入标准评估集 = keep（报表层证据，与命中率口径并轨；门禁零改动）",
+        "evidence": "reports/portfolio/portfolio_backtest.json",
+        "note": "命中率口径与组合 PnL 口径的实测背离（3 标的池（002230.SZ 缺日K如实跳过）命中率全部 < 0.52 却 2 只净盈利）如实入库；38 标的池 × 模型信号完整回测待跑（I2~I5 依赖的引擎已就绪）。",
+        "confirmed_at": "2026-09-13T21:30:00+08:00",
+        "confirmed_by": "yuppiez328",
+        "affects_gate": false,
+        "checkpoint_manifest": "schedule/manual_checkpoints.json",
+        "doc": "00_kickoff/s21_portfolio_backtest_conclusion.md",
+        "verified_at": "2026-09-12T23:33:45.184127+00:00",
+        "evidence_all": [
+          "reports/portfolio/portfolio_backtest.json",
+          "src/eval/portfolio_backtest.py",
+          "tests/test_roadmap_s21.py"
+        ]
+      }
     },
     {
       "id": "S22",
       "round": "I2",
       "name": "组合构建三臂对照（I2：等权 / ATR 波动率倒数 / 校准置信度加权）",
-      "status": "pending",
+      "status": "in_progress",
       "scheduled_dates": "2026-09-22 ~ 2026-09-28",
       "source": "Issue #54 高质量项目集成3 · 组合闭环验证轮 · I2（组合构建三臂对照）",
       "depends_on": [
@@ -1394,20 +1423,26 @@
         {
           "id": "T22.1",
           "name": "实现三臂加权器（零新依赖）：等权 / 1/ATR / 校准置信度，统一接口接 T21.1 回测器",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-12T23:49:48.630225+00:00",
+          "result": "src/eval/portfolio_backtest.py 三臂构造器：build_atr_inverse_plan（1/ATR，激活内归一、warmup 13 天零权重、与引擎 MOC 口径一致）+ build_confidence_plan（恒定置信度结构性退化等权）；ATR 口径单源：src/data/indicators.compute_atr_series（与 compute_atr 末值相等有测试钉死）"
         },
         {
           "id": "T22.2",
           "name": "三臂同口径 A/B 对照（多重比较校正，试验次数计入 S17 预算），结论好坏如实入库",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-12T23:49:48.630225+00:00",
+          "result": "三臂 × 三档成本同口径 A/B（main.py portfolio-backtest --weights all）+ S17 试验登记（portfolio-weights-ab）；真实数据实测：1/ATR 臂三档全面优于等权（base 档 ret 0.6905 vs 0.6116，Sharpe 0.4362 vs 0.4153），置信度臂退化为等权（机械信号置信度恒定）"
         },
         {
           "id": "T22.3",
           "name": "PyPortfolioOpt 准入评估（cvxpy 依赖代价、py3.8 兼容、许可证 MIT）：产出是否引入优化臂的一页评估；不通过则该臂取消",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-12T23:49:48.630225+00:00",
+          "result": "PyPortfolioOpt 准入评估：不引入运行时、优化臂取消（cvxpy 依赖代价一票否决；许可证 MIT 无障碍）；见 00_kickoff/i2_pypfopt_admission.md；requirements.txt 零改动"
         },
         {
           "id": "T22.4",
@@ -1417,8 +1452,10 @@
         }
       ],
       "affects_gate": false,
-      "note": "H 轮否掉纯特征扩充后，组合层权重是唯一未检验的自由度。三臂同口径 A/B：等权基线 / ATR 波动率倒数（复用 src.data.indicators.compute_atr，Q4 口径）/ 校准置信度加权（S19 校准层产出）；多重比较校正（延续 S17 试验预算）。PyPortfolioOpt（6k★，MIT）仅作可选优化臂：cvxpy 依赖代价准入评估不过则取消该臂。affects_gate=false。",
-      "result": "规划期：待 I2 启动"
+      "note": "H 轮否掉纯特征扩充后，组合层权重是唯一未检验的自由度。三臂同口径 A/B：等权基线 / ATR 波动率倒数（复用 src.data.indicators.compute_atr，Q4 口径）/ 校准置信度加权（S19 校准层产出）；多重比较校正（延续 S17 试验预算）。PyPortfolioOpt（6k★，MIT）仅作可选优化臂：cvxpy 依赖代价准入评估不过则取消该臂。affects_gate=false。 | 交付记录（2026-09-13）：三臂实测并排见 00_kickoff/s21_portfolio_backtest_conclusion.md 第五节；1/ATR 臂三档全面优于等权（3 标的冒烟），置信度臂需模型信号才有区分度；优化臂取消。",
+      "result": "自动任务已交付（T22.1/T22.2/T22.3）：三臂 A/B 已入库 + 优化臂准入取消；T22.4 待人工签字",
+      "started_at": "2026-09-12T23:49:48.630225+00:00",
+      "auto_acceptable_completed_at": "2026-09-12T23:49:48.630225+00:00"
     },
     {
       "id": "S23",
@@ -1574,6 +1611,6 @@
   "current_task_index": 0,
   "current_stage_index": 19,
   "start_date": "2026-09-10",
-  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。 | S18(H3) 市场状态分层 T18.1~T18.3 已交付（src/eval/regime.py + python main.py regime）：HMM 三态识别走 expanding 无前视口径，状态分层评估 + 状态特征单变量 A/B 全部 report_only；T18.4 状态是否进门禁保持人工 pending。遗留人工检查点累计 8 个（含新增 T18.4）。 | H 轮（S16~S20）收口对齐：自动任务全部交付并补齐阶段收口字段（round / auto_acceptable_completed_at / auto_acceptable_verified / closing，S16~S20 齐备）；H 轮人工检查点 T16.4/T17.4/T18.4/T19.4/T20.1/T20.4 全部进决策包（schedule/manual_checkpoints.json，共 11 条，priority 1..11 连续）；T20.1 由 completed 修正为 pending —— 调研结论已交付 ≠ 已采纳。补齐 H4/H5 结论文档（原先被引用但不存在）；新增守卫钉死阶段收口齐备 + 引用不得悬空。strategy_gate 零改动，全部阶段 affects_gate=false。 | 收官（2026-09-12）：S11~S20 全部阶段在 11 项人工检查点经用户确认（Issue #40）后收官为 completed，completed_at 逐阶段补齐（G 轮 auto_acceptable_completed_at 同批补全）；阶段收官 ≠ 配置变更 —— strategy_gate 零改动、affects_gate 恒 false。 | I 轮（S21~S25 组合闭环验证轮，Issue #54）已写入排期：组合回测闭环 → 组合构建三臂对照 → 漂移监控 → TreeSHAP 归因 → 组合级过拟合审计。主题依据：G/H 轮收官后组合层是唯一未验证层级（S15「IC 与命中率脱节」从未在扣成本组合 PnL 层复验）；选型延续「不加模型族/不加特征/零重型依赖/只读不进门禁」，skfolio（py3.10+cvxpy）、pypbo（AGPL）、PyPortfolioOpt 运行时（cvxpy，仅存可选臂）等进淘汰清单，见 00_kickoff/high_value_projects_round3_candidates.md。strategy_gate 零改动，全部阶段 affects_gate=false，人工检查点 T21.4/T22.4/T23.4/T24.4/T25.4。 | S21(I1) 自动任务已交付（2026-09-13）：引擎+CLI+对照已入库，T21.4 待人工检查点。",
+  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。 | S18(H3) 市场状态分层 T18.1~T18.3 已交付（src/eval/regime.py + python main.py regime）：HMM 三态识别走 expanding 无前视口径，状态分层评估 + 状态特征单变量 A/B 全部 report_only；T18.4 状态是否进门禁保持人工 pending。遗留人工检查点累计 8 个（含新增 T18.4）。 | H 轮（S16~S20）收口对齐：自动任务全部交付并补齐阶段收口字段（round / auto_acceptable_completed_at / auto_acceptable_verified / closing，S16~S20 齐备）；H 轮人工检查点 T16.4/T17.4/T18.4/T19.4/T20.1/T20.4 全部进决策包（schedule/manual_checkpoints.json，共 11 条，priority 1..11 连续）；T20.1 由 completed 修正为 pending —— 调研结论已交付 ≠ 已采纳。补齐 H4/H5 结论文档（原先被引用但不存在）；新增守卫钉死阶段收口齐备 + 引用不得悬空。strategy_gate 零改动，全部阶段 affects_gate=false。 | 收官（2026-09-12）：S11~S20 全部阶段在 11 项人工检查点经用户确认（Issue #40）后收官为 completed，completed_at 逐阶段补齐（G 轮 auto_acceptable_completed_at 同批补全）；阶段收官 ≠ 配置变更 —— strategy_gate 零改动、affects_gate 恒 false。 | I 轮（S21~S25 组合闭环验证轮，Issue #54）已写入排期：组合回测闭环 → 组合构建三臂对照 → 漂移监控 → TreeSHAP 归因 → 组合级过拟合审计。主题依据：G/H 轮收官后组合层是唯一未验证层级（S15「IC 与命中率脱节」从未在扣成本组合 PnL 层复验）；选型延续「不加模型族/不加特征/零重型依赖/只读不进门禁」，skfolio（py3.10+cvxpy）、pypbo（AGPL）、PyPortfolioOpt 运行时（cvxpy，仅存可选臂）等进淘汰清单，见 00_kickoff/high_value_projects_round3_candidates.md。strategy_gate 零改动，全部阶段 affects_gate=false，人工检查点 T21.4/T22.4/T23.4/T24.4/T25.4。 | S21(I1) 自动任务已交付（2026-09-13）：引擎+CLI+对照已入库，T21.4 待人工检查点。 | S21(I1) 收官（2026-09-13，用户「1.确认」）：T21.4 = keep，组合口径纳入标准评估集（报表层，affects_gate=false）；阶段 completed。 | S22(I2) 自动任务已交付（2026-09-13）：三臂对照 + 优化臂准入取消，T22.4 待人工检查点。",
   "blockers": []
 }

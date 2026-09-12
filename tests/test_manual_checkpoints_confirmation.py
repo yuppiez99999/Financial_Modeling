@@ -32,6 +32,8 @@ EXPECTED_IDS = [
     "T11.2", "T12.3", "T13.4", "T14.3", "T15.3",
     "T16.4", "T17.4", "T18.4", "T19.4", "T20.1", "T20.4",
 ]
+# I 轮（Issue #54）规划期检查点：签字一条、确认一条，phase 随之 planning → decision
+I_ROUND_IDS = ["T21.4", "T22.4", "T23.4", "T24.4", "T25.4"]
 DECISION_WORDS = {"keep", "defer", "reject", "cancel", "moot_by_convention"}
 # 本轮确认覆盖的阶段（G1~G5 + H1~H5）
 CONFIRMED_STAGES = ["S11", "S12", "S13", "S14", "S15", "S16", "S17", "S18", "S19", "S20"]
@@ -97,10 +99,22 @@ def _checkpoint_tasks(include_legacy: bool = False):
 # ----------------------------------------------------------------------
 class TestConfirmationCoverage:
     def test_exactly_eleven_checkpoints_confirmed(self):
+        """G/H 决策包 11 条必须全部 confirmed；I 轮已签条目逐条可追溯。
+
+        2026-09-13 起 I 轮检查点按「签字一条、确认一条」推进（T21.4 已签）：
+        confirmed 集合 = G/H 11 条 + I 轮已签子集，不得出现集合外的确认。
+        """
         confirmed = [cp["id"] for cp in _manifest()["checkpoints"]
                      if cp["status"] == "confirmed"]
-        assert sorted(confirmed) == sorted(EXPECTED_IDS), (
-            f"确认集合与预期不符：{sorted(confirmed)}")
+        assert set(EXPECTED_IDS) <= set(confirmed), (
+            f"G/H 决策包出现缺失: {sorted(set(EXPECTED_IDS) - set(confirmed))}")
+        extra = set(confirmed) - set(EXPECTED_IDS)
+        assert extra <= set(I_ROUND_IDS), (
+            f"确认集合出现未知条目: {sorted(extra - set(I_ROUND_IDS))}")
+        for cp in _manifest()["checkpoints"]:
+            if cp["id"] in extra:
+                assert cp.get("phase") == "decision", (
+                    f"{cp['id']} 已签却仍标 planning（签字必须伴随转正）")
 
     def test_confirmed_ids_match_plan_manual_checkpoints(self):
         plan_ids = {t["id"] for _, t in _checkpoint_tasks()}

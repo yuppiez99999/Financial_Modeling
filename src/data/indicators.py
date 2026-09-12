@@ -45,6 +45,31 @@ def compute_atr(df: "pd.DataFrame", window: int = 14) -> "Optional[float]":
     return float(tr.ewm(alpha=1.0 / window, adjust=False).mean().iloc[-1])
 
 
+def compute_atr_series(df: "pd.DataFrame", window: int = 14) -> "Optional[pd.Series]":
+    """逐日 ATR 序列（与 :func:`compute_atr` 同一 Wilder 口径，末值即其返回值）。
+
+    S22/I2 组合加权（1/ATR 臂）需要「T 日收盘可得的 ATR」逐日序列；
+    本函数只是把 compute_atr 的 ewm 平滑展开成序列 —— 单一公式两处出口，
+    不引入第二种 ATR 口径。首行 TR 退化为高-低（无前一日收盘），与
+    compute_atr 行为一致，无未来函数。
+
+    Returns:
+        ATR 序列（index 与 df 对齐）；样本不足或缺必要列时返回 ``None``。
+    """
+    if df is None or len(df) < max(int(window), 2):
+        return None
+    if not all(c in df.columns for c in ("high", "low", "close")):
+        return None
+    prev_close = df["close"].shift(1)
+    hl = df["high"] - df["low"]
+    hc = (df["high"] - prev_close).abs()
+    lc = (df["low"] - prev_close).abs()
+    tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
+    if tr.dropna().empty:
+        return None
+    return tr.ewm(alpha=1.0 / window, adjust=False).mean()
+
+
 class TechnicalIndicators:
     """专业版技术指标库（50+ 指标）"""
 

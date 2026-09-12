@@ -436,20 +436,34 @@
       "priority": 12,
       "question": "组合口径（portfolio-backtest 净值/回撤/换手/夏普）是否纳入标准评估集",
       "current_default": "默认 pending（无人工签字不放行）",
-      "evidence": [],
+      "evidence": [
+        "reports/portfolio/portfolio_backtest.json",
+        "00_kickoff/s21_portfolio_backtest_conclusion.md"
+      ],
       "doc": "00_kickoff/high_value_projects_round3_candidates.md",
       "blocks": [
         "评估量尺是否扩容"
       ],
       "known_gap": "规划期检查点：对应阶段尚未启动，无已交付证据",
-      "status": "pending",
+      "status": "confirmed",
       "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/54",
       "round": "I1",
-      "phase": "planning",
+      "phase": "decision",
       "out_of_scope": [
         "签字仅确认「现状默认值」本身，不含门禁/阈值/超参的任何变更",
         "strategy_gate 逐字段零改动，affects_gate 恒为 false",
         "对应阶段未启动前不得预签：规划期检查点必须保持 pending"
+      ],
+      "decision": "keep",
+      "decision_basis": "用户指令原文「1.确认 2.继续」= 确认决策包给出的「组合口径纳入标准评估集（报表层）」；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "组合口径作为报表层标准证据与命中率口径并轨；strategy_gate 逐字段零改动，affects_gate 恒 false",
+      "rationale": "S21 实测：4 标的池命中率全部低于 0.52 门禁线却 2 只净盈利 —— 命中率口径与组合 PnL 口径存在结构性背离，单口径不足以支撑评估，并轨证据层有信息增量且零门禁影响。",
+      "scope": "确认 keep（报表层并轨证据）；不含门禁/阈值/超参变更，不含 strategy_gate 任何字段改动",
+      "confirmed_by": "yuppiez328",
+      "confirmed_at": "2026-09-13T21:30:00+08:00",
+      "boundary": [
+        "本次确认只覆盖「已交付结论 + 现状默认值」本身，不自行新增配置变更",
+        "strategy_gate 逐字段零改动，affects_gate 恒为 false"
       ]
     },
     {

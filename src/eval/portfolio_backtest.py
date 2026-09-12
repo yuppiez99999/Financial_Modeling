@@ -34,6 +34,7 @@ import numpy as np
 import pandas as pd
 
 from src.eval.factor_metrics import T112_COST_TIERS
+from src.data.indicators import compute_atr_series
 
 logger = logging.getLogger(__name__)
 
@@ -312,3 +313,99 @@ def consistency_contrast(price_frames: Dict[str, pd.DataFrame],
                          "不修参数、不择优 —— 口径取舍属 T21.4 人工检查点"),
         "rows": rows,
     }
+
+
+# ====================================================================== #
+# S22 / I2 组合构建三臂对照（等权 / 1-ATR / 置信度加权）                    #
+# ====================================================================== #
+
+WEIGHT_ARMS = ("equal", "atr_inverse", "confidence")
+
+
+def build_atr_inverse_plan(price_frames: Dict[str, pd.DataFrame],
+                           active_plans: Dict[str, pd.DataFrame],
+                           atr_window: int = 14,
+                           ) -> Dict[str, pd.DataFrame]:
+    """1/ATR 波动率倒数加权（T22.1）。
+
+    口径：w_i(T) ∝ active_i(T) / ATR_i(T)，在**当日激活标的内**归一到
+    Σ = 1（无杠杆）。ATR 用 :func:`src.data.indicators.compute_atr_series`
+    （与 compute_atr 同一 Wilder 公式，T 日收盘可得 → 与引擎 MOC 惯例一致，
+    无未来函数）；前 ``atr_window-1`` 天为 warmup，权重置 0（与 compute_atr
+    「样本不足不给数」同一纪律）。
+
+    Args:
+        price_frames: ``{symbol: DataFrame(date, high, low, close, ...)}``。
+        active_plans: ``{symbol: DataFrame(date, target_weight ∈ {0,1})}``
+            （激活计划，来自 :func:`build_equal_weight_plan`）。
+    Returns:
+        归一权重计划（Σ ≤ 1），可直接喂 :func:`run_portfolio_backtest`
+        （``normalize=None``）。
+    """
+    raw: Dict[str, pd.Series] = {}
+    for symbol, plan in active_plans.items():
+        px = price_frames[symbol]
+        if not all(c in px.columns for c in ("high", "low", "close")):
+            raise ValueError(f"{symbol} 价格 frame 缺 high/low/close，1/ATR 臂不可用")
+        atr = compute_atr_series(px, window=atr_window)
+        if atr is None:
+            raise ValueError(f"{symbol} ATR 序列不可用（样本不足）")
+        atr_s = pd.Series(atr.to_numpy(), index=_norm_date(px))
+        w = pd.Series(
+            pd.to_numeric(plan["target_weight"], errors="coerce").to_numpy(),
+            index=pd.DatetimeIndex(_norm_date(plan))).dropna()
+        w = w[~w.index.duplicated(keep="last")]
+        idx = w.index
+        atr_on_idx = atr_s.reindex(idx)
+        if atr_on_idx.isna().any():
+            raise ValueError(f"{symbol} ATR 在权重计划日期上缺失（上游日期未对齐）")
+        if (atr_on_idx <= 0).any():
+            raise ValueError(f"{symbol} 出现非正 ATR（价格数据异常），拒绝出权重")
+        warmup = pd.Series(
+            [float(i) < max(int(atr_window) - 1, 1) for i in range(len(idx))],
+            index=idx)
+        raw[symbol] = w * (1.0 / atr_on_idx) * (~warmup.astype(bool))
+
+    total = pd.DataFrame(raw).fillna(0.0).sum(axis=1)
+    plans: Dict[str, pd.DataFrame] = {}
+    for symbol, r in raw.items():
+        denom = total.reindex(r.index).replace(0, np.nan)
+        scaled = (r / denom).fillna(0.0)
+        plans[symbol] = pd.DataFrame({
+            "date": scaled.index,
+            "target_weight": scaled.to_numpy(),
+        })
+    return plans
+
+
+def build_confidence_plan(signal_frames: Dict[str, pd.DataFrame],
+                          active_plans: Dict[str, pd.DataFrame],
+                          ) -> Dict[str, pd.DataFrame]:
+    """置信度加权（T22.1）：w_i(T) ∝ active_i(T) × conf_i(T)，激活内归一。
+
+    置信度取信号 frame 的 ``confidence`` 列（生产语义 = 校准后置信分，
+    S19 口径）。**恒定置信度 → 结构性退化为等权**（机械基线信号即如此），
+    退化是本函数的输出特性，不是缺陷 —— 有区分度必须等模型信号接入。
+    """
+    conf: Dict[str, pd.Series] = {}
+    for symbol, plan in active_plans.items():
+        sig = signal_frames[symbol]
+        c = pd.Series(
+            pd.to_numeric(sig["confidence"], errors="coerce").fillna(0.0).to_numpy(),
+            index=pd.DatetimeIndex(_norm_date(sig)))
+        w = pd.Series(
+            pd.to_numeric(plan["target_weight"], errors="coerce").to_numpy(),
+            index=pd.DatetimeIndex(_norm_date(plan))).dropna()
+        w = w[~w.index.duplicated(keep="last")]
+        conf[symbol] = (w * c.reindex(w.index).fillna(0.0))
+
+    total = pd.DataFrame(conf).fillna(0.0).sum(axis=1)
+    plans: Dict[str, pd.DataFrame] = {}
+    for symbol, r in conf.items():
+        denom = total.reindex(r.index).replace(0, np.nan)
+        scaled = (r / denom).fillna(0.0)
+        plans[symbol] = pd.DataFrame({
+            "date": scaled.index,
+            "target_weight": scaled.to_numpy(),
+        })
+    return plans

@@ -3373,10 +3373,12 @@ def _load_raw_close(symbols: list[str]) -> tuple[dict, list[str]]:
         if "date" not in df.columns or "close" not in df.columns:
             missing.append(symbol)
             continue
-        df = df[["date", "close"]].copy()
+        keep = [c for c in ("date", "open", "high", "low", "close") if c in df.columns]
+        df = df[keep].copy()
         df["date"] = pd.to_datetime(df["date"], errors="coerce")
-        df["close"] = pd.to_numeric(df["close"], errors="coerce")
-        df = df.dropna().drop_duplicates(subset="date", keep="last")
+        for c in keep[1:]:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        df = df.dropna(subset=["date", "close"]).drop_duplicates(subset="date", keep="last")
         df = df.sort_values("date").reset_index(drop=True)
         if len(df) > 0:
             price_frames[symbol] = df
@@ -3389,8 +3391,9 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
                                min_confidence: float | None = None,
                                cost_levels: list[str] | None = None,
                                ma_window: int = 20,
-                               contrast: bool = True) -> dict:
-    """组合回测闭环基线（S21 / I1：T21.1 + T21.2 + T21.3，report_only）。
+                               contrast: bool = True,
+                               weights: str = "equal") -> dict:
+    """组合回测闭环基线（S21 / I1 + S22 / I2 三臂对照，report_only）。
 
     本命令做的事：
       1. 离线读取 data/raw/ 真实日K，构造**机械基线信号**（MA 窗口上穿看多，
@@ -3401,10 +3404,14 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
       3. T21.2 口径一致性对照：逐标的 IC/命中率 vs 单标的净收益的跨标的
          相关与背离清单（复验 S15「IC 与命中率脱节」在 PnL 层是否仍成立）；
       4. T21.3 落盘 reports/portfolio/portfolio_backtest.json，试验登记
-         （S17 统一预算）。
+         （S17 统一预算）；
+      5. T22.1/T22.2 三臂对照（--weights all）：等权 / 1-ATR / 置信度加权
+         同口径 A/B；机械基线置信度恒定 → 置信度臂结构性退化为等权（如实
+         记录），有区分度须等模型信号接入。
 
     ⚠️ 不改门禁（affects_gate=false）；组合口径是否纳入标准评估集属
-    T21.4 人工检查点。机械基线不是策略：换信号只改输入，不改引擎。
+    T21.4 人工检查点（已确认 keep，2026-09-13）；加权方式取舍属 T22.4。
+    机械基线不是策略：换信号只改输入，不改引擎。
     """
     from src.eval import portfolio_backtest as pb
     from datetime import datetime, timezone
@@ -3481,6 +3488,48 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
         if isinstance(contrast_payload, dict) and contrast_payload.get("rows"):
             contrast_payload["rows"] = contrast_payload["rows"][:64]
 
+    # S22/I2 三臂对照（--weights all）：等权 / 1-ATR / 置信度，同口径 A/B。
+    # 机械基线置信度恒定 → 置信度臂结构性退化为等权（如实记录，非缺陷）。
+    weights_ab: dict[str, Any] | None = None
+    if weights == "all":
+        selected_tiers = [t for t in T112_COST_TIERS if t["name"] in names]
+        arms: dict[str, tuple[dict, str | None]] = {
+            "equal": (weight_plans, "equal_active"),
+        }
+        try:
+            arms["atr_inverse"] = (
+                pb.build_atr_inverse_plan(price_frames, weight_plans,
+                                          atr_window=14), None)
+        except ValueError as e:
+            arms["atr_inverse"] = ({"_error": str(e)}, None)
+        try:
+            arms["confidence"] = (
+                pb.build_confidence_plan(signal_frames, weight_plans), None)
+        except ValueError as e:
+            arms["confidence"] = ({"_error": str(e)}, None)
+
+        weights_ab = {"atr_window": 14, "arms": {}}
+        for arm, (plans_for_arm, norm) in arms.items():
+            if "_error" in plans_for_arm:
+                weights_ab["arms"][arm] = {"available": False,
+                                           "reason": plans_for_arm["_error"]}
+                continue
+            arm_report: dict[str, Any] = {}
+            for tier in selected_tiers:
+                bt = pb.run_portfolio_backtest(
+                    price_frames, plans_for_arm,
+                    cost_one_side_value=float(tier["one_side"]),
+                    normalize=norm)
+                arm_report[tier["name"]] = {
+                    "available": bt.get("available", False),
+                    "reason": bt.get("reason"),
+                    "metrics": bt.get("metrics"),
+                }
+            weights_ab["arms"][arm] = {"available": True, "tiers": arm_report}
+        weights_ab["verdict_note"] = (
+            "三臂同口径 A/B 读数并排；判定（是否进入报表默认口径）属 T22.4 人工检查点，"
+            "本命令不择优、不修参数")
+
     try:
         from src.eval.trial_registry import count_trials
 
@@ -3490,7 +3539,7 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
 
     payload: dict[str, Any] = {
         "command": "portfolio-backtest",
-        "stage": "S21/I1",
+        "stage": "S21/I1 + S22/I2" if weights == "all" else "S21/I1",
         "available": any(v.get("available") for v in tiers_report.values()),
         "asof": datetime.now(timezone.utc).isoformat(),
         "report_only": True,
@@ -3499,12 +3548,16 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
         "symbols_used": sorted(signal_frames),
         "symbols_missing_or_skipped": sorted(set(missing) | set(skipped)),
         "min_confidence": float(min_confidence or 0.0),
+        "weights_mode": weights,
         "tiers": tiers_report,
         "consistency_contrast": contrast_payload,
+        "weights_ab": weights_ab,
         "trial_budget": {"total_trials_before_this": budget.get("total"),
                          "available": budget.get("available", False),
                          "note": "本次读数已计入统一试验预算（S17 口径）"},
-        "manual_checkpoint": "T21.4（组合口径是否纳入标准评估集）",
+        "manual_checkpoint": ("T21.4（组合口径是否纳入标准评估集）已确认 keep；"
+                              "加权方式取舍属 T22.4" if weights == "all"
+                              else "T21.4（组合口径是否纳入标准评估集）已确认 keep"),
     }
     _record_trial(config, "portfolio-backtest", {
         "available": payload["available"],
@@ -3513,6 +3566,15 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
         "contrast_available": bool(isinstance(contrast_payload, dict)
                                    and contrast_payload.get("available")),
     })
+    if weights == "all" and weights_ab:
+        _record_trial(config, "portfolio-weights-ab", {
+            "available": all(a.get("available") for a in weights_ab["arms"].values()),
+            "symbols": len(signal_frames),
+            "arms": {name: {tier: ((v.get("tiers", {}).get(tier, {}) or {}).get("metrics") or {})
+                                  .get("total_return")
+                            for tier in list(v.get("tiers", {}).keys())[:3]}
+                     for name, v in weights_ab["arms"].items() if v.get("available")},
+        })
 
     out_dir = Path("reports/portfolio")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -3693,6 +3755,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="portfolio-backtest 命令：机械基线信号的均线窗口（缺省 20）")
     parser.add_argument("--no-contrast", dest="no_contrast", action="store_true",
                         help="portfolio-backtest 命令：只跑组合回测，不做 IC/命中率 vs PnL 一致性对照")
+    parser.add_argument("--weights", dest="weights", default="equal",
+                        choices=["equal", "all"],
+                        help="portfolio-backtest 命令：equal=等权基线（S21）；all=三臂对照 等权/1-ATR/置信度（S22，T22.1/T22.2）")
     parser.add_argument("--n-blocks", dest="n_blocks", type=int, default=6,
                         help="overfit-audit 命令：CPCV 时间组数（缺省 6）")
     parser.add_argument("--k-test", dest="k_test", type=int, default=2,
@@ -3952,7 +4017,8 @@ def main():
             min_confidence=float(getattr(args, "min_confidence", 0.0) or 0.0),
             cost_levels=_lv,
             ma_window=int(getattr(args, "ma_window", 20) or 20),
-            contrast=not bool(getattr(args, "no_contrast", False)))
+            contrast=not bool(getattr(args, "no_contrast", False)),
+            weights=str(getattr(args, "weights", "equal") or "equal"))
     elif args.command == "calibration":
         _h = None
         _raw_h = getattr(args, "trials_horizons", None)
