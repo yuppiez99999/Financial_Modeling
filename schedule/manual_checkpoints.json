@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-09-12T02:30:00+00:00",
-  "source": "Issue #29（高质量项目集成）· 本轮遗留人工检查点决策包",
+  "generated_at": "2026-09-12T05:20:00+00:00",
+  "source": "Issue #29（高质量项目集成）G 轮遗留 + Issue #40（高质量项目集成 2）H 轮 · 人工检查点决策包",
   "doc": "00_kickoff/manual_checkpoints_round_g_h.md",
   "policy": {
     "npc_may_decide": false,
@@ -134,6 +134,82 @@
         "所有净收益读数"
       ],
       "status": "pending"
+    },
+    {
+      "id": "T19.4",
+      "stage": "S19",
+      "priority": 9,
+      "question": "概率校准层（isotonic/Platt）是否进主推理链路：校准后概率是否成为门禁阈值与 API 的默认语义",
+      "current_default": "校准层已在 src/inference/probability_calibrator.py 就绪但只读；configs `model.factors.probability_calibration.enabled=false`，主推理链路仍吃原始概率",
+      "evidence": [
+        "reports/probability_calibration_5d.json",
+        "models/probability_calibration_5d.json"
+      ],
+      "doc": "00_kickoff/probability_calibration_conclusion.md#四",
+      "blocks": [
+        "T15.3 阈值语义",
+        "所有下游概率读数"
+      ],
+      "known_gap": "校准器需要按 horizon 生成模型文件（models/probability_calibration_<h>.json，不入 git）；未生成时推理期如实降级为原始概率",
+      "status": "pending"
+    },
+    {
+      "id": "T20.1",
+      "stage": "S20",
+      "priority": 10,
+      "question": "LLM 投研链路调研结论是否采纳（3 个候选：TradingAgents / TradingAgents-CN / QuantMind）",
+      "current_default": "调研结论已交付（0/3 满足「A 股适配 + 离线可复现 + 许可证明确」）→ 默认不引入",
+      "evidence": [
+        "reports/research_assist_evaluation.json"
+      ],
+      "doc": "00_kickoff/research_assist_conclusion.md#三",
+      "blocks": [
+        "T20.4 整阶段去留"
+      ],
+      "known_gap": "离线对照结构性不可量化（附注不参与打分）→ 记 unverifiable，不编造提升命中率的故事",
+      "status": "pending"
+    },
+    {
+      "id": "T20.4",
+      "stage": "S20",
+      "priority": 11,
+      "question": "LLM 投研只读链路是否保留（含成本与噪声风险）；不保留则整阶段取消",
+      "current_default": "默认 cancel / pending（无人工签字不放行）",
+      "evidence": [
+        "reports/research_assist_evaluation.json"
+      ],
+      "doc": "00_kickoff/research_assist_conclusion.md#四",
+      "blocks": [
+        "H5 是否继续投入"
+      ],
+      "known_gap": "附注只挂报告层，affects_signal 恒 false，结构性不进信号路径",
+      "status": "pending"
     }
-  ]
+  ],
+  "scope_note": "G 轮（S11~S15，Issue #29）与 H 轮（S16~S20，Issue #40）人工检查点统一收口。H 轮自动任务已全部交付（收口字段见 plan.json 各阶段 closing），故 H 轮人工检查点**全部进清单**：至此再无「已交付但未登记」的检查点。",
+  "closing_fields": {
+    "auto_acceptable_completed_at": "各阶段自动任务交付时间（plan.json 阶段字段）",
+    "auto_acceptable_verified": "自动任务可验证标记",
+    "manual_scope": "未决策的人工检查点 id 列表",
+    "affects_gate": "恒 false —— 全部阶段零门禁改动"
+  },
+  "known_optional_evidence": [
+    "reports/confidence_holdout_verify.json",
+    "reports/confidence_rolling_verify.json",
+    "reports/confidence_gate_decision.json",
+    "reports/calibration/conformal_interval.json",
+    "reports/calibration/conformal_vs_proba.json",
+    "reports/cpcv_evaluation.json",
+    "reports/overfit_audit.json",
+    "reports/regime/regime_stratification.json",
+    "reports/regime/regime_feature_ab.json",
+    "reports/label_ab.json",
+    "reports/qlib_ab.json",
+    "reports/s14_data_source_acceptance.json",
+    "reports/factor_metrics.json",
+    "reports/probability_calibration_5d.json",
+    "reports/research_assist_evaluation.json",
+    "models/probability_calibration_5d.json"
+  ],
+  "known_optional_evidence_note": "以下证据为**按需生成、不入 git** 的产物（跑对应命令才落盘）；登记在此是为了让「缺失」显式可见，而不是让引用悬空。守卫测试 tests/test_roadmap_manual_checkpoints.py::TestNoDanglingEvidenceRefs 双向校验。"
 }
