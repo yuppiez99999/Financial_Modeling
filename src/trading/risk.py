@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,6 +18,24 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_KELLY_FRACTION = 0.25
 DEFAULT_MAX_POSITION_FRACTION = 0.20  # 单标的占用总资金上限
 DEFAULT_BASE_POSITION_PCT = 0.10       # 固定分数法的基础仓位
+
+
+def _finite_or_neutral(value: Any, neutral: float) -> float:
+    """非有限值 / 不可解析 → 退化为 neutral；有限值原样返回。"""
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        logger.warning("仓位参数不可解析 %r，按 %s 处理", value, neutral)
+        return neutral
+    if not math.isfinite(out):
+        logger.warning("仓位参数为非有限值 %r，按 %s 处理（不作强信号依据）", value, neutral)
+        return neutral
+    return out
+
+
+def _clamp(value: Any, lo: float, hi: float) -> float:
+    """先把非有限值 fail-safe 到 lo，再夹到 [lo, hi]。"""
+    return min(max(_finite_or_neutral(value, lo), lo), hi)
 
 
 @dataclass
@@ -74,8 +93,15 @@ class RiskManager:
         固定分数法：base * (0.5+0.5*strength) * (0.5+0.5*confidence)。
         凯利法：f=(p*b-q)/b，p 用置信度近似，b 由盈亏比决定，上界截断。
         """
+        # 仓位缩放的入参必须先是「有效有限数」：非有限值不是"极端强信号"，
+        # 而是数据坏了。若直接喂给 min()/max() 兜底，`inf` 会被夹到上界
+        # （=被动满仓），`NaN` 会让比较全 False 得到不可预期结果。
+        strength = _finite_or_neutral(strength, 0.0)
+        confidence = _finite_or_neutral(confidence, 0.0)
+
         if self.method == "kelly" and proba_win is not None:
-            p = min(max(proba_win, 0.5), 0.95)
+            # 胜率同属概率契约：非有限值 / 越界一律退化为中性，不得夹到上界
+            p = _clamp(proba_win, 0.5, 0.95)
             b = self.take_profit_pct / max(self.stop_loss_pct, 1e-6)  # 盈亏比
             q = 1.0 - p
             f = (p * b - q) / b

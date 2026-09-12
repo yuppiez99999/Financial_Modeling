@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,6 +22,21 @@ DEFAULT_HORIZON_WEIGHTS = {
     "mid_term": 0.35,
     "long_term": 0.35,
 }
+
+# 概率契约：概率必须落在 [0, 1]。
+# 越界 / NaN / ±inf 一律**不可作方向依据** —— 既不得放大方向分，也不得反转方向。
+# 这类值不是"极端看多/看空"，而是**数据坏了**；按 0.5（中性）处理并留痕。
+PROB_FLOOR = 0.0
+PROB_CEIL = 1.0
+NEUTRAL_PROB = 0.5
+
+
+def _clamp_unit(value: float) -> float:
+    """把得分 clamp 到 [-1, 1]；非有限值退化为 0（中性）。"""
+    if not math.isfinite(value):
+        return 0.0
+    return min(max(value, -1.0), 1.0)
+
 
 # 动作
 BUY = "BUY"
@@ -78,19 +94,69 @@ class SignalEngine:
         # 是否允许做空（SELL）
         self.allow_short = bool(cfg.get("allow_short", True))
 
+    @staticmethod
+    def _sanitize_confidence(raw: Any) -> float:
+        """把置信度规整到 [0, 1]。
+
+        置信度只作仓位缩放因子（`risk._sizing_fraction` 里虽有 `min()`
+        兜底上界，但**负数与 NaN / inf 没有下界保护**），故此处统一 fail-safe。
+        """
+        try:
+            conf = float(raw)
+        except (TypeError, ValueError):
+            logger.warning("置信度不可解析 %r，按中性 %.1f 处理", raw, NEUTRAL_PROB)
+            return NEUTRAL_PROB
+        if not math.isfinite(conf):
+            logger.warning("置信度为非有限值 %r，按中性 %.1f 处理", raw, NEUTRAL_PROB)
+            return NEUTRAL_PROB
+        if conf < PROB_FLOOR or conf > PROB_CEIL:
+            logger.warning("置信度越界 %r，已 clamp 到 [0,1]", raw)
+        return min(max(conf, PROB_FLOOR), PROB_CEIL)
+
+    @staticmethod
+    def _sanitize_proba(raw: Any) -> float:
+        """把原始概率规整到 [0, 1] 契约内。
+
+        非有限值（NaN / ±inf）与越界值**不是"极端方向"**，而是数据已损坏：
+        若原样进入方向分计算，`(proba - 0.5) * 2.0` 会被放大成远超 [-1, 1] 的
+        数值（越界）甚至变成 ±inf（非有限值），进而：
+
+        - `score` 突破 [-1, 1] 契约，污染日报 / 审计 / API；
+        - **符号反转**：`probability = -inf` 时 `mag = -inf`，
+          在 `prediction == 1`（看涨）下算出 `score = -inf` → 被判为 SELL，
+          即**一个坏掉的概率悄悄把看涨信号翻成做空单**。
+
+        因此此处 fail-safe 到中性 0.5（方向分为 0），并显式留痕。
+        缺失 / 不可解析同样按中性处理（与既有 `prediction is None → 0.0` 一致）。
+        """
+        try:
+            proba = float(raw)
+        except (TypeError, ValueError):
+            logger.warning("概率不可解析 %r，按中性 %.1f 处理", raw, NEUTRAL_PROB)
+            return NEUTRAL_PROB
+        if not math.isfinite(proba):
+            logger.warning("概率为非有限值 %r，按中性 %.1f 处理（不作方向依据）", raw, NEUTRAL_PROB)
+            return NEUTRAL_PROB
+        if proba < PROB_FLOOR or proba > PROB_CEIL:
+            logger.warning("概率越界 %r，按中性 %.1f 处理（不作方向依据）", raw, NEUTRAL_PROB)
+            return NEUTRAL_PROB
+        return proba
+
     def _direction_value(self, horizon_pred: dict[str, Any]) -> float:
         """把单个周期的预测折算为 [-1, 1] 的方向分。
 
         0/1 分类：1(看涨)→+1，0(看跌)→-1；概率作为幅度权。无法预测返回 0。
+        概率先过 `_sanitize_proba` 契约，越界 / 非有限值一律退化为中性，
+        **不会**被放大成越界方向分，也不会反转方向。
         """
         if not isinstance(horizon_pred, dict) or "error" in horizon_pred:
             return 0.0
         pred = horizon_pred.get("prediction")
         if pred is None:
             return 0.0
-        proba = float(horizon_pred.get("probability", 0.5))
-        # 将 0.5 中性点映射到 0，向两端线性放大
-        mag = (proba - 0.5) * 2.0  # [-1,1]
+        proba = self._sanitize_proba(horizon_pred.get("probability", NEUTRAL_PROB))
+        # 将 0.5 中性点映射到 0，向两端线性放大（proba ∈ [0,1] ⇒ mag ∈ [-1,1]）
+        mag = (proba - NEUTRAL_PROB) * 2.0  # [-1,1]
         return 1.0 * mag if pred == 1 else -1.0 * mag
 
     def build_signal(self, symbol: str, predictions: dict[str, Any]) -> Signal:
@@ -116,12 +182,17 @@ class SignalEngine:
             weighted_sum += dv * w
             contrib[h_name] = {"direction_score": round(dv, 4), "raw": hp}
             if isinstance(hp, dict) and "error" not in hp and hp.get("prediction") is not None:
-                # 只用有实际预测的周期统计置信度
-                conf_sum += float(hp.get("confidence", 0.5)) * w
+                # 只用有实际预测的周期统计置信度；置信度同样受 [0,1] 契约约束
+                conf_sum += self._sanitize_confidence(hp.get("confidence", NEUTRAL_PROB)) * w
                 conf_weight += w
                 resolved_count += 1
 
-        score = weighted_sum  # ∈ [-1,1]
+        # 方向分已逐周期收敛到 [-1,1]，加权和（权重归一化且非负）亦落在 [-1,1]。
+        # 仍做一次 clamp：这是**契约硬校验**，一旦越界说明上游装配出了问题，
+        # 与其把越界值放行到风控/下单，不如在此钉死在契约边界并留痕。
+        score = _clamp_unit(weighted_sum)
+        if not math.isfinite(weighted_sum) or abs(weighted_sum) > 1.0 + 1e-9:
+            logger.warning("综合得分越界 %r，已 clamp 到 [-1,1]（上游装配异常）", weighted_sum)
         confidence = (conf_sum / conf_weight) if conf_weight > 0 else 0.0
         strength = abs(score)
 

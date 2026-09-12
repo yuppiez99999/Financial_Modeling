@@ -79,10 +79,13 @@ class PredictionEngine:
 
             if model_type == "ensemble":
                 # 历史行为保留：LightGBM × TimesFM 两分量融合
-                def _instantiate():
+                def _instantiate(_horizon_days=horizon_days):
+                    # 显式以默认参数绑定当前循环值：闭包若被延迟调用，
+                    # 直接引用 horizon_days 会统一取到循环结束后的最后一个值
+                    # （三个周期全部拿到同一 horizon），此处钉死为值传递。
                     tfm_cfg = self.config.get("model", {}).get("timesfm", {})
                     return TimesFMFinancePredictor(
-                        horizon_days=horizon_days,
+                        horizon_days=_horizon_days,
                         context_days=tfm_cfg.get("context_days", 252),
                         verbose=tfm_cfg.get("verbose", False),
                     )
@@ -94,10 +97,13 @@ class PredictionEngine:
                 continue
 
             if model_type == "timesfm":
-                def _instantiate():
+                def _instantiate(_horizon_days=horizon_days):
+                    # 显式以默认参数绑定当前循环值：闭包若被延迟调用，
+                    # 直接引用 horizon_days 会统一取到循环结束后的最后一个值
+                    # （三个周期全部拿到同一 horizon），此处钉死为值传递。
                     tfm_cfg = self.config.get("model", {}).get("timesfm", {})
                     return TimesFMFinancePredictor(
-                        horizon_days=horizon_days,
+                        horizon_days=_horizon_days,
                         context_days=tfm_cfg.get("context_days", 252),
                         verbose=tfm_cfg.get("verbose", False),
                     )
