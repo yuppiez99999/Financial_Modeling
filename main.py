@@ -2280,6 +2280,546 @@ def _ic(proba: np.ndarray, fwd_ret: np.ndarray) -> float:
         return 0.0
 
 
+def run_conformal(config: dict, symbols: list[str] | None = None,
+                  horizons: list[int] | None = None, folds: int = 3,
+                  segments: int = 4) -> dict:
+    """保形预测覆盖率校准（S16 / H1，T16.1 / T16.2 / T16.3）。
+
+    一次命令产出三份证据（全部只读、不改门禁）：
+      1. **覆盖率校准**（T16.1）：同特征矩阵训练 LightGBM 回归头预测未来收益，
+         用**分割保形**给出 ``ŷ±q`` 区间，覆盖率在**更晚的复验段**上读数，
+         落盘 ``reports/calibration/conformal_<h>d.json``；
+      2. **区间口径 vs 概率距离口径**（T16.2）：同数据同折对照两种置信分
+         对高命中子集的分离能力，落盘 ``reports/calibration/ab_<h>d.json``；
+      3. **多时段滚动保留期复验**（T16.3）：把复验段按时间切成 ``--segments``
+         段（默认 4，季度口径），检验「thr↑→命中率↑」是否跨时段稳定，
+         落盘 ``reports/calibration/rolling_<h>d.json``。
+
+    ⚠️ **不改门禁**（``affects_gate=false``）、**不自动定 α / 阈值**（T16.4 人工检查点）。
+    """
+    import scripts.evaluate_models as ev
+    from src.data.preprocessor import FeatureEngineer
+    from src.eval.calibration_ab import compare_confidence_sources, rolling_holdout_verify
+    from src.eval.conformal import build_calibration_report, save_calibration_report
+    from src.eval.hyperopt_tuner import current_lightgbm_params
+    from sklearn.preprocessing import StandardScaler
+
+    logger.info("保形预测覆盖率校准（H1 / S16）")
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+    horizon_map = horizons or _horizon_days_list(horizons_cfg)
+    if not horizon_map:
+        horizon_map = [5, 10, 20]
+
+    results: dict = {}
+    for days in horizon_map:
+        combined = ev.build_supervised(data, config, int(days))
+        if combined.empty:
+            results[f"{days}d"] = {"available": False, "reason": "no_supervised_data"}
+            continue
+        fe = FeatureEngineer(config)
+        cols = [c for c in fe.get_feature_columns(combined, int(days))
+                if not str(c).startswith("_")]
+        splits = ev.walk_forward_splits(len(combined), folds)
+        if not splits:
+            results[f"{days}d"] = {"available": False, "reason": "no_splits"}
+            continue
+
+        X_all = combined[cols].to_numpy(dtype=float)
+        y_all = combined[f"target_{int(days)}d"].to_numpy(dtype=int)
+        fwd_all = combined["_fwd_ret"].to_numpy(dtype=float)
+        base_params = current_lightgbm_params(config)
+
+        # 逐折：分类头（概率 + 区间）在测试折上的预测
+        proba_parts, ret_parts, pred_parts = [], [], []
+        for train_idx, test_idx in splits:
+            scaler = StandardScaler()
+            X_tr = scaler.fit_transform(X_all[train_idx])
+            X_te = scaler.transform(X_all[test_idx])
+            params = {k: (int(v) if k in ("num_leaves", "max_depth", "n_estimators")
+                          else float(v)) for k, v in base_params.items()}
+            clf = _lgb_classifier(**params)
+            clf.fit(X_tr, y_all[train_idx])
+            proba_parts.append(clf.predict_proba(X_te)[:, 1])
+            ret_parts.append(fwd_all[test_idx])
+
+            reg = _lgb_regressor(**params)
+            reg.fit(X_tr, fwd_all[train_idx])
+            pred_parts.append(reg.predict(X_te))
+        if not proba_parts:
+            results[f"{days}d"] = {"available": False, "reason": "empty_parts"}
+            continue
+        proba = np.concatenate(proba_parts)
+        ret = np.concatenate(ret_parts)
+        pred = np.concatenate(pred_parts)
+
+        # T16.1 覆盖率校准：训练段 / 校准段 / 复验段（严格时序，3:1:1 口径）
+        n = len(ret)
+        n_train = int(n * 0.55)
+        n_cal = max(30, int(n * 0.2))
+        cal_report = build_calibration_report(
+            ret, pred, n_train=n_train, n_cal=n_cal, horizon_days=int(days))
+        path = save_calibration_report(cal_report)
+        results[f"{days}d"] = {"conformal": cal_report, "conformal_path": str(path)}
+        usable = [r for r in cal_report["rows"] if r["available"]]
+        if usable:
+            logger.info(f"[conformal] {days}d 覆盖率读数: " + ", ".join(
+                f"α={r['alpha']} 实测={r['empirical_coverage']:.3f}"
+                for r in usable if r["empirical_coverage"] is not None))
+
+        # T16.2 口径对照（用同一批评测样本的残差构造区间宽度口径）
+        y_use = ret
+        resid = np.abs(y_use - pred)
+        q = float(np.quantile(resid, 0.9)) if resid.size else 0.0
+        lo = pred - q
+        hi = pred + q
+        mid = np.where(np.abs(pred) < 1e-9, 1e-9, pred)
+        ab = compare_confidence_sources(proba, ret, lower=lo, upper=hi, mid=mid,
+                                        horizon_days=int(days))
+        ab_path = Path("reports/calibration") / f"ab_{int(days)}d.json"
+        ab_path.parent.mkdir(parents=True, exist_ok=True)
+        ab_path.write_text(json.dumps(ab, ensure_ascii=False, indent=2), encoding="utf-8")
+        results[f"{days}d"]["confidence_source_ab"] = ab
+        results[f"{days}d"]["confidence_source_ab_path"] = str(ab_path)
+
+        # T16.3 多时段滚动保留期复验
+        rv = rolling_holdout_verify(proba, ret, segments=segments,
+                                    horizon_days=int(days))
+        rv_path = Path("reports/calibration") / f"rolling_{int(days)}d.json"
+        rv_path.write_text(json.dumps(rv, ensure_ascii=False, indent=2), encoding="utf-8")
+        results[f"{days}d"]["rolling_verify"] = rv
+        results[f"{days}d"]["rolling_verify_path"] = str(rv_path)
+        logger.info(f"[rolling] {days}d 跨时段稳定性: {rv.get('stability')} "
+                    f"({rv.get('stability_detail')})")
+
+    _record_trial(config, "conformal", {
+        "symbols": len(data), "folds": folds, "segments": segments,
+        "horizons": list(results.keys()),
+    })
+    print(json.dumps({k: {kk: vv for kk, vv in v.items() if not isinstance(vv, dict)}
+                      for k, v in results.items()}, ensure_ascii=False, indent=2))
+    print("\n校准报告已保存: reports/calibration/conformal_<h>d.json / ab_<h>d.json / rolling_<h>d.json")
+    return results
+
+
+def _lgb_classifier(**params):
+    """LightGBM 分类器（lightgbm 缺失时给可操作报错，不静默降级）。"""
+    try:
+        from src.train.models import lightgbm_model as m
+        return m.lgb.LGBMClassifier(objective="binary", verbose=-1, random_state=42, **params)
+    except AttributeError as e:  # pragma: no cover
+        raise ImportError("保形校准需要 lightgbm（pip install lightgbm）") from e
+
+
+def _lgb_regressor(**params):
+    """LightGBM 回归头：预测未来收益（保形区间目标），与分类头同特征同参数。"""
+    try:
+        from src.train.models import lightgbm_model as m
+        reg_params = {k: v for k, v in params.items() if k != "objective"}
+        return m.lgb.LGBMRegressor(objective="regression", verbose=-1, random_state=42,
+                                   **reg_params)
+    except AttributeError as e:  # pragma: no cover
+        raise ImportError("保形校准需要 lightgbm（pip install lightgbm）") from e
+
+
+def run_overfit_audit(config: dict, n_this_run: int = 1,
+                      n_blocks: int = 6, k_test: int = 2,
+                      embargo: int = 5, pbo_window: int = 0) -> dict:
+    """过拟合审计（S17 / H2，T17.2 / T17.3）：统一试验预算 + CPCV + 历史读数回算。
+
+    三件事一次做完（全部只读、不改门禁）：
+      1. **统一试验预算**（T17.2）：从 append-only 登记里读**跨命令**累计次数，
+         报告里自动标注「本次读数已扫描 N 次（历史 X + 本次 Y）」；
+      2. **CPCV 净化交叉验证**（T17.1）：组合式路径 + purge/embargo，
+         给出路径净化审计、得分分布、选择偏差收缩指标与 PBO；
+      3. **历史读数回算**（T17.3）：对 S11~S15 已入库结论做统一 Bonferroni
+         校正后的显著性回算，如实呈现（多数预期维持否定）。
+
+    ⚠️ **不改门禁**（``affects_gate=false``）；是否引入过拟合概率下限属 T17.4 人工检查点。
+    落盘 ``reports/overfit_audit.json``。
+    """
+    import scripts.evaluate_models as ev
+    from src.data.preprocessor import FeatureEngineer
+    from src.eval import overfit_audit as oa
+    from src.eval.cpcv import cpcv_paths, cpcv_evaluate
+    from src.eval.hyperopt_tuner import current_lightgbm_params
+    from sklearn.preprocessing import StandardScaler
+
+    logger.info("过拟合审计（H2 / S17）：CPCV + 试验预算 + 历史回算")
+    symbols = _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+
+    cpcv_summary: dict = {"available": False, "reason": "无可用行情数据"}
+    cpcv_report: dict = {}
+    if data:
+        horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+        days = next((int(v.get("days", 5)) for v in horizons_cfg.values()
+                     if isinstance(v, dict)), 5)
+        combined = ev.build_supervised(data, config, int(days))
+        if not combined.empty:
+            fe = FeatureEngineer(config)
+            cols = [c for c in fe.get_feature_columns(combined, int(days))
+                    if not str(c).startswith("_")]
+            X = combined[cols].to_numpy(dtype=float)
+            y = combined[f"target_{int(days)}d"].to_numpy(dtype=int)
+            fwd = combined["_fwd_ret"].to_numpy(dtype=float)
+            paths = cpcv_paths(len(X), n_blocks=n_blocks, k_test=k_test,
+                               horizon_days=int(days), embargo=embargo)
+            if paths:
+                from src.inference.ic import spearman_ic
+                base_params = current_lightgbm_params(config)
+                params = {k: (int(v) if k in ("num_leaves", "max_depth", "n_estimators")
+                              else float(v)) for k, v in base_params.items()}
+                scores = []
+                try:
+                    from src.train.models import lightgbm_model as m
+
+                    for p in paths:
+                        scaler = StandardScaler()
+                        X_tr = scaler.fit_transform(X[p["train_idx"]])
+                        X_te = scaler.transform(X[p["test_idx"]])
+                        clf = m.lgb.LGBMClassifier(objective="binary", verbose=-1,
+                                                   random_state=42, **params)
+                        clf.fit(X_tr, y[p["train_idx"]])
+                        scores.append(spearman_ic(clf.predict_proba(X_te)[:, 1],
+                                                  fwd[p["test_idx"]]))
+                except Exception as e:  # noqa: BLE001 - 无 lightgbm 时如实降级
+                    logger.warning(f"[overfit-audit] CPCV 打分失败（降级为仅路径审计）: {e}")
+                budget = oa.effective_trial_budget(config)
+                cpcv_report = cpcv_evaluate(
+                    [s for s in scores if s is not None],
+                    n_samples=len(X), n_blocks=n_blocks, k_test=k_test,
+                    horizon_days=int(days), embargo=embargo,
+                    n_trials=max(1, int(budget.get("count", 1)) if budget.get("available") else 1))
+                cpcv_summary = {
+                    "available": bool(cpcv_report.get("available")),
+                    "horizon_days": int(days),
+                    "n_paths": cpcv_report.get("n_paths"),
+                    "purge_audit_ok": (cpcv_report.get("purge_audit") or {}).get("ok"),
+                    "score_mean": cpcv_report.get("score_mean"),
+                    "shrinkage": cpcv_report.get("shrinkage"),
+                    "pbo": cpcv_report.get("pbo"),
+                }
+                out_dir = Path("reports")
+                out_dir.mkdir(exist_ok=True)
+                (out_dir / "cpcv_evaluation.json").write_text(
+                    json.dumps(cpcv_report, ensure_ascii=False, indent=2), encoding="utf-8")
+            else:
+                cpcv_summary = {"available": False,
+                                "reason": f"CPCV 路径不足（样本 {len(X)}）"}
+
+    report = oa.build_report(config, n_this_run=n_this_run, cpcv_summary=cpcv_summary)
+    path = oa.save(report)
+
+    _record_trial(config, "overfit-audit", {
+        "n_trials_effective": report["selection_freedom"].get("n_trials_effective"),
+        "cpcv_paths": cpcv_summary.get("n_paths"),
+        "pbo": (cpcv_summary.get("pbo") or {}).get("pbo"),
+    })
+
+    print(json.dumps({
+        "selection_freedom": report["selection_freedom"],
+        "cpcv": cpcv_summary,
+        "summary": report["summary"],
+    }, ensure_ascii=False, indent=2))
+    print(f"\n过拟合审计报告已保存: {path}")
+    return report
+
+
+def run_calibration(config: dict, symbols: list[str] | None = None,
+                    horizons: list[int] | None = None, folds: int = 3,
+                    method: str = "both") -> dict:
+    """概率校准层（S19 / H4，T19.1~T19.3）：isotonic / Platt + API 字段。
+
+    三件事一次做完（全部只读、不改门禁）：
+      1. **校准误差评估**（T19.1）：三段式（训练 < 校准 < 复验）评估 Brier / ECE
+         与可靠性曲线，落盘 ``reports/probability_calibration_<h>d.json``；
+      2. **阈值曲线复算**（T19.2）：校准前后置信度曲线对照（看是否更单调），
+         **现行阈值不改**；
+      3. **校准参数固化**（T19.3）：把选定的校准器写进
+         ``models/probability_calibration_<horizon>.json``，供推理/API 追加
+         ``calibrated_probability`` / ``uncertainty`` 字段（向后兼容）。
+
+    ⚠️ **不改门禁**（``affects_gate=false``）；是否进主推理链路属 T19.4 人工检查点。
+    """
+    import scripts.evaluate_models as ev
+    from src.data.preprocessor import FeatureEngineer
+    from src.eval.hyperopt_tuner import current_lightgbm_params
+    from src.eval.probability_calibration import (
+        METHOD_ISOTONIC, METHOD_PLATT, calibrate_and_evaluate,
+        fit_calibrator, threshold_curve_after_calibration,
+    )
+    from sklearn.preprocessing import StandardScaler
+
+    from datetime import datetime, timezone
+
+    logger.info("概率校准层（H4 / S19）")
+    symbols = symbols or _config_symbols(config)
+    data = ev.load_market_data(config, symbols)
+    if not data:
+        payload = {"error": "无可用行情数据（请先准备 data/raw/<symbol>.csv 或联网采集）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+    horizon_map = horizons or _horizon_days_list(horizons_cfg)
+    if not horizon_map:
+        horizon_map = [5, 10]
+
+    if method == "both":
+        methods = (METHOD_ISOTONIC, METHOD_PLATT)
+    else:
+        methods = (method,)
+
+    out_dir = Path("reports")
+    out_dir.mkdir(exist_ok=True)
+    model_dir = Path(config.get("training", {}).get("save_dir", "models"))
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    reports: dict = {}
+    for days in horizon_map:
+        combined = ev.build_supervised(data, config, int(days))
+        if combined.empty:
+            reports[f"{days}d"] = {"available": False, "reason": "no_supervised_data"}
+            continue
+        fe = FeatureEngineer(config)
+        cols = [c for c in fe.get_feature_columns(combined, int(days))
+                if not str(c).startswith("_")]
+        splits = ev.walk_forward_splits(len(combined), folds)
+        if not splits:
+            reports[f"{days}d"] = {"available": False, "reason": "no_splits"}
+            continue
+        X = combined[cols].to_numpy(dtype=float)
+        y = combined[f"target_{int(days)}d"].to_numpy(int)
+        fwd = combined["_fwd_ret"].to_numpy(dtype=float)
+        base_params = current_lightgbm_params(config)
+        params = {k: (int(v) if k in ("num_leaves", "max_depth", "n_estimators")
+                      else float(v)) for k, v in base_params.items()}
+        try:
+            from src.train.models import lightgbm_model as m
+        except Exception as e:  # noqa: BLE001
+            reports[f"{days}d"] = {"available": False, "reason": f"lightgbm 不可用: {e}"}
+            continue
+
+        proba_parts, y_parts, ret_parts = [], [], []
+        for train_idx, test_idx in splits:
+            scaler = StandardScaler()
+            X_tr = scaler.fit_transform(X[train_idx])
+            X_te = scaler.transform(X[test_idx])
+            clf = m.lgb.LGBMClassifier(objective="binary", verbose=-1,
+                                       random_state=42, **params)
+            clf.fit(X_tr, y[train_idx])
+            proba_parts.append(clf.predict_proba(X_te)[:, 1])
+            y_parts.append(y[test_idx])
+            ret_parts.append(fwd[test_idx])
+        if not proba_parts:
+            reports[f"{days}d"] = {"available": False, "reason": "empty_parts"}
+            continue
+        proba = np.concatenate(proba_parts)
+        y_all = np.concatenate(y_parts)
+        ret = np.concatenate(ret_parts)
+
+        # 三段式：训练段 / 校准段 / 复验段（严格时序）
+        n = len(proba)
+        n_train = int(n * 0.5)
+        n_cal = max(50, int(n * 0.25))
+        rep = calibrate_and_evaluate(proba, y_all, n_train=n_train, n_cal=n_cal,
+                                     methods=methods, horizon_name=f"{int(days)}d")
+        reports[f"{days}d"] = rep
+
+        # T19.2 阈值曲线复算（校准前后对照）
+        if rep.get("available") and rep.get("best_by_brier"):
+            best = rep["methods"][rep["best_by_brier"]]
+            best_method = rep["best_by_brier"]
+            p_cal, y_cal = proba[n_train:n_train + n_cal], y_all[n_train:n_train + n_cal]
+            fitted = fit_calibrator(p_cal, y_cal, method=best_method)
+            if fitted.get("available"):
+                p_ver, ret_ver = proba[n_train + n_cal:], ret[n_train + n_cal:]
+                p_cal_ver = np.asarray(fitted["transform"](p_ver), dtype=float)
+                curve = threshold_curve_after_calibration(
+                    p_ver, p_cal_ver, (ret_ver > 0).astype(int), ret_ver)
+                rep["threshold_curve"] = curve
+                # 固化校准参数（供推理 / API 消费）
+                cal_payload = {
+                    "method": best_method,
+                    "params": fitted["params"],
+                    "horizon_days": int(days),
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "n_calibration": fitted["n_calibration"],
+                    "brier_verify": best.get("brier"),
+                    "ece_verify": best.get("ece"),
+                    "note": ("校准参数仅供推理期追加 calibrated_probability/uncertainty；"
+                             "是否进主推理链路属 T19.4 人工检查点"),
+                }
+                cal_path = model_dir / f"probability_calibration_{_horizon_name_for(days, horizons_cfg)}.json"
+                cal_path.write_text(json.dumps(cal_payload, ensure_ascii=False, indent=2),
+                                    encoding="utf-8")
+                rep["calibration_param_path"] = str(cal_path)
+
+        (out_dir / f"probability_calibration_{int(days)}d.json").write_text(
+            json.dumps(rep, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    _record_trial(config, "calibration", {
+        "symbols": len(data), "folds": folds, "method": method,
+        "horizons": list(reports.keys()),
+    })
+    print(json.dumps({k: {"available": v.get("available"),
+                          "best_by_brier": v.get("best_by_brier"),
+                          "conclusion": v.get("conclusion")}
+                      for k, v in reports.items()}, ensure_ascii=False, indent=2))
+    print("\n校准报告已保存: reports/probability_calibration_<h>d.json")
+    print(f"校准参数已固化到: {model_dir}/probability_calibration_<horizon>.json")
+    return reports
+
+
+def run_research_assist(config: dict, symbols: list[str] | None = None,
+                        horizons: list[int] | None = None, folds: int = 3,
+                        decided_by: str = "", proceed: bool = False,
+                        reason: str = "") -> dict:
+    """投研辅助链路（S20 / H5，T20.1~T20.4）：LLM 投研结论**只读**接入评估。
+
+    四件事一次做完（全部只读、**结构性不进信号路径**）：
+      1. **调研评估**（T20.1）：TradingAgents / TradingAgents-CN / QuantMind
+         的 A 股适配、依赖代价、许可证一页评估；
+      2. **只读附注**（T20.2）：附注只挂报告层（``research_note``），
+         不触碰 probability / direction / signal；
+      3. **离线对照**（T20.3）：附注不参与打分 → 命中率差异**结构性为 0**，
+         如实记为 ``unverifiable`` 并止损（不编造效果）；
+      4. **保留决策**（T20.4）：默认 ``defer`` / ``cancel``，无人工签字不放行。
+
+    ⚠️ ``affects_gate`` 与 ``affects_signal`` 恒为 False —— 这是结构性保证。
+    落盘 ``reports/research_assist_evaluation.json`` / ``research_assist_decision.json``。
+    """
+    from datetime import datetime, timezone
+
+    from src.eval.research_assist import (
+        attach_research_note, build_decision, build_research_evaluation, offline_contrast,
+    )
+
+    logger.info("投研辅助链路评估（H5 / S20）")
+    evaluation = build_research_evaluation()
+
+    # 离线对照用的样本：现行模型的概率 + 未来收益（附注不参与打分）
+    contrast: dict = {}
+    symbols = symbols or _config_symbols(config)
+    try:
+        import scripts.evaluate_models as ev
+        from src.data.preprocessor import FeatureEngineer
+        from src.eval.hyperopt_tuner import current_lightgbm_params
+        from sklearn.preprocessing import StandardScaler
+
+        data = ev.load_market_data(config, symbols)
+        horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+        horizon_map = horizons or _horizon_days_list(horizons_cfg) or [5]
+        days = int(horizon_map[0])
+        combined = ev.build_supervised(data, config, days) if data else None
+        if combined is not None and not combined.empty:
+            fe = FeatureEngineer(config)
+            cols = [c for c in fe.get_feature_columns(combined, days)
+                    if not str(c).startswith("_")]
+            splits = ev.walk_forward_splits(len(combined), folds)
+            X = combined[cols].to_numpy(dtype=float)
+            y = combined[f"target_{days}d"].to_numpy(int)
+            fwd = combined["_fwd_ret"].to_numpy(dtype=float)
+            params = current_lightgbm_params(config)
+            params = {k: (int(v) if k in ("num_leaves", "max_depth", "n_estimators")
+                          else float(v)) for k, v in params.items()}
+            from src.train.models import lightgbm_model as m
+
+            parts = []
+            for train_idx, test_idx in splits:
+                scaler = StandardScaler()
+                X_tr = scaler.fit_transform(X[train_idx])
+                X_te = scaler.transform(X[test_idx])
+                clf = m.lgb.LGBMClassifier(objective="binary", verbose=-1,
+                                           random_state=42, **params)
+                clf.fit(X_tr, y[train_idx])
+                parts.append(clf.predict_proba(X_te)[:, 1])
+            if parts:
+                proba = np.concatenate(parts)
+                ret = np.concatenate([fwd[te] for _, te in splits])
+                contrast = offline_contrast(proba, ret)
+                contrast["horizon_days"] = days
+    except Exception as e:  # noqa: BLE001 - 对照失败不拖垮评估（此处不是核心交付）
+        logger.warning(f"[research-assist] 离线对照跳过（不影响评估）: {e}")
+        contrast = {"kind": "research_assist_contrast", "available": False,
+                    "reason": f"对照未执行: {e}", "affects_gate": False,
+                    "affects_signal": False}
+
+    decision = build_decision(evaluation, contrast,
+                              decided_by=decided_by, proceed=proceed, reason=reason)
+
+    # 只读附注演示（结构性不进信号路径）：附注挂在报告层
+    sample_note = ("LLM 投研结论仅作报告附注（示例占位）：基本面/事件/情绪解读，"
+                   "不进信号路径、不影响概率与门禁")
+    annotated = attach_research_note({"probability": 0.62, "direction": "看涨"},
+                                     note=sample_note, source="research-assist(demo)")
+
+    out_dir = Path("reports")
+    out_dir.mkdir(exist_ok=True)
+    for name, payload in (("research_assist_evaluation.json", evaluation),
+                          ("research_assist_contrast.json", contrast),
+                          ("research_assist_decision.json", decision)):
+        (out_dir / name).write_text(json.dumps(payload, ensure_ascii=False, indent=2),
+                                    encoding="utf-8")
+
+    _record_trial(config, "research-assist", {
+        "n_candidates": evaluation.get("n_candidates"),
+        "n_worth_introducing": evaluation.get("n_worth_introducing"),
+        "verdict": decision.get("verdict"),
+        "contrast_verdict": contrast.get("verdict"),
+    })
+
+    print(json.dumps({
+        "evaluation": {"n_worth_introducing": evaluation["n_worth_introducing"],
+                       "recommendation": evaluation["recommendation"]},
+        "contrast": {"verdict": contrast.get("verdict"),
+                     "stop_loss": contrast.get("stop_loss")},
+        "decision": {"verdict": decision["verdict"], "status": decision["status"],
+                     "blockers": decision["blockers"]},
+        "readonly_demo": annotated,
+    }, ensure_ascii=False, indent=2))
+    print("\n报告已保存: reports/research_assist_evaluation.json / _contrast.json / _decision.json")
+    return {"evaluation": evaluation, "contrast": contrast, "decision": decision}
+
+
+def _horizon_name_for(days: int, horizons_cfg: dict) -> str:
+    """交易日数 → 配置里的 horizon 名（short_term 等）；找不到则用 ``h<days>d``。
+
+    兼容两种配置写法：``{"short_term": 5}`` 与 ``{"short_term": {"days": 5}}``。
+    校准参数文件名必须与推理侧 ``enrich_prediction(pred, hname)`` 传入的
+    horizon **名**一致，否则推理期读不到参数（会静默不校准）。
+    """
+    for name, cfg in (horizons_cfg or {}).items():
+        value = cfg.get("days") if isinstance(cfg, dict) else cfg
+        try:
+            if int(value) == int(days):
+                return str(name)
+        except (TypeError, ValueError):
+            continue
+    return f"h{int(days)}d"
+
+
+def _horizon_days_list(horizons_cfg: dict) -> list[int]:
+    """从配置读预测周期天数列表（兼容 ``{name: 5}`` 与 ``{name: {days: 5}}``）。"""
+    out: list[int] = []
+    for value in (horizons_cfg or {}).values():
+        raw = value.get("days") if isinstance(value, dict) else value
+        try:
+            out.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def run_confidence_holdout(config: dict, symbols: list[str] | None = None,
                            horizons: list[int] | None = None,
                            train_ratio: float = 0.7, n_periods: int = 3,
@@ -2778,9 +3318,12 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py confidence               # 置信度阈值曲线（高置信样本命中率，S15/G5）
   python main.py confidence-gate          # 置信度子集门禁决策单（双指标，须人工签字，S15/G5）
   python main.py confidence-holdout      # 置信度保留期复验 + 多时段滚动（T16.3，决策单证据源）
+  python main.py conformal                # 保形预测覆盖率校准（区间/口径对照/多时段复验，S16/H1）
   python main.py conformal-interval      # 保形预测区间 + 概率口径对照（T16.1/T16.2，report_only）
-  python main.py overfit-audit           # 过拟合审计：CPCV + 统一试验预算 + 历史读数回算（S17/H2，report_only）
+  python main.py overfit-audit            # 过拟合审计：CPCV + 统一试验预算 + 历史读数回算（S17/H2，report_only）
   python main.py regime                  # 市场状态分层：HMM 状态识别 + 状态内分层评估（T18.1~T18.3）
+  python main.py calibration              # 概率校准层：isotonic/Platt + Brier/ECE（S19/H4）
+  python main.py research-assist          # 投研辅助只读接入评估：候选调研 + 离线对照 + 决策单（S20/H5）
         """,
     )
     parser.add_argument("command", choices=[
@@ -2791,7 +3334,8 @@ def build_parser() -> argparse.ArgumentParser:
         "ic", "ic-trend", "ic-pool", "pool-train", "horizon-scan", "horizon-decision",
         "feature-experiment", "label-ab", "qlib-ab", "trials", "release-check",
         "tune", "confidence", "confidence-gate", "confidence-holdout",
-        "conformal-interval", "regime", "overfit-audit",
+        "conformal", "conformal-interval", "overfit-audit", "regime",
+        "calibration", "research-assist",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -2863,12 +3407,17 @@ def build_parser() -> argparse.ArgumentParser:
                         help="regime 命令：不出有前视的全样本口径对照（缺省出，明确标注）")
     parser.add_argument("--trials-horizons", dest="trials_horizons", default=None,
                         help="tune / confidence 命令：逗号分隔的预测周期（交易日），如 5,10；缺省用配置")
+    parser.add_argument("--calibration-method", dest="calibration_method", default="both",
+                        choices=["both", "isotonic", "platt"],
+                        help="calibration 命令：校准方法（缺省 both：两种都跑，谁更好由 T19.4 人工判）")
     parser.add_argument("--n-blocks", dest="n_blocks", type=int, default=6,
                         help="overfit-audit 命令：CPCV 时间组数（缺省 6）")
     parser.add_argument("--k-test", dest="k_test", type=int, default=2,
                         help="overfit-audit 命令：每条路径取 k 组作测试（缺省 2）")
     parser.add_argument("--embargo", dest="embargo", type=int, default=5,
                         help="overfit-audit 命令：测试段之后的 embargo 样本数（缺省 5）")
+    parser.add_argument("--segments", dest="segments", type=int, default=4,
+                        help="conformal 命令：滚动保留期子段数（缺省 4）；少于 2 段不判定稳定性")
     parser.add_argument("--host", default=None, help="API 服务地址")
     parser.add_argument("--port", type=int, default=None, help="API 服务端口")
     return parser
@@ -3062,6 +3611,21 @@ def main():
             config, symbols=_cli_symbols(args), horizons=_h,
             n_periods=int(getattr(args, "n_periods", 3) or 3),
             rolling=not bool(getattr(args, "no_rolling", False)))
+    elif args.command == "conformal":
+        _h = None
+        _raw_h = getattr(args, "trials_horizons", None)
+        if _raw_h:
+            try:
+                _h = [int(x.strip()) for x in str(_raw_h).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--trials-horizons 解析失败，改用配置 prediction_horizons: {_raw_h}")
+        run_conformal(config, symbols=_cli_symbols(args), horizons=_h,
+                      segments=int(getattr(args, "segments", 4) or 4))
+    elif args.command == "overfit-audit":
+        run_overfit_audit(config,
+                          n_blocks=int(getattr(args, "n_blocks", 6) or 6),
+                          k_test=int(getattr(args, "k_test", 2) or 2),
+                          embargo=int(getattr(args, "embargo", 5) or 5))
     elif args.command == "conformal-interval":
         _h = None
         _raw_h = getattr(args, "trials_horizons", None)
@@ -3100,6 +3664,21 @@ def main():
             refit_every=getattr(args, "refit_every", None),
             compare_full_sample=not bool(getattr(args, "no_full_sample", False)),
             ab=not bool(getattr(args, "no_ab", False)))
+    elif args.command == "calibration":
+        _h = None
+        _raw_h = getattr(args, "trials_horizons", None)
+        if _raw_h:
+            try:
+                _h = [int(x.strip()) for x in str(_raw_h).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--trials-horizons 解析失败，改用配置 prediction_horizons: {_raw_h}")
+        run_calibration(config, symbols=_cli_symbols(args), horizons=_h,
+                        method=str(getattr(args, "calibration_method", "both") or "both"))
+    elif args.command == "research-assist":
+        run_research_assist(
+            config, symbols=_cli_symbols(args),
+            decided_by=str(getattr(args, "decided_by", "") or ""),
+            reason=str(getattr(args, "reason", "") or ""))
     elif args.command == "confidence-gate":
         _ct = getattr(args, "chosen_threshold", None)
         run_confidence_gate(

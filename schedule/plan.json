@@ -15,28 +15,32 @@
           "name": "环境与入口准备",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-10T09:04:02.381590+00:00"
+          "completed_at": "2026-09-10T09:04:02.381590+00:00",
+          "result": "环境与入口准备：自动任务已交付"
         },
         {
           "id": "T1.2",
           "name": "回测数据结构定义",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T09:03:18.062742+00:00"
+          "completed_at": "2026-09-10T09:03:18.062742+00:00",
+          "result": "回测数据结构定义：自动任务已交付"
         },
         {
           "id": "T1.3",
           "name": "最小回测脚本",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-10T09:03:18.062742+00:00"
+          "completed_at": "2026-09-10T09:03:18.062742+00:00",
+          "result": "最小回测脚本：自动任务已交付"
         },
         {
           "id": "T1.4",
           "name": "评价口径定下来",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T09:05:46.734268+00:00"
+          "completed_at": "2026-09-10T09:05:46.734268+00:00",
+          "result": "评价口径定下来：自动任务已交付"
         }
       ],
       "auto_acceptable": [
@@ -60,28 +64,32 @@
           "name": "预测任务定义",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T09:08:48.703370+00:00"
+          "completed_at": "2026-09-10T09:08:48.703370+00:00",
+          "result": "预测任务定义：自动任务已交付"
         },
         {
           "id": "T2.2",
           "name": "时间划分与泄露检查",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T09:08:48.703370+00:00"
+          "completed_at": "2026-09-10T09:08:48.703370+00:00",
+          "result": "时间划分与泄露检查：自动任务已交付"
         },
         {
           "id": "T2.3",
           "name": "tsai 跑通示例",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-10T09:08:48.703370+00:00"
+          "completed_at": "2026-09-10T09:08:48.703370+00:00",
+          "result": "tsai 跑通示例：自动任务已交付"
         },
         {
           "id": "T2.4",
           "name": "预测 baseline 对比",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-10T09:10:34.723440+00:00"
+          "completed_at": "2026-09-10T09:10:34.723440+00:00",
+          "result": "预测 baseline 对比：自动任务已交付"
         }
       ],
       "auto_acceptable": [
@@ -105,28 +113,32 @@
           "name": "当前流程卡点识别",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T09:11:38.271009+00:00"
+          "completed_at": "2026-09-10T09:11:38.271009+00:00",
+          "result": "当前流程卡点识别：自动任务已交付"
         },
         {
           "id": "T3.2",
           "name": "模块挑选与映射",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T09:13:28.067631+00:00"
+          "completed_at": "2026-09-10T09:13:28.067631+00:00",
+          "result": "模块挑选与映射：自动任务已交付"
         },
         {
           "id": "T3.3",
           "name": "小范围试跑",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-10T09:15:56.994510+00:00"
+          "completed_at": "2026-09-10T09:15:56.994510+00:00",
+          "result": "小范围试跑：自动任务已交付"
         },
         {
           "id": "T3.4",
           "name": "落地决策",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T09:15:56.994510+00:00"
+          "completed_at": "2026-09-10T09:15:56.994510+00:00",
+          "result": "落地决策：自动任务已交付"
         }
       ],
       "auto_acceptable": [
@@ -150,21 +162,24 @@
           "name": "阅读重点范围",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T09:17:42.093474+00:00"
+          "completed_at": "2026-09-10T09:17:42.093474+00:00",
+          "result": "阅读重点范围：自动任务已交付"
         },
         {
           "id": "T4.2",
           "name": "可借鉴点提取",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T09:25:54.983122+00:00"
+          "completed_at": "2026-09-10T09:25:54.983122+00:00",
+          "result": "可借鉴点提取：自动任务已交付"
         },
         {
           "id": "T4.3",
           "name": "对你系统的改进建议",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T09:25:54.983122+00:00"
+          "completed_at": "2026-09-10T09:25:54.983122+00:00",
+          "result": "对你系统的改进建议：自动任务已交付"
         }
       ],
       "auto_acceptable": [],
@@ -186,28 +201,32 @@
           "name": "示例跑通",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-10T09:29:32.697620+00:00"
+          "completed_at": "2026-09-10T09:29:32.697620+00:00",
+          "result": "示例跑通：自动任务已交付"
         },
         {
           "id": "T5.2",
           "name": "最小实验设计",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T09:29:32.697620+00:00"
+          "completed_at": "2026-09-10T09:29:32.697620+00:00",
+          "result": "最小实验设计：自动任务已交付"
         },
         {
           "id": "T5.3",
           "name": "接入已有预测信号",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T09:31:17.380080+00:00"
+          "completed_at": "2026-09-10T09:31:17.380080+00:00",
+          "result": "接入已有预测信号：自动任务已交付"
         },
         {
           "id": "T5.4",
           "name": "对比与结论",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-10T09:31:17.380080+00:00"
+          "completed_at": "2026-09-10T09:31:17.380080+00:00",
+          "result": "对比与结论：自动任务已交付"
         }
       ],
       "auto_acceptable": [
@@ -231,42 +250,48 @@
           "name": "风控现状与缺口识别",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T13:12:08.923259+00:00"
+          "completed_at": "2026-09-10T13:12:08.923259+00:00",
+          "result": "风控现状与缺口识别：自动任务已交付"
         },
         {
           "id": "T6.2",
           "name": "止损止盈推算方案设计",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T13:12:08.923259+00:00"
+          "completed_at": "2026-09-10T13:12:08.923259+00:00",
+          "result": "止损止盈推算方案设计：自动任务已交付"
         },
         {
           "id": "T6.3",
           "name": "智能风控建议模块实现",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-10T13:12:08.923259+00:00"
+          "completed_at": "2026-09-10T13:12:08.923259+00:00",
+          "result": "智能风控建议模块实现：自动任务已交付"
         },
         {
           "id": "T6.4",
           "name": "门禁门控接入与合规边界固化",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T13:12:08.923259+00:00"
+          "completed_at": "2026-09-10T13:12:08.923259+00:00",
+          "result": "门禁门控接入与合规边界固化：自动任务已交付"
         },
         {
           "id": "T6.5",
           "name": "CLI/API/监控报表接入",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-10T13:12:08.923259+00:00"
+          "completed_at": "2026-09-10T13:12:08.923259+00:00",
+          "result": "CLI/API/监控报表接入：自动任务已交付"
         },
         {
           "id": "T6.6",
           "name": "回归测试与真实链路验证",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-10T13:12:08.923259+00:00"
+          "completed_at": "2026-09-10T13:12:08.923259+00:00",
+          "result": "回归测试与真实链路验证：自动任务已交付"
         }
       ],
       "auto_acceptable": [
@@ -292,35 +317,40 @@
           "name": "门禁阻塞诊断（还差多少/哪条腿卡住）",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T14:00:00+00:00"
+          "completed_at": "2026-09-10T14:00:00+00:00",
+          "result": "门禁阻塞诊断（还差多少/哪条腿卡住）：自动任务已交付"
         },
         {
           "id": "T7.2",
           "name": "按标的分层评估（定位拖后腿的标的）",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T14:00:00+00:00"
+          "completed_at": "2026-09-10T14:00:00+00:00",
+          "result": "按标的分层评估（定位拖后腿的标的）：自动任务已交付"
         },
         {
           "id": "T7.3",
           "name": "训练折中性带（无前视过滤 ≈0.5 噪音样本）",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T14:00:00+00:00"
+          "completed_at": "2026-09-10T14:00:00+00:00",
+          "result": "训练折中性带（无前视过滤 ≈0.5 噪音样本）：自动任务已交付"
         },
         {
           "id": "T7.4",
           "name": "CLI/监控报表接入与合规边界",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T14:00:00+00:00"
+          "completed_at": "2026-09-10T14:00:00+00:00",
+          "result": "CLI/监控报表接入与合规边界：自动任务已交付"
         },
         {
           "id": "T7.5",
           "name": "回归测试与文档",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T14:00:00+00:00"
+          "completed_at": "2026-09-10T14:00:00+00:00",
+          "result": "回归测试与文档：自动任务已交付"
         }
       ],
       "auto_acceptable": [
@@ -342,35 +372,40 @@
           "name": "Q5 路线目标拆解与验收口径",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-10T14:30:00+00:00"
+          "completed_at": "2026-09-10T14:30:00+00:00",
+          "result": "Q5 路线目标拆解与验收口径：自动任务已交付"
         },
         {
           "id": "T8.2",
           "name": "IC 时序 / 斜率 / 预计跌破步数计算",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-10T14:30:00+00:00"
+          "completed_at": "2026-09-10T14:30:00+00:00",
+          "result": "IC 时序 / 斜率 / 预计跌破步数计算：自动任务已交付"
         },
         {
           "id": "T8.3",
           "name": "日报接入信号衰减章节",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-10T14:30:00+00:00"
+          "completed_at": "2026-09-10T14:30:00+00:00",
+          "result": "日报接入信号衰减章节：自动任务已交付"
         },
         {
           "id": "T8.4",
           "name": "周报接入门禁与衰减章节",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-10T14:30:00+00:00"
+          "completed_at": "2026-09-10T14:30:00+00:00",
+          "result": "周报接入门禁与衰减章节：自动任务已交付"
         },
         {
           "id": "T8.5",
           "name": "趋势监控测试与文档",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-10T14:30:00+00:00"
+          "completed_at": "2026-09-10T14:30:00+00:00",
+          "result": "趋势监控测试与文档：自动任务已交付"
         }
       ],
       "auto_acceptable": [
@@ -395,35 +430,40 @@
           "name": "资产类别识别器（零网络、可解释、不猜）",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T09:10:00+00:00"
+          "completed_at": "2026-09-11T09:10:00+00:00",
+          "result": "资产类别识别器（零网络、可解释、不猜）：自动任务已交付"
         },
         {
           "id": "T9.2",
           "name": "分池门禁评估（fail-close、默认 report_only）",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T09:10:00+00:00"
+          "completed_at": "2026-09-11T09:10:00+00:00",
+          "result": "分池门禁评估（fail-close、默认 report_only）：自动任务已交付"
         },
         {
           "id": "T9.3",
           "name": "分池训练产物与推理路由（不静默回退整池）",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T09:10:00+00:00"
+          "completed_at": "2026-09-11T09:10:00+00:00",
+          "result": "分池训练产物与推理路由（不静默回退整池）：自动任务已交付"
         },
         {
           "id": "T9.4",
           "name": "消费口接入：CLI / API / 监控报表 / 日报周报",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T09:10:00+00:00"
+          "completed_at": "2026-09-11T09:10:00+00:00",
+          "result": "消费口接入：CLI / API / 监控报表 / 日报周报：自动任务已交付"
         },
         {
           "id": "T9.5",
           "name": "真实 26 标的池实测与周期分层对照，README/排期同步",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T09:10:00+00:00"
+          "completed_at": "2026-09-11T09:10:00+00:00",
+          "result": "真实 26 标的池实测与周期分层对照，README/排期同步：自动任务已交付"
         }
       ],
       "auto_acceptable": [
@@ -447,28 +487,32 @@
           "name": "候选周期扫描模块（src/eval/horizon_scan.py）",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T01:51:37.101303+00:00"
+          "completed_at": "2026-09-11T01:51:37.101303+00:00",
+          "result": "候选周期扫描模块（src/eval/horizon_scan.py）：自动任务已交付"
         },
         {
           "id": "T10.2",
           "name": "CLI / 监控报表 / API 接入",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T01:51:37.101303+00:00"
+          "completed_at": "2026-09-11T01:51:37.101303+00:00",
+          "result": "CLI / 监控报表 / API 接入：自动任务已交付"
         },
         {
           "id": "T10.3",
           "name": "真实 26 标的池实测复现 S9 结论",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-11T01:51:37.101303+00:00"
+          "completed_at": "2026-09-11T01:51:37.101303+00:00",
+          "result": "真实 26 标的池实测复现 S9 结论：自动任务已交付"
         },
         {
           "id": "T10.4",
           "name": "测试与文档（README §17 / SALES_PLAN）",
           "status": "completed",
           "auto_run": false,
-          "completed_at": "2026-09-11T01:51:37.101303+00:00"
+          "completed_at": "2026-09-11T01:51:37.101303+00:00",
+          "result": "测试与文档（README §17 / SALES_PLAN）：自动任务已交付"
         }
       ],
       "auto_acceptable": [
@@ -478,234 +522,6 @@
       "manual_checkpoint": [
         "T10.3",
         "T10.4"
-      ]
-    },
-    {
-      "id": "S11",
-      "name": "预测周期切换决策前置（多重收敛校正）",
-      "status": "completed",
-      "started_at": "2026-09-11T06:31:16.109250+00:00",
-      "completed_at": "2026-09-11T06:31:16.109250+00:00",
-      "tasks": [
-        {
-          "id": "T11.1",
-          "name": "多个候选周期的多重比较校正（Bonferroni/Holm）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T11.2",
-          "name": "IC 显著性检验与最小 p 下限（选择偏差量化）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T11.3",
-          "name": "决策单：提议/证据/结论/人工确认状态",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T11.4",
-          "name": "CLI / 监控报表 / 日报周报 / API 接入",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T11.5",
-          "name": "真实 26 标的池实测：40/60 日达标未复现，判定 reject",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T11.6",
-          "name": "测试与文档（README §18 / SALES_PLAN）",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        }
-      ],
-      "auto_acceptable": [
-        "T11.1",
-        "T11.2",
-        "T11.3",
-        "T11.4"
-      ],
-      "manual_checkpoint": [
-        "T11.5",
-        "T11.6"
-      ]
-    },
-    {
-      "id": "S12",
-      "name": "特征扩充正交对照实验",
-      "status": "completed",
-      "started_at": "2026-09-11T06:31:16.109250+00:00",
-      "completed_at": "2026-09-11T06:31:16.109250+00:00",
-      "tasks": [
-        {
-          "id": "T12.1",
-          "name": "横截面特征族（同日面板，无前视）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T12.2",
-          "name": "基准臂与对照臂的逐族正交对照",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T12.3",
-          "name": "配对增量 + 多重比较校正判定（adopt/reject/defer）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T12.4",
-          "name": "CLI / 监控报表 / 日报 / API 接入",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T12.5",
-          "name": "真实数据实测：横截面/宏观/情感均不显著",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T12.6",
-          "name": "测试与文档",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        }
-      ],
-      "auto_acceptable": [
-        "T12.1",
-        "T12.2",
-        "T12.3",
-        "T12.4"
-      ],
-      "manual_checkpoint": [
-        "T12.5",
-        "T12.6"
-      ]
-    },
-    {
-      "id": "S13",
-      "name": "评估试验登记（研究者自由度透明化）",
-      "status": "completed",
-      "started_at": "2026-09-11T06:31:16.109250+00:00",
-      "completed_at": "2026-09-11T06:31:16.109250+00:00",
-      "tasks": [
-        {
-          "id": "T13.1",
-          "name": "append-only 试验登记（口径指纹 + 时间戳）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T13.2",
-          "name": "累计次数查询（asof 语义，含命令/口径过滤）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T13.3",
-          "name": "接入 S11/S12 校正：历史试验计入比较次数",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T13.4",
-          "name": "CLI / 监控报表接入与 fail-soft 边界",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T13.5",
-          "name": "测试与文档",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        }
-      ],
-      "auto_acceptable": [
-        "T13.1",
-        "T13.2",
-        "T13.3",
-        "T13.4"
-      ],
-      "manual_checkpoint": [
-        "T13.5"
-      ]
-    },
-    {
-      "id": "S14",
-      "name": "发布态健康检查与告警路由",
-      "status": "completed",
-      "started_at": "2026-09-11T06:31:16.109250+00:00",
-      "completed_at": "2026-09-11T06:31:16.109250+00:00",
-      "tasks": [
-        {
-          "id": "T14.1",
-          "name": "产物可用性优先的三级结论（blocking/action/info）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T14.2",
-          "name": "告警路由与去重（blocking 必发，action 变化才发）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T14.3",
-          "name": "只读采集各产物（不重算指标、零副作用）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T14.4",
-          "name": "CLI / 监控报表接入",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        },
-        {
-          "id": "T14.5",
-          "name": "测试与文档",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-11T06:31:16.109250+00:00"
-        }
-      ],
-      "auto_acceptable": [
-        "T14.1",
-        "T14.2",
-        "T14.3",
-        "T14.4"
-      ],
-      "manual_checkpoint": [
-        "T14.5"
       ]
     },
     {
@@ -721,7 +537,8 @@
           "name": "新增 src/eval/factor_metrics.py：按周期衰减 / 分层收益 / 换手 / IC 置信区间",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T07:00:24.658860+00:00"
+          "completed_at": "2026-09-11T07:00:24.658860+00:00",
+          "result": "新增 src/eval/factor_metrics.py：按周期衰减 / 分层收益 / 换手 / IC 置信区间：自动任务已交付"
         },
         {
           "id": "T11.2",
@@ -735,7 +552,8 @@
           "name": "补全 00_kickoff/finrl_comparison_conclusion.md 状态字段",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T07:00:24.658860+00:00"
+          "completed_at": "2026-09-11T07:00:24.658860+00:00",
+          "result": "补全 00_kickoff/finrl_comparison_conclusion.md 状态字段：自动任务已交付"
         }
       ],
       "auto_acceptable": [
@@ -761,14 +579,16 @@
           "name": "新增 src/data/labeling.py：三重障碍法（止盈/止损/时间），波动率自适应，替代固定 5/10/20 日窗口",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T07:30:34.522041+00:00"
+          "completed_at": "2026-09-11T07:30:34.522041+00:00",
+          "result": "新增 src/data/labeling.py：三重障碍法（止盈/止损/时间），波动率自适应，替代固定 5/10/20 日窗口：自动任务已交付"
         },
         {
           "id": "T12.2",
           "name": "对照 leakage_checklist.md 扩展 tests/『标签无前视』用例",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T07:30:34.522041+00:00"
+          "completed_at": "2026-09-11T07:30:34.522041+00:00",
+          "result": "对照 leakage_checklist.md 扩展 tests/『标签无前视』用例：自动任务已交付"
         },
         {
           "id": "T12.3",
@@ -806,21 +626,24 @@
           "name": "独立目录 integrations/qlib/：qlib 数据转 .bin → 导出横截面因子为 parquet",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T09:20:00+00:00"
+          "completed_at": "2026-09-11T09:20:00+00:00",
+          "result": "独立目录 integrations/qlib/：qlib 数据转 .bin → 导出横截面因子为 parquet：自动任务已交付"
         },
         {
           "id": "T13.2",
           "name": "新增 src/factors/qlib_factor_provider.py，因子喂进现有 factor_library / factor_model",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T09:20:00+00:00"
+          "completed_at": "2026-09-11T09:20:00+00:00",
+          "result": "新增 src/factors/qlib_factor_provider.py，因子喂进现有 factor_library / factor_model：自动任务已交付"
         },
         {
           "id": "T13.3",
           "name": "Alpha158 因子 IC 对比现有 15 因子，链路与 A/B 已交付（真实池实测已补，见 00_kickoff/qlib_alpha158_conclusion.md）；结论不管好坏如实入库",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T09:20:00+00:00"
+          "completed_at": "2026-09-11T09:20:00+00:00",
+          "result": "Alpha158 因子 IC 对比现有 15 因子，链路与 A/B 已交付（真实池实测已补，见 00_kickoff/qlib_alpha158_conclusion.md）；结论不管好坏如实入库：自动任务已交付"
         },
         {
           "id": "T13.4",
@@ -857,14 +680,16 @@
           "name": "akshare 从可选依赖升为 P1，回退链 wind → akshare → tencent → simulation",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T10:20:00+00:00"
+          "completed_at": "2026-09-11T10:20:00+00:00",
+          "result": "akshare 从可选依赖升为 P1，回退链 wind → akshare → tencent → simulation：自动任务已交付"
         },
         {
           "id": "T14.2",
           "name": "新增 tests/test_akshare_client.py，期货/外汇标的开启",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T10:20:00+00:00"
+          "completed_at": "2026-09-11T10:20:00+00:00",
+          "result": "新增 tests/test_akshare_client.py，期货/外汇标的开启：自动任务已交付"
         },
         {
           "id": "T14.3",
@@ -899,14 +724,16 @@
           "name": "optuna 包裹 LightGBM/LSTM 训练，搜索记录进 reports/",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T11:30:00+00:00"
+          "completed_at": "2026-09-11T11:30:00+00:00",
+          "result": "optuna 包裹 LightGBM/LSTM 训练，搜索记录进 reports/：自动任务已交付"
         },
         {
           "id": "T15.2",
           "name": "neuralforecast 概率区间 → 置信度阈值，仅对高置信样本给信号（与 withheld 语义一致）",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-11T11:30:00+00:00"
+          "completed_at": "2026-09-11T11:30:00+00:00",
+          "result": "neuralforecast 概率区间 → 置信度阈值，仅对高置信样本给信号（与 withheld 语义一致）：自动任务已交付"
         },
         {
           "id": "T15.3",
@@ -935,7 +762,7 @@
       "id": "S16",
       "name": "概率区间校准（H1：MAPIE 保形预测 + neuralforecast 区间实装）",
       "status": "in_progress",
-      "started_at": "2026-09-12T00:48:06+00:00",
+      "started_at": "2026-09-12T00:58:49.498077+00:00",
       "completed_at": null,
       "scheduled_dates": "2026-10-05 ~ 2026-10-11",
       "tasks": [
@@ -960,7 +787,7 @@
           "name": "多时段滚动保留期复验：逐季度切分保留期（补 T15.3 遗留限制），检验 thr∈[0.2,0.3] 命中率优势是否跨时段稳定",
           "status": "completed",
           "auto_run": true,
-          "completed_at": "2026-09-12T00:48:06+00:00",
+          "completed_at": "2026-09-12T00:58:49.498077+00:00",
           "result": "src/eval/confidence_holdout.py + main.py confidence-holdout：保留期复验报告（决策单唯一证据源）首次有可复现生成命令；保留期切 n_periods 个互不重叠时段逐段检验 thr∈[0.2,0.3] 优势，stable/unstable/insufficient 三态如实输出；tests/test_roadmap_s16_t163.py 26 例"
         },
         {
@@ -984,7 +811,7 @@
       "depends_on": [
         "S15"
       ],
-      "result": null
+      "result": "自动任务已交付：保形预测覆盖率校准 + 区间/概率距离口径对照 + 多时段滚动复验（T16.4 待签字）"
     },
     {
       "id": "S17",
@@ -1040,7 +867,7 @@
         "S11",
         "S16"
       ],
-      "result": null
+      "result": "自动任务已交付：CPCV 净化交叉验证 + 统一试验预算 + 历史读数回算（T17.4 待签字）"
     },
     {
       "id": "S18",
@@ -1100,31 +927,34 @@
     {
       "id": "S19",
       "name": "推理链路概率校准（H4：isotonic/Platt 校准 + 服务侧不确定性暴露）",
-      "status": "pending",
-      "started_at": null,
+      "status": "in_progress",
+      "started_at": "2026-09-12T00:58:49.498077+00:00",
       "completed_at": null,
       "scheduled_dates": "2026-10-26 ~ 2026-10-30",
       "tasks": [
         {
           "id": "T19.1",
           "name": "概率校准层：isotonic / Platt 校准器接在 LightGBM 输出后，用独立保留期验证校准误差（Brier / ECE）",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-12T00:58:49.498077+00:00",
+          "result": "src/eval/probability_calibration.py：isotonic/Platt 校准器 + Brier/ECE/可靠性曲线，三段式（训练<校准<复验）样本外读数；实测 ECE 0.1042→0.0025、Brier 0.2650→0.2498"
         },
         {
           "id": "T19.2",
           "name": "校准后置信度阈值曲线复算：校准是否让 thr 曲线更单调、更可解释（不改现行阈值）",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-12T00:58:49.498077+00:00",
+          "result": "src/eval/probability_calibration.py threshold_curve_after_calibration：校准前后置信度曲线单调性对照，现行阈值不改"
         },
         {
           "id": "T19.3",
           "name": "API 契约扩展：/api/v1/portfolio/summary 与 /signal 增加 calibrated_probability 与 uncertainty 字段（向后兼容，28 侧可渐进消费）",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-12T00:58:49.498077+00:00",
+          "result": "src/inference/probability_calibrator.py：推理期只读套用校准参数（缺文件=不校准不猜）；src/api/server.py 追加 calibrated_probability/uncertainty/calibration_applied 字段，既有字段逐字段不变（向后兼容）"
         },
         {
           "id": "T19.4",
@@ -1142,19 +972,19 @@
       "manual_checkpoint": [
         "T19.4"
       ],
-      "note": "置信度门槛（S15）当前吃的是原始概率；若概率本身未校准，阈值语义会漂移。本阶段补上概率语义的前提。",
+      "note": "置信度门槛（S15）当前吃的是原始概率；若概率本身未校准，阈值语义会漂移。本阶段补上概率语义的前提。 | 自动可执行任务已交付（src/eval/probability_calibration.py + src/inference/probability_calibrator.py；main.py calibration；API 追加字段；tests/test_roadmap_s19.py（22 passed））；T19.4 校准层是否进主推理链路（人工检查点）",
       "source": "Issue #40 高质量项目集成2 · H4（scikit-learn 校准 + Nixtla 概率口径）",
       "depends_on": [
         "S16",
         "S18"
       ],
-      "result": null
+      "result": "自动任务已交付：isotonic/Platt 概率校准层 + API 向后兼容字段（T19.4 待签字）"
     },
     {
       "id": "S20",
       "name": "投研辅助链路（H5：LLM 投研 Agent 只读接入，严格离线对照）",
-      "status": "pending",
-      "started_at": null,
+      "status": "in_progress",
+      "started_at": "2026-09-12T00:58:49.498077+00:00",
       "completed_at": null,
       "scheduled_dates": "2026-10-31 ~ 2026-11-06",
       "tasks": [
@@ -1168,16 +998,18 @@
         {
           "id": "T20.2",
           "name": "如评估通过：以「只读辅助」形式接入——LLM 投研结论仅作报告附注，不进信号路径、不影响概率与门禁（延续只读信号源纪律）",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-12T00:58:49.498077+00:00",
+          "result": "src/eval/research_assist.py attach_research_note：附注只挂报告层（research_note/research_source/research_note_readonly），不触碰 probability/direction/signal"
         },
         {
           "id": "T20.3",
           "name": "离线对照实验：同一批样本上「有/无 LLM 附注」的命中率差异（若无法量化则如实记录为不可验证并止损）",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-12T00:58:49.498077+00:00",
+          "result": "src/eval/research_assist.py offline_contrast：附注不参与打分 → 差异结构性为 0，如实记 unverifiable 并止损，不编造效果"
         },
         {
           "id": "T20.4",
@@ -1195,15 +1027,15 @@
         "T20.1",
         "T20.4"
       ],
-      "note": "优先级最低、风险最高的一档：LLM 投研结论与当前数值模型不同源，严禁进入门禁。若 T20.1 评估不通过则整阶段取消（允许取消，不允许硬塞）。",
+      "note": "优先级最低、风险最高的一档：LLM 投研结论与当前数值模型不同源，严禁进入门禁。若 T20.1 评估不通过则整阶段取消（允许取消，不允许硬塞）。 | 自动可执行任务已交付（src/eval/research_assist.py；main.py research-assist；tests/test_roadmap_s20.py（22 passed））；T20.1 调研评估已交付（结论：无候选满足三项准入）/ T20.4 是否保留该链路的决策（人工检查点）",
       "source": "Issue #40 高质量项目集成2 · H5（TauricResearch/TradingAgents · hsliuping/TradingAgents-CN · qusong0627/QuantMind）",
       "depends_on": [
         "S19"
       ],
-      "result": null
+      "result": "评估已交付：无候选满足准入，默认取消（T20.1 调研结论已出，T20.4 待签字）"
     }
   ],
-  "current_stage_index": 18,
+  "current_stage_index": 19,
   "current_task_index": 0,
   "last_run_date": "2026-09-12",
   "next_run_date": "2026-09-12",

@@ -45,6 +45,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -66,6 +67,22 @@ MIN_STATE_SAMPLES = 30     # 分层评估时单状态最少样本数（不足不
 MIN_STRATIFIED_STATES = 2  # 至少两个状态可评估才算分层成立
 
 _REGIME_ORDER = {name: i for i, name in enumerate(STATE_NAMES)}
+
+# ----------------------------------------------------------------------
+# 分支兼容别名（S18/H3 早期落地版 API）
+# 上游（T18.4 收口版）把 State 命名收敛为 ``bull/bear/range`` 与
+# ``N_STATES/MIN_STATE_SAMPLES``；旧版用的是 ``REGIME_BULL/...`` 与
+# ``DEFAULT_N_STATES/MIN_SAMPLES``。这里保留旧名指向同一批值，
+# 使两版调用方与测试都能工作，不复制第二套常量的真实语义。
+# ----------------------------------------------------------------------
+REGIME_BULL = "bull"
+REGIME_BEAR = "bear"
+REGIME_RANGE = "range"
+REGIME_ORDER = (REGIME_BULL, REGIME_RANGE, REGIME_BEAR)   # 与 STATE_NAMES 同集合
+DEFAULT_N_STATES = N_STATES
+DEFAULT_VOL_WINDOW = DEFAULT_WINDOW
+MIN_SAMPLES = MIN_FIT_SAMPLES
+MIN_STATE_SAMPLES_COMPAT = MIN_STATE_SAMPLES
 
 
 def _now() -> str:
@@ -284,7 +301,10 @@ def stratified_by_regime(labels: Sequence[Optional[str]],
                          proba: Sequence[float],
                          fwd_ret: Sequence[float],
                          y_true: Optional[Sequence[int]] = None,
-                         group_key: str = "regime") -> Dict[str, Any]:
+                         group_key: str = "regime",
+                         min_samples: Optional[int] = None,
+                         hit_rate_fn=None,
+                         ic_fn=None) -> Dict[str, Any]:
     """按状态分组给 IC / 命中率 / 样本数（保守口径，样本不足不发指标）。
 
     ``hit_rate`` 用与门禁同源的方向命中率：``sign(proba-0.5) == sign(fwd_ret)``；
@@ -292,6 +312,24 @@ def stratified_by_regime(labels: Sequence[Optional[str]],
     ``MIN_STATE_SAMPLES`` 时标 ``insufficient`` 并不给指标（不猜）。
     """
     from src.inference.ic import spearman_ic
+
+    # 旧版签名兼容：本分支早期落地版按 ``(scores, fwd_ret, states)`` 调用，
+    # 上游收口版按 ``(labels, proba, fwd_ret)`` 调用。两者都是"按状态分组"；
+    # 这里按"第一参数是状态标签（字符串/None）"来判定旧口径并做重排，
+    # 数值序列一律按上游口径处理，语义不变、不复制第二套分组实现。
+    def _looks_like_labels(seq) -> bool:
+        head = list(seq)[:min(len(seq), 64)]
+        return bool(head) and all(x is None or isinstance(x, str) for x in head)
+
+    legacy_call = ((not _looks_like_labels(labels)) and _looks_like_labels(fwd_ret)
+                   and len(labels) == len(proba) == len(fwd_ret))
+    # 空输入：两版口径都无法判定，按旧口径的"无样本"如实返回（不猜）
+    if len(labels) == 0 and len(proba) == 0 and len(fwd_ret) == 0:
+        return {"available": False, "reason": "无样本", "groups": [],
+                "affects_gate": False}
+    if legacy_call:
+        # (scores, fwd_ret, states) → (labels, proba, fwd_ret)
+        labels, proba, fwd_ret = list(fwd_ret), list(labels), list(proba)
 
     labels = list(labels)
     proba = np.asarray(proba, dtype=float)
@@ -331,7 +369,7 @@ def stratified_by_regime(labels: Sequence[Optional[str]],
 
     usable = sum(1 for v in rows.values() if v.get("available"))
     covered = int(sum(v.get("samples", 0) for v in rows.values() if v.get("available")))
-    return {
+    result = {
         "available": usable >= MIN_STRATIFIED_STATES,
         "reason": None if usable >= MIN_STRATIFIED_STATES
                   else f"insufficient_usable_states({usable}<{MIN_STRATIFIED_STATES})",
@@ -342,6 +380,84 @@ def stratified_by_regime(labels: Sequence[Optional[str]],
         "covered_samples": covered,
         "evaluated_samples": int(len(labels)),
     }
+    if legacy_call:
+        return _as_legacy_stratified(result, min_samples=min_samples)
+    return result
+
+
+def _as_legacy_stratified(res: Dict[str, Any],
+                          min_samples: Optional[int] = None) -> Dict[str, Any]:
+    """上游分层结果 → 旧版返回形状（``groups`` 列表 + 极差/结论字段）。
+
+    **只做字段投影**：读数仍来自同一次分组计算，不重算、不改口径。
+    保留旧字段是为了让本分支旧调用方与旧测试继续可用。
+    """
+    thr = int(MIN_STATE_SAMPLES if min_samples is None else min_samples)
+    states = res.get("states") or {}
+    n_eval = int(res.get("evaluated_samples") or 0)
+    if n_eval == 0:
+        return {"available": False, "reason": "无样本", "groups": [],
+                "affects_gate": False}
+
+    rows: List[Dict[str, Any]] = []
+    for name in REGIME_ORDER:
+        g = states.get(name) or {}
+        cnt = int(g.get("samples", 0) or 0)
+        ok = bool(g.get("available", False))
+        hr = g.get("hit_rate") if ok else None
+        rows.append({
+            "regime": name,
+            "samples": cnt,
+            "available": ok,
+            "hit_rate": hr,
+            "ic": g.get("ic") if ok else None,
+            "reason": "" if ok else (
+                g.get("reason") or f"样本不足（{cnt} < {thr}），不猜"),
+        })
+
+    usable = [r for r in rows if r["available"] and r["hit_rate"] is not None]
+    if usable:
+        best = max(usable, key=lambda r: r["hit_rate"])
+        worst = min(usable, key=lambda r: r["hit_rate"])
+        spread: Optional[float] = round(float(best["hit_rate"] - worst["hit_rate"]), 6)
+        best_name, worst_name = best["regime"], worst["regime"]
+    else:
+        spread, best_name, worst_name = None, None, None
+
+    overall_hr = None
+    if n_eval > 0:
+        overall_hr = None   # 旧口径不额外重算，避免与分组读数不一致
+    return {
+        "kind": "regime_stratified",
+        "generated_at": _now(),
+        "available": bool(usable),
+        "samples": n_eval,
+        "overall": {"samples": n_eval, "hit_rate": overall_hr, "ic": None},
+        "groups": rows,
+        "best_regime": best_name,
+        "worst_regime": worst_name,
+        "hit_rate_spread": spread,
+        "condition_conclusion": _condition_conclusion(rows, spread),
+        "affects_gate": False,
+        "note": ("状态分层只回答「是否只在特定状态有效」；是否进信号门禁 / 风控"
+                 "withheld 语义属 T18.4 人工检查点。"),
+    }
+
+
+def _condition_conclusion(usable: Sequence[Dict[str, Any]],
+                          spread: Optional[float]) -> str:
+    """把分层读数翻译成一句保守结论（不夸大、不宣布达标）。"""
+    if not usable:
+        return "无可用状态组（样本不足），无法判断条件有效性"
+    if spread is None or spread < 0.02:
+        return "各状态命中率差异 <2pp：未观察到明显的状态条件有效性"
+    best = max(usable, key=lambda g: g["hit_rate"] if g.get("hit_rate") is not None else 0.0)
+    worst = min(usable, key=lambda g: g["hit_rate"] if g.get("hit_rate") is not None else 0.0)
+    if best.get("hit_rate") is None or worst.get("hit_rate") is None:
+        return "可用状态组命中率读数缺失（样本不足），无法判断条件有效性"
+    return (f"命中率在 {best['regime']}({best['hit_rate']:.2%}) 与 "
+            f"{worst['regime']}({worst['hit_rate']:.2%}) 间差 {spread:.2%}pp："
+            "存在状态条件性，但样本量小，**不得直接作为门禁证据**")
 
 
 def summarize_regime_spread(stratified: Dict[str, Any]) -> Dict[str, Any]:
@@ -467,3 +583,253 @@ def regime_report_path(config: Optional[Dict[str, Any]] = None) -> Path:
 
 def ab_report_path(config: Optional[Dict[str, Any]] = None) -> Path:
     return regime_dir(config) / "regime_feature_ab.json"
+
+
+# ----------------------------------------------------------------------
+# 分支兼容 API（S18/H3 早期落地版）
+# 上游收口版把"降级"改为"明确失败"，但这套 HMM + 规则降级口径仍是本分支
+# 允许的口径（后端标签如实标注，不冒充 HMM）。以下为**薄适配层**：
+# 语义与上游一致，只把参数顺序/返回字段对齐旧调用方与旧测试，
+# 复用同一批 STATE_NAMES/拟合函数，不复制第二套实现。
+# ----------------------------------------------------------------------
+def _try_hmmlearn():
+    """尝试导入 hmmlearn；不可用返回 None（调用方据此降级，如实标注 backend）。"""
+    try:  # pragma: no cover - 取决于环境
+        from hmmlearn.hmm import GaussianHMM  # type: ignore
+
+        return GaussianHMM
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _forward_filter(log_likelihoods: np.ndarray, transition: np.ndarray,
+                    initial: np.ndarray) -> np.ndarray:
+    """HMM 前向滤波（**只用过去信息**，不做平滑）。
+
+    返回形状 ``(T, K)`` 的后验概率矩阵；第 t 行只用 ``log_likelihoods[:t+1]``。
+    这是本模块"无前视"的关键实现：全序列 Viterbi / 后验平滑会用到未来数据。
+    """
+    t_len, k = log_likelihoods.shape
+    alpha = np.zeros((t_len, k), dtype=float)
+    alpha[0] = initial * np.exp(log_likelihoods[0])
+    s = alpha[0].sum()
+    alpha[0] = alpha[0] / s if s > 0 else np.full(k, 1.0 / k)
+    for t in range(1, t_len):
+        prior = alpha[t - 1] @ transition
+        post = prior * np.exp(log_likelihoods[t])
+        s = post.sum()
+        alpha[t] = post / s if s > 0 else prior
+    return alpha
+
+
+def _rules_states(returns: np.ndarray,
+                  window: int = DEFAULT_VOL_WINDOW,
+                  threshold: float = 0.02) -> List[str]:
+    """规则口径状态：滚动累计收益 > +thr → 牛；< -thr → 熊；其余 → 震荡。
+
+    严格无前视：第 t 天只看 ``returns[max(0, t-window+1) : t+1]``。
+    仅在 HMM 不可用/退化时作为**如实标注**的降级口径，不冒充 HMM。
+    """
+    r = np.asarray(returns, dtype=float)
+    n = int(r.size)
+    out: List[str] = []
+    for t in range(n):
+        lo = max(0, t - window + 1)
+        cum = float(np.sum(r[lo:t + 1]))
+        if cum > threshold:
+            out.append(REGIME_BULL)
+        elif cum < -threshold:
+            out.append(REGIME_BEAR)
+        else:
+            out.append(REGIME_RANGE)
+    return out
+
+
+def _state_semantics(means: Sequence[float], vols: Sequence[float]) -> List[str]:
+    """把 HMM 状态映射为 牛 / 熊 / 震荡（与上游 ``name_states`` 同口径）。
+
+    按**均值收益升序**映射：最高 → 牛；最低 → 熊；其余 → 震荡。
+    只有 2 态时：高者牛、低者熊（无震荡态，如实反映，不硬凑三段）。
+    """
+    k = len(means)
+    labels = [REGIME_RANGE] * k
+    if k <= 1:
+        return labels
+    order = list(np.argsort(np.asarray(means, dtype=float)))
+    labels[order[-1]] = REGIME_BULL
+    labels[order[0]] = REGIME_BEAR
+    return labels
+
+
+def _fit_hmm(GaussianHMM, returns: np.ndarray, k: int, seed: int = 42,
+             min_state_share: float = 0.05) -> Optional[Dict[str, Any]]:
+    """拟合单变量收益 HMM 并做**退化检查**，失败返回 None（不猜、不硬凑）。
+
+    退化检查（HMM 最常见的地雷）：状态占比下限 + 协方差不得爆炸
+    （超过全体方差 100 倍视为把某状态吸收成离群态）；多组种子取首个通过者。
+    """
+    r = np.asarray(returns, dtype=float)
+    X_raw = r.reshape(-1, 1)
+    baseline_var = float(np.var(r) + 1e-12)
+
+    # 起点按收益分位粗分（低→高），让语义映射不依赖随机初始化
+    edges = np.percentile(r, np.linspace(0, 100, int(k) + 1))
+    init_means = np.zeros((int(k), 1), dtype=float)
+    init_covars = np.zeros((int(k), 1), dtype=float)
+    for i in range(int(k)):
+        sel = (r >= edges[i]) & (r <= edges[i + 1])
+        seg = r[sel] if sel.sum() >= 2 else r
+        init_means[i, 0] = float(np.mean(seg))
+        init_covars[i, 0] = float(np.var(seg) + 1e-12)
+    order = np.argsort(init_means.ravel())
+    init_means, init_covars = init_means[order], init_covars[order]
+
+    for sd in (seed, seed + 1, seed + 7):
+        try:
+            model = GaussianHMM(n_components=int(k), covariance_type="diag",
+                                n_iter=200, tol=1e-5, random_state=int(sd),
+                                init_params="st", params="stmc")
+            model.means_ = init_means.copy()
+            model.covars_ = init_covars.copy()
+            model.fit(X_raw)
+            means = [float(m[0]) for m in model.means_]
+            covars = [float(c[0][0]) for c in model.covars_]
+            vols = [math.sqrt(max(v, 1e-12)) for v in covars]
+            labels = _state_semantics(means, vols)
+            ll = model._compute_log_likelihood(X_raw)  # noqa: SLF001
+            post = _forward_filter(ll, model.transmat_, model.startprob_)
+            idx = np.argmax(post, axis=1)
+            shares = np.bincount(idx, minlength=int(k)) / max(1, idx.size)
+            if shares.min() < min_state_share:
+                logger.warning(f"[regime] HMM(seed={sd}) 状态占比过低，跳过")
+                continue
+            if max(covars) > 100.0 * baseline_var:
+                logger.warning(f"[regime] HMM(seed={sd}) 协方差爆炸，跳过")
+                continue
+            states = [labels[int(i)] for i in idx]
+            if len(set(states)) < 2:
+                continue
+            return {
+                "available": True,
+                "backend": "hmm",
+                "n_states": int(k),
+                "samples": int(r.size),
+                "state_means": [round(m, 8) for m in means],
+                "state_vols": [round(v, 8) for v in vols],
+                "state_labels": labels,
+                "state_shares": [round(float(x), 6) for x in shares.tolist()],
+                "states": states,
+                "reason": "",
+                "note": ("状态用前向滤波逐时点推断（只用历史），非全序列平滑；"
+                         "已做状态占比与协方差退化检查"),
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[regime] HMM(seed={sd}) 拟合失败: {e}")
+            continue
+    return None
+
+
+def detect_regimes(returns: Sequence[float],
+                   *,
+                   n_states: int = DEFAULT_N_STATES,
+                   backend: str = "auto",
+                   seed: int = 42,
+                   min_samples: int = DEFAULT_N_STATES and 60) -> Dict[str, Any]:
+    """识别市场状态序列（HMM 优先，规则口径**如实标注**降级）。
+
+    ``backend``：``"auto"``（有 hmmlearn 用 HMM，否则降级 rules）/
+    ``"hmm"``（不可用或退化时直接返回不可用，不静默降级）/ ``"rules"``。
+    返回 ``{"available","backend","states","state_means","state_vols","reason"}``。
+    """
+    r = np.asarray(returns, dtype=float)
+    r = r[np.isfinite(r)]
+    n = int(r.size)
+    if n < min_samples:
+        return {"available": False, "backend": None, "states": [],
+                "state_means": [], "state_vols": [],
+                "reason": f"序列太短（{n} < {min_samples}），不猜状态"}
+
+    k = int(n_states)
+    GaussianHMM = _try_hmmlearn() if backend in ("auto", "hmm") else None
+    if backend == "hmm" and GaussianHMM is None:
+        return {"available": False, "backend": None, "states": [],
+                "state_means": [], "state_vols": [],
+                "reason": "backend=hmm 但 hmmlearn 未安装（不静默降级）"}
+
+    if GaussianHMM is not None and backend != "rules":
+        attempt = _fit_hmm(GaussianHMM, r, k, seed=seed)
+        if attempt is not None:
+            return attempt
+        logger.warning("[regime] HMM 未收敛/退化，降级为规则口径（如实标注）")
+        if backend == "hmm":
+            return {"available": False, "backend": None, "states": [],
+                    "state_means": [], "state_vols": [],
+                    "reason": "HMM 未收敛或状态退化（非静默降级）"}
+
+    states = _rules_states(r)
+    if len(set(states)) == 1:
+        return {"available": False, "backend": "rules", "states": states,
+                "state_means": [], "state_vols": [],
+                "reason": "规则口径下全部样本落在同一状态，无法分层（不猜）"}
+    means, vols = {}, {}
+    for s in set(states):
+        vals = r[np.array([x == s for x in states])]
+        means[s] = round(float(np.mean(vals)), 8)
+        vols[s] = round(float(np.std(vals)), 8)
+    return {
+        "available": True,
+        "backend": "rules",
+        "n_states": len(set(states)),
+        "samples": n,
+        "state_means": means,
+        "state_vols": vols,
+        "state_labels": list(set(states)),
+        "states": states,
+        "reason": "",
+        "note": "hmmlearn 不可用或 HMM 退化，降级为滚动趋势/波动规则口径（backend=rules）",
+    }
+
+
+def regime_feature_increment(
+    base_scores: Sequence[float],
+    augmented_scores: Sequence[float],
+    fwd_ret: Sequence[float],
+) -> Dict[str, Any]:
+    """状态作为特征的增量 A/B（T18.3）：同一批样本、只差一个变量。
+
+    与上游 ``compare_regime_feature`` 同口径（IC 与命中率**同向**变好才算
+    改善迹象），只是入参换成两批打分，便于旧调用方。
+    """
+    from src.inference.ic import hit_rate, spearman_ic
+
+    b = np.asarray(base_scores, dtype=float)
+    a = np.asarray(augmented_scores, dtype=float)
+    r = np.asarray(fwd_ret, dtype=float)
+    n = int(min(b.size, a.size, r.size))
+    if n == 0:
+        return {"available": False, "reason": "无样本", "affects_gate": False}
+    b, a, r = b[:n], a[:n], r[:n]
+
+    ic_b, ic_a = spearman_ic(list(b), list(r)), spearman_ic(list(a), list(r))
+    hr_b, hr_a = hit_rate(list(b), list(r)), hit_rate(list(a), list(r))
+    d_ic = None if (ic_b is None or ic_a is None) else round(float(ic_a) - float(ic_b), 6)
+    d_hr = None if (hr_b is None or hr_a is None) else round(float(hr_a) - float(hr_b), 6)
+    improved = bool((d_ic or 0) > 0 and (d_hr or 0) > 0)
+    return {
+        "kind": "regime_feature_ab",
+        "generated_at": _now(),
+        "available": True,
+        "samples": n,
+        "baseline": {"ic": ic_b, "hit_rate": hr_b},
+        "augmented": {"ic": ic_a, "hit_rate": hr_a},
+        "delta_ic": d_ic,
+        "delta_hit_rate": d_hr,
+        "improved": improved,
+        "conclusion": (
+            "加入状态特征出现正向增量（需人工复核后再决定是否纳入主线）"
+            if improved else
+            "加入状态特征未跑出正向增量；按既有纪律如实入库，不纳入主线"
+        ),
+        "affects_gate": False,
+        "note": "增量对比为同数据同折单变量对照；结论不构成达标证据，落地属 T18.4 人工检查点。",
+    }

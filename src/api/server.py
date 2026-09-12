@@ -21,6 +21,7 @@ from typing import Any, Dict, List
 import yaml
 
 from src.factors import FACTOR_FAMILIES
+from src.inference.probability_calibrator import enrich_prediction
 
 try:  # FastAPI 为可选依赖：未安装时本模块仍可导入，仅无法启动服务
     from fastapi import FastAPI, HTTPException, Query
@@ -551,7 +552,16 @@ async def get_signal(symbol: str):
 
         pred = _engine.predict_all_horizons(symbol)
         sig = SignalEngine(_config).build_signal(symbol, pred)
-        return {"symbol": symbol, "signal": sig.to_dict()}
+        # S19 / H4（T19.3）：信号接口同样追加校准字段（既有结构不变）
+        cal = {
+            hname: {
+                "calibrated_probability": enrich_prediction(p, hname).get("calibrated_probability"),
+                "uncertainty": enrich_prediction(p, hname).get("uncertainty"),
+            }
+            for hname, p in (pred.get("predictions", {}) or {}).items()
+            if isinstance(p, dict) and "error" not in p
+        }
+        return {"symbol": symbol, "signal": sig.to_dict(), "calibration": cal}
     except Exception as e:
         raise HTTPException(500, f"信号生成失败: {e}")
 
@@ -603,10 +613,18 @@ def build_portfolio_summary(engine: Any, config: dict, symbol_list: list[str]) -
             pred = per.get(hname, {})
             if not pred or "error" in pred:
                 continue
+            # S19 / H4（T19.3）：**追加**校准字段（calibrated_probability /
+            # uncertainty），既有 direction / probability / model 逐字段不变，
+            # 保证 28 侧可渐进消费。校准参数缺失时如实标 calibration_applied=false。
+            enriched = enrich_prediction(pred, hname)
             horizons_out[hname] = {
                 "direction": pred.get("direction", "未知"),
                 "probability": pred.get("probability", 0.0),
                 "model": f"{model_type}_{hname}_{hdays}d",
+                "calibrated_probability": enriched.get("calibrated_probability"),
+                "uncertainty": enriched.get("uncertainty"),
+                "calibration_applied": enriched.get("calibration_applied", False),
+                "calibration_method": enriched.get("calibration_method"),
             }
         predictions.append({"symbol": symbol, "sector": "", "horizons": horizons_out})
     return {

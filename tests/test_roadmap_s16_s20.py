@@ -38,23 +38,31 @@ def test_round2_stages_exist():
     assert ids == ROUND2_STAGE_IDS
 
 
-def test_round2_stages_are_pending_not_fake_completed():
-    """不得出现「已排期即已完成」的假进度。
+def test_round2_stages_progress_is_honest_no_fake_completion():
+    """进度必须诚实：不得出现「整阶段完成」的假进度，人工检查点永远 pending。
 
-    S16 已真实开工（T16.3 提前交付，2026-09-12，Issue #29）：开工须有
-    started_at 证据；completed 任务须有 completed_at 与 result；
-    人工检查点任务恒 pending（不可自动通过）。
+    合并两侧守卫（上游严格版 + 本轮落地）：
+      - 阶段状态允许 ``pending`` / ``in_progress``，**整阶段 completed
+        必须等人工检查点签字之后**（防自动流程代签）；
+      - 非 pending 阶段须有 ``started_at`` 证据；
+      - 标 ``completed`` 的任务须有 ``completed_at`` 与 ``result``（可审计）；
+      - 人工检查点任务恒 ``pending``。
     """
+    allowed_stage = {"pending", "in_progress"}
     for s in _round2_stages():
+        assert s["status"] in allowed_stage, (
+            f"{s['id']} 不得在人工检查点未签字时标 completed，实际 {s['status']}")
         if s["status"] != "pending":
             assert s.get("started_at"), f"{s['id']} 非 pending 却无 started_at"
+        manual = set(s.get("manual_checkpoint") or [])
         for t in s["tasks"]:
-            if t["id"] in (s.get("manual_checkpoint") or []):
-                assert t["status"] == "pending", \
-                    f"{t['id']} 是人工检查点，不得自动完成"
+            assert t["status"] in ("pending", "completed"), f"{t['id']} 状态非法"
+            if t["id"] in manual:
+                assert t["status"] == "pending", (
+                    f"人工检查点 {t['id']} 不得被自动流程标记完成")
             elif t["status"] == "completed":
-                assert t.get("completed_at") and t.get("result"), \
-                    f"{t['id']} 标 completed 却无 completed_at/result"
+                assert t.get("completed_at") and t.get("result"), (
+                    f"{t['id']} 标 completed 却无 completed_at/result")
 
 
 def test_round2_stages_have_required_fields():
