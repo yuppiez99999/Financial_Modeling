@@ -16,7 +16,8 @@
       "reject": "明确不采纳/不引入",
       "cancel": "整阶段取消",
       "moot_by_convention": "该项无「默认值」意义上的有效决策，按现约定处理（不改配置）"
-    }
+    },
+    "guard": "H 轮（S16~S20）收口字段：条目 confirmation_required_round（H1~H5）在对应阶段 auto_acceptable 任务交付后即标注；未由人工签字前 status 恒 pending。本轮 H 轮交付不改动任何条目状态。"
   },
   "checkpoints": [
     {
@@ -86,7 +87,16 @@
       "boundary": [
         "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
         "strategy_gate 逐字段零变更，affects_gate 恒为 false"
-      ]
+      ],
+      "round": "H1",
+      "round_closing": {
+        "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
+        "manual_scope": "待人工确认 — T16.4",
+        "checkpoint_manifest": "schedule/manual_checkpoints.json",
+        "affects_gate": false,
+        "evidence": "reports/calibration/conformal_interval.json",
+        "doc": "00_kickoff/manual_checkpoints_round_g_h.md#十一h-轮收口附录issues-40--s16s20"
+      }
     },
     {
       "id": "T17.4",
@@ -120,7 +130,16 @@
       "boundary": [
         "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
         "strategy_gate 逐字段零变更，affects_gate 恒为 false"
-      ]
+      ],
+      "round": "H2",
+      "round_closing": {
+        "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
+        "manual_scope": "待人工确认 — T17.4",
+        "checkpoint_manifest": "schedule/manual_checkpoints.json",
+        "affects_gate": false,
+        "evidence": "reports/cpcv_evaluation.json",
+        "doc": "00_kickoff/manual_checkpoints_round_g_h.md#十一h-轮收口附录issues-40--s16s20"
+      }
     },
     {
       "id": "T18.4",
@@ -153,7 +172,16 @@
       "boundary": [
         "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
         "strategy_gate 逐字段零变更，affects_gate 恒为 false"
-      ]
+      ],
+      "round": "H3",
+      "round_closing": {
+        "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
+        "manual_scope": "待人工确认 — T18.4",
+        "checkpoint_manifest": "schedule/manual_checkpoints.json",
+        "affects_gate": false,
+        "evidence": "reports/regime/regime_stratification.json",
+        "doc": "00_kickoff/manual_checkpoints_round_g_h.md#十一h-轮收口附录issues-40--s16s20"
+      }
     },
     {
       "id": "T12.3",
@@ -316,7 +344,16 @@
       "boundary": [
         "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
         "strategy_gate 逐字段零变更，affects_gate 恒为 false"
-      ]
+      ],
+      "round": "H4",
+      "round_closing": {
+        "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
+        "manual_scope": "待人工确认 — T19.4",
+        "checkpoint_manifest": "schedule/manual_checkpoints.json",
+        "affects_gate": false,
+        "evidence": "reports/probability_calibration_5d.json",
+        "doc": "00_kickoff/manual_checkpoints_round_g_h.md#十一h-轮收口附录issues-40--s16s20"
+      }
     },
     {
       "id": "T20.1",
@@ -382,7 +419,16 @@
       "boundary": [
         "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
         "strategy_gate 逐字段零变更，affects_gate 恒为 false"
-      ]
+      ],
+      "round": "H5",
+      "round_closing": {
+        "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
+        "manual_scope": "待人工确认 — T20.4",
+        "checkpoint_manifest": "schedule/manual_checkpoints.json",
+        "affects_gate": false,
+        "evidence": "reports/research_assist_evaluation.json",
+        "doc": "00_kickoff/manual_checkpoints_round_g_h.md#十一h-轮收口附录issues-40--s16s20"
+      }
     }
   ],
   "scope_note": "G 轮（S11~S15，Issue #29）与 H 轮（S16~S20，Issue #40）人工检查点统一收口：H 轮自动任务已全部交付（收口字段见 plan.json 各阶段 closing），H 轮人工检查点**全部进清单**——至此再无「已交付但未登记」；11 项均已由用户指令于 Issue #40 确认（确认对象 = 现状默认值）。",
@@ -427,5 +473,9 @@
     "strategy_gate_changed": false,
     "affects_gate": false,
     "note": "本次确认**只固定现状与纪律**，不含任何阈值/配置文件变更；任何需要改 strategy_gate 结构的动作须另开 PR 逐字段 diff 后再人工确认。"
-  }
+  },
+  "rounds_covered": [
+    "G 轮（S11~S15）",
+    "H 轮（S16~S20）"
+  ]
 }

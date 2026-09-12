@@ -2,7 +2,8 @@
 
 > 本文件是**证据与决策材料**，不是决策。
 > 「调研结论是否采纳」= **T20.1**，「整条链路是否保留」= **T20.4**，
-> 两者均属人工检查点，NPC **不代签**。
+> 两者均属人工检查点，NPC **不代签**；2026-09-12 经用户于 Issue #40 确认落定为 `confirmed`
+> （T20.1 决策 `reject`：不采纳；T20.4 决策 `cancel`：整阶段取消，代码保留不启用）。
 > 全局纪律：`affects_gate` / `affects_signal` **恒为 `false`**（结构性保证，非约定）。
 
 ---
@@ -35,7 +36,42 @@ python main.py research-assist          # 调研 + 只读附注 + 离线对照 +
 
 落盘：`reports/research_assist_evaluation.json` / `_contrast.json` / `_decision.json`。
 
-## 三、候选评估矩阵（T20.1）
+## 三、交付物
+
+| 任务 | 交付 | 状态 |
+|:---:|:---|:---:|
+| T20.1 | 候选调研评估（A 股适配 / 依赖代价 / 许可证） | 🔶 人工（结论已出，采纳待定） |
+| T20.2 | `src/eval/research_assist.py`：只读附注（挂报告层） | ✅ |
+| T20.3 | 离线对照实验（有/无附注的命中率差异） | ✅ |
+| T20.4 | 是否保留该链路 | 🔶 人工 |
+
+CLI：`python main.py research-assist [--decided-by ... --reason ...]`
+测试：`tests/test_roadmap_s20.py`（22 例，全离线合成数据，不触网）
+
+## 四、方法论要点（为什么这么做）
+
+1. **只读挂载**：`attach_research_note` 只写 `research_note` /
+   `research_source` / `research_note_readonly` 三个字段，
+   **不触碰** `probability` / `direction` / `signal`；且**不原地修改**输入 dict；
+2. **三项准入**：候选必须**同时**满足「A 股适配 + 离线可复现 + 许可证明确」
+   才可引入 —— 缺一即不通过。这条规则写进 `build_research_evaluation`，
+   不靠人工印象；
+3. **离线对照如实止损**：附注**不参与打分** → 差异**结构性为 0** →
+   记 `unverifiable`。**不编造「LLM 提升命中率」的故事**；
+4. **允许整阶段取消**：排期不是必须做满的清单 —— 若评估不通过，
+   整阶段取消是**正确结果**，不是失败。
+
+## 五、边界（不做什么）
+
+- **不进信号路径**：`affects_signal` / `affects_gate` 恒为 `false`；
+- **不代签**：T20.4 **不得标 `completed`**；2026-09-12 经用户于 Issue #40 确认落定为 `confirmed`（决策 `cancel`）。`build_decision` 无人工签字恒为
+  `defer` / `cancel`，且 **0 个合格候选时即便签字也不得 `proceed`**；
+- **不编效果**：对照不可量化即标 `unverifiable`，并作为 blocker 上报；
+- **不引入重型依赖**：不 `pip install` 任何 LLM 框架（评估阶段零引入）。
+
+---
+
+## 六、候选评估矩阵（T20.1）
 
 | 候选 | 许可证 | A 股适配 | 离线可复现 | 判定 |
 |:---|:---:|:---:|:---:|:---:|
@@ -52,7 +88,7 @@ python main.py research-assist          # 调研 + 只读附注 + 离线对照 +
 
 **推荐（机器可读字段 `recommendation`）：不引入。**
 
-## 四、保留决策（T20.4）
+## 七、保留决策（T20.4）
 
 **要你定什么**：这条链路**保留与否**（含成本与噪声风险）；不保留则**整阶段取消**。
 
@@ -77,7 +113,7 @@ python main.py research-assist          # 调研 + 只读附注 + 离线对照 +
 **若日后要改用本地模型复现**：需先解决「可离线复现」这一准入项，
 届时按新候选重新走一遍 T20.1 流程（本结论只对上述 3 个候选有效期）。
 
-## 五、待人工决策（T20.1 / T20.4）
+## 八、待人工决策（T20.1 / T20.4）
 
 | 检查点 | 一句话问题 | 证据强度 |
 |:---:|:---|:---|
@@ -89,11 +125,9 @@ python main.py research-assist          # 调研 + 只读附注 + 离线对照 +
 > 明确不采纳，不放宽准入）。它**不得标 `completed`** ——
 > 把「结论已出」当成「已采纳」正是本项目一直在防的**假进度**。
 
-## 六、边界与纪律
+## 九、复现命令
 
-1. `affects_gate` / `affects_signal` **恒为 `False`**（结构性，测试钉死）；
-2. **不调用真实 LLM**：附注由调用方注入或留空，离线优先；
-3. **不编造效果**：无法量化即 `unverifiable` + 止损理由；
-4. **不代签**：人工检查点只允许 `pending` / `confirmed`；`completed` 即代签（禁止）；
-5. 本阶段自动任务（T20.2/T20.3）已交付，收口字段见
-   `schedule/plan.json` → `stages[S20].closing`。
+```bash
+python main.py research-assist                    # 候选评估 + 离线对照 + 决策单
+python -m pytest tests/test_roadmap_s20.py -q     # 22 passed
+```

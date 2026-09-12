@@ -29,7 +29,45 @@ python main.py calibration                       # 缺省 both：isotonic + plat
 python main.py calibration --calibration-method platt
 ```
 
-## 三、真实读数（本地 `data/raw` 缓存池，三周期）
+## 三、交付物
+
+| 任务 | 交付 | 状态 |
+|:---:|:---|:---:|
+| T19.1 | `src/eval/probability_calibration.py`：isotonic / Platt + Brier / ECE / 可靠性曲线 | ✅ |
+| T19.2 | 阈值曲线校准前后对照（**现行阈值不改**） | ✅ |
+| T19.3 | `src/inference/probability_calibrator.py` + API 追加字段（向后兼容） | ✅ |
+| T19.4 | 校准层是否进主推理链路 | 🔶 人工 |
+
+CLI：`python main.py calibration [--calibration-method both|isotonic|platt]`
+配置：无新增开关；校准参数落 `models/probability_calibration_<horizon>.json`（运行产物，不入 git）
+测试：`tests/test_roadmap_s19.py`（22 例，全离线合成数据，不触网）
+
+## 四、方法论要点（为什么这么做）
+
+1. **三段式严格时序**：训练段 < 校准段 < 复验段 —— 校准器**只在训练段之后**拟合，
+   评估指标**只在最后一段**读数。若在校准段上评 ECE，那是自证不是验证；
+2. **两种校准器并列**：isotonic（非参、单调、小样本易过拟合）vs Platt
+   （Sigmoid 参数化、更平滑）。**按 Brier 择优**并把两种读数都留在报告里，
+   防「只报好看的那个」；
+3. **ECE / Brier 双指标**：ECE 看校准偏差（分布层面），Brier 看综合评分
+   （区分度 + 校准）。只报 Brier 会掩盖校准偏差，只报 ECE 会掩盖区分度；
+4. **推理期只读套用**：`probability_calibrator` 缺参数文件时
+   **不校准、不猜**，并回 `calibration_applied=false`。宁可标「未校准」，
+   不可伪造校准；
+5. **不改判据**：T19.2 只做阈值曲线**对照**，现行阈值逐字段不变。
+
+## 五、边界（不做什么）
+
+- **不改门禁**：`affects_gate` 恒为 `false`；`strategy_gate` 逐字段零变更；
+- **不原地改概率**：`probability` / `direction` / `signal` 字段逐字段不变，
+  校准结果只出现在**新增字段** `calibrated_probability` / `uncertainty`；
+- **不代签**：T19.4 **不得标 `completed`**；2026-09-12 经用户于 Issue #40 确认落定为 `confirmed`（决策 `defer`：暂不进主推理链路），带签署字段（签字，非代签）；
+- **不外推**：三段式读数只反映本机池，跨时段/跨标的稳定性**未复验**；
+- **不引入重型依赖**：只用既有 scikit-learn 校准器。
+
+---
+
+## 六、真实读数（本地 `data/raw` 缓存池，三周期）
 
 | 周期 | 口径 | Brier | ECE | 校准样本 |
 |:---:|:---:|:---:|:---:|:---:|
@@ -63,7 +101,7 @@ python main.py calibration --calibration-method platt
 > 它是**决策材料**，不是「已达标」的结论。
 > 复现：`python main.py calibration`（落盘 `reports/probability_calibration_{5,10,20}d.json`）。
 
-## 四、§B 决策读数（`calibration-ablation`）
+## 七、§B 决策读数（`calibration-ablation`）
 
 **为什么 §A 与 §B 必须分开看**：T19.4 要定的是"要不要进**主推理链路**"，
 其判据是**决策读数**（命中率 / IC / 阈值子集），不是概率质量。
@@ -87,7 +125,7 @@ python main.py calibration --calibration-method platt
 
 ---
 
-## 五、待人工决策（T19.4）
+## 八、待人工决策（T19.4）
 
 **要你定什么**：校准后的概率是否成为**主推理链路**的默认语义 ——
 即 ① 门禁阈值吃校准概率 ② `/api/v1/portfolio/summary` 与 `/signal`
@@ -123,12 +161,10 @@ python main.py confidence-holdout                       # 用新概率重算保�
 python main.py confidence-gate                          # 再看候选阈值（覆盖/命中权衡）
 ```
 
-## 六、边界与纪律
+## 九、复现命令
 
-1. `affects_gate` 恒为 `false`，`strategy_gate` 判据逐字段未变；
-2. 校准器**只读**套用：`src/inference/probability_calibrator.py` 在参数文件缺失时
-   如实降级为原始概率（不猜、不外推）；
-3. T19.4 **不得标 `completed`**；2026-09-12 经用户确认（Issue #40）落定为
-   `confirmed`（决策 `defer`：暂不进主推理链路），带签署字段（签字，非代签）；
-4. 本阶段自动任务（T19.1/T19.2/T19.3）已交付，收口字段见
-   `schedule/plan.json` → `stages[S19].closing`。
+```bash
+python main.py calibration                       # 双校准器 + 阈值曲线 + 固化参数
+python main.py calibration --calibration-method platt
+python -m pytest tests/test_roadmap_s19.py -q    # 22 passed
+```
