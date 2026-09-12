@@ -439,11 +439,11 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 
 | 阶段 | 内容 | 状态 |
 |:---:|:---|:---:|
-| S11 / G1 | 评估量尺先行（因子诊断 · 成本敏感性 · FinRL 结论补全） | 🚧 进行中 |
+| S11 / G1 | 评估量尺先行（因子诊断 · 成本敏感性 · FinRL 结论补全） | ✅ 收官 · T11.2 已确认 |
 | S12 / G2 | 标签重构：三重障碍法 + 无前视测试 + A/B 实验 | ✅ |
-| S13 / G3 | qlib 因子库接入（Alpha158 表达式级对齐 + 增量验证） | 🚧 进行中 |
+| S13 / G3 | qlib 因子库接入（Alpha158 表达式级对齐 + 增量验证） | ✅ 收官 · T13.4 已确认 |
 | S14 / G4 | 数据源升级：akshare 升 P1 + **期货 / 外汇开启** | ✅ |
-| S15 / G5 | 调参与概率预测：optuna 超参搜索 + 置信度阈值曲线；**T15.3 双指标门禁结构重构已交付**（决策单待人工签字） | 🚧 进行中 |
+| S15 / G5 | 调参与概率预测：optuna 超参搜索 + 置信度阈值曲线；**T15.3 双指标门禁结构重构已交付**（已确认：维持只读） | ✅ 收官 · T15.3 已确认 |
 
 > ⚠️ **阶段 id 复用提示**：新 S11~S14（G1~G5 轮）与旧 S11~S14（收敛轮）id 同名但内容不同，以 `schedule/plan.json` 的 `note` / `source` 字段区分。
 >
@@ -459,28 +459,30 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 
 | 阶段 | 内容 | 依据 | 排期 | 状态 |
 |:---:|:---|:---|:---:|:---:|
-| S16 / H1 | 概率区间校准：MAPIE 保形预测 + 多时段滚动保留期复验 | T15.3 遗留项（保留期只有一个 / 区间机制未实装） | 10-05 ~ 10-11 | ✅ auto 任务收官 · 🔶 T16.4 待签字 |
-| S17 / H2 | 评估防过拟合加固：CPCV 净化交叉验证 + 试验多重比较记账打通 | S15 自述「阈值读数未经多重比较校正，不得引用为达标证据」 | 10-12 ~ 10-18 | ✅ auto 任务收官 · 🔶 T17.4 待签字 |
-| S18 / H3 | 市场状态分层：HMM 牛/熊/震荡识别 + 状态内分层评估 + 状态特征增量 A/B | S15「IC 与命中率脱节」的时间维度成因 | 10-19 ~ 10-25 | ✅ auto 任务收官 · 🔶 T18.4 待签字 |
-| S19 / H4 | 推理链路概率校准：isotonic / Platt 校准 + API 暴露 calibrated_probability / uncertainty | 置信度门槛建立在**未校准概率**之上 | 10-26 ~ 10-30 | ✅ auto 任务收官 · 🔶 T19.4 待签字 |
-| S20 / H5 | 投研辅助链路：LLM 投研 Agent **只读**接入 + 离线对照 | 优先级最低，评估不通过则整阶段取消 | 10-31 ~ 11-06 | ⛔ 评估不通过，默认取消 · 🔶 T20.4 待签字 |
+| S16 / H1 | 概率区间校准：MAPIE 保形预测 + 多时段滚动保留期复验 | T15.3 遗留项（保留期只有一个 / 区间机制未实装） | 10-05 ~ 10-11 | ✅ 收官 · T16.4 已确认 |
+| S17 / H2 | 评估防过拟合加固：CPCV 净化交叉验证 + 试验多重比较记账打通 | S15 自述「阈值读数未经多重比较校正，不得引用为达标证据」 | 10-12 ~ 10-18 | ✅ 收官 · T17.4 已确认 |
+| S18 / H3 | 市场状态分层：HMM 牛/熊/震荡识别 + 状态内分层评估 + 状态特征增量 A/B | S15「IC 与命中率脱节」的时间维度成因 | 10-19 ~ 10-25 | ✅ 收官 · T18.4 已确认 |
+| S19 / H4 | 推理链路概率校准：isotonic / Platt 校准 + API 暴露 calibrated_probability / uncertainty | 置信度门槛建立在**未校准概率**之上 | 10-26 ~ 10-30 | ✅ 收官 · T19.4 已确认 |
+| S20 / H5 | 投研辅助链路：LLM 投研 Agent **只读**接入 + 离线对照 | 优先级最低，评估不通过则整阶段取消 | 10-31 ~ 11-06 | ⛔ 评估不通过，已确认整阶段取消 |
 
-> **「auto 任务收官」的含义**：本阶段 `auto_acceptable` 任务**全部已交付并通过守卫测试**，
-> `plan.json` 已落 `auto_acceptable_completed_at` / `auto_acceptable_verified` / `closing` 字段。
-> **阶段 `status` 仍为 `in_progress`** —— 人工检查点签字前不会被标 `completed`（守卫测试钉死）。
-> 5 个人工检查点（T16.4 / T17.4 / T18.4 / T19.4 / T20.4）已全部进决策包
-> [`schedule/manual_checkpoints.json`](../schedule/manual_checkpoints.json)（10 条，priority 唯一），
+> **「阶段收官」的含义（2026-09-12 更新）**：本阶段 `auto_acceptable` 任务**全部已交付并通过守卫测试**，
+> `plan.json` 已落 `auto_acceptable_completed_at` / `auto_acceptable_verified` / `closing` 字段；
+> 11 项人工检查点经用户于 Issue #40 确认后，S11~S20 阶段状态已由 `in_progress` → **`completed`**
+> 并逐阶段补齐 `completed_at`。**收官 ≠ 改配置**：确认对象是「现状默认值」，
+> `strategy_gate` 零改动、`affects_gate` 恒为 false（守卫测试钉死）。
+> 6 项 H 轮检查点（T16.4 / T17.4 / T18.4 / T19.4 / T20.1 / T20.4）已全部进决策包
+> [`schedule/manual_checkpoints.json`](../schedule/manual_checkpoints.json)（11 条，priority 1..11 唯一连续），
 > 决策材料见 [`00_kickoff/manual_checkpoints_round_g_h.md`](../00_kickoff/manual_checkpoints_round_g_h.md)。
 
 #### 10.4.1 落地结果（自动任务，2026-09-12）
 
 > 完整读数与边界见 [00_kickoff/round2_integration_conclusion.md](../00_kickoff/round2_integration_conclusion.md)。
-> 全部阶段 `affects_gate=false`，`strategy_gate` 零改动；人工检查点一律保持 `pending`。
+> 全部阶段 `affects_gate=false`，`strategy_gate` 零改动；人工检查点**已确认但绝不标 `completed`**（确认 ≠ 代签）。
 >
 > **收口字段**：S16~S20 各阶段已补齐 `round`（H1~H5）/ `auto_acceptable_completed_at` /
 > `auto_acceptable_verified` / `closing`（`auto_scope` · `manual_scope` · `evidence` · `affects_gate`），
-> 见 `schedule/plan.json`。**自动部分交付 ≠ 阶段完成**：人工签字前阶段 `status` 恒为 `in_progress`
-> （守卫测试钉死）。
+> 见 `schedule/plan.json`。**自动交付 ≠ 阶段完成、确认 ≠ 代签**：阶段 `status` 在人工检查点确认后收官为
+> `completed`（含 `completed_at`），而人工检查点自身恒不为 `completed`（守卫测试钉死）。
 
 | 阶段 | 命令 | 实测读数（本机池） | 结论 |
 |:---:|:---|:---|:---|
@@ -495,18 +497,18 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 > 🔒 **本轮边界**：门禁 `strategy_gate` 零改动，所有 `affects_gate` 恒为 false；H5 结论严禁进入信号路径。
 > 🚫 **明确淘汰**（不在本轮引入）：qlib 运行时（S13 已定表达式级对齐）、timesfm/FinGPT/FinRobot（模型族非瓶颈 + 重型依赖）、backtesting.py/rqalpha/hikyuu（S1 已落地 vectorbt）、adata/Ashare/free-stockdb（数据通道已闭环）、tsfresh 类特征库（S12 已否掉）。
 
-### 10.5 待人工检查点
+### 10.5 人工检查点（11 项已于 2026-09-12 确认 · Issue #40）
 
-- T11.2 — 成本三档口径定稿
-- T12.3 — 三重障碍法标签是否纳入主线
-- T13.4 — qlib Alpha158 因子是否纳入生产特征集
-- T14.3 — akshare 回退链顺序 + 期货/外汇是否纳入训练主线
-- T15.3 — **是否按「置信度 ≥thr 子集命中率 + 覆盖率下限」双指标重构 `strategy_gate` 结构**（thr ∈ [0.2, 0.3]）
-- T16.4 — 区间口径 vs 概率距离口径取舍（含覆盖率下限与信号量权衡）· 代码已交付，待签字
-- T17.4 — 门禁是否引入过拟合概率下限 · 代码已交付，待签字
-- T18.4 — 状态分层是否进入信号门禁 / 风控 `withheld` 语义（**证据较强：熊市 62.55% vs 震荡 48.72%**）· 待签字
-- T19.4 — 校准层是否进主推理链路（**证据较强：5d ECE 0.1042→0.0025 / 10d 0.1258→0.0463 / 20d 0.0710→0.0530，platt**）· 待签字
-- T20.1 / T20.4 — LLM 投研辅助是否引入 / 是否保留（评估结论：无候选满足准入，默认取消）· 待签字
+- T11.2 ✅ — 成本三档口径定稿
+- T12.3 ✅ — 三重障碍法标签是否纳入主线
+- T13.4 ✅ — qlib Alpha158 因子是否纳入生产特征集
+- T14.3 ✅ — akshare 回退链顺序 + 期货/外汇是否纳入训练主线
+- T15.3 ✅（defer）— **是否按「置信度 ≥thr 子集命中率 + 覆盖率下限」双指标重构 `strategy_gate` 结构**（thr ∈ [0.2, 0.3]）
+- T16.4 ✅（defer）— 区间口径 vs 概率距离口径取舍（含覆盖率下限与信号量权衡）· 已确认（defer）
+- T17.4 ✅（defer）— 门禁是否引入过拟合概率下限 · 已确认（defer）
+- T18.4 ✅（defer）— 状态分层是否进入信号门禁 / 风控 `withheld` 语义（**证据较强：熊市 62.55% vs 震荡 48.72%**）· 已确认（defer）
+- T19.4 ✅（defer）— 校准层是否进主推理链路（**证据较强：5d ECE 0.1042→0.0025 / 10d 0.1258→0.0463 / 20d 0.0710→0.0530，platt**）· 已确认（defer）
+- T20.1 / T20.4 ✅（reject / cancel）— LLM 投研辅助是否引入 / 是否保留（评估结论：无候选满足准入，默认取消）· 已确认（reject / cancel）
 
 > ⚠️ **耦合提醒**：T15.3（阈值语义）、T19.4（概率语义）、T18.4（状态与概率的关系）
 > 操作的是同一条「**概率 → 阈值 → 信号**」链 —— 校准层一旦成为默认语义，同一组 `thr ∈ [0.2, 0.3]`
@@ -517,6 +519,9 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 > 含 H 轮 T16.4 / T17.4 / T18.4 / T19.4 / T20.1 / T20.4 —— 至此再无「已交付但未登记」的检查点。
 > 决策材料：H4 见 [00_kickoff/probability_calibration_conclusion.md](../00_kickoff/probability_calibration_conclusion.md)，
 > H5 见 [00_kickoff/research_assist_conclusion.md](../00_kickoff/research_assist_conclusion.md)。
+>
+> **收官状态（2026-09-12）**：S11~S20 全部阶段 `status=completed` 且 `completed_at` 已补齐；
+> `affects_gate` 恒 false、`strategy_gate` 零改动。
 
 > **H 轮收口状态**：S16~S20 的 `auto_acceptable` 任务已全部交付、证据已落盘、守卫测试通过；
 > H 轮 5 项检查点（T16.4 / T17.4 / T18.4 / T19.4 / T20.4）已由用户于 Issue #40 确认落定为
