@@ -1684,6 +1684,64 @@ def run_confidence(config: dict, symbols: list[str] | None = None,
     return all_curves
 
 
+def run_confidence_gate(config: dict, decided_by: str = "",
+                        chosen_threshold: float | None = None,
+                        reason: str = "") -> dict:
+    """置信度子集门禁决策单（S15 / G5，T15.3）：双指标「须人工签字」。
+
+    为什么需要：G5 轮结束时唯一在**独立保留期**验证过的改善机制，就是
+    「置信度 ≥thr 子集命中率 + 覆盖率下限」双指标。但落地它要动
+    `strategy_gate` 的**结构**（判据从"全样本命中率"变成"子集命中率 + 覆盖率"），
+    属产品口径变更 —— 按仓库既有纪律（S11/S12/S13 同款），必须人工签字。
+
+    本命令做的事：
+      1. 读保留期复验报告（`reports/confidence_holdout_verify.json`），
+         在 thr ∈ [0.2, 0.3] 内逐阈值做**双指标**判定
+         （命中率 ≥0.52 **且** 覆盖率 ≥0.05，两条腿必须同时过线）；
+      2. 输出候选阈值区间 + 决策单（verdict / status / blockers）；
+      3. 结论为 approve 时仍需人工签字（`--decided-by`）才算 confirmed。
+
+    ⚠️ **不改门禁结构**：`affects_gate` 恒为 False，`strategy_gate` 放行结论
+    逐字段不变；本命令只产出"是否值得改门禁"的决策材料，绝不代改配置。
+
+    落盘 `reports/confidence_gate_decision.json`。
+    """
+    from src.eval import confidence_gate as cg
+
+    logger.info("执行置信度子集门禁决策前置评估")
+    holdout = cg.load_json(cg.holdout_path(config))
+    if holdout is None:
+        logger.warning("[confidence-gate] 未找到保留期复验报告"
+                       "（reports/confidence_holdout_verify.json），证据缺失")
+
+    record = cg.build_decision_record(
+        holdout, config=config, decided_by=decided_by,
+        chosen_threshold=chosen_threshold, reason=reason)
+
+    out_dir = Path("reports")
+    out_dir.mkdir(exist_ok=True)
+    out_path = out_dir / cg.REPORT_NAME
+    out_path.write_text(json.dumps(record, ensure_ascii=False, indent=2),
+                        encoding="utf-8")
+
+    _record_trial(config, "confidence-gate", {
+        "verdict": record["verdict"],
+        "status": record["status"],
+        "chosen_threshold": record["decision"]["chosen_threshold"],
+        "candidates": [r["horizon"] for r in record["evidence"].get("candidate_rank", [])],
+    })
+
+    print(json.dumps(record, ensure_ascii=False, indent=2))
+    print(f"\n决策单已保存: {out_path}")
+    print(f"\n结论: {record['verdict']} / 状态: {record['status']}")
+    print(f"说明: {record['narrative']}")
+    if record.get("blockers"):
+        print("阻塞项:")
+        for b in record["blockers"]:
+            print(f"  - {b}")
+    return record
+
+
 def run_factor_model(config: dict, symbol: str | None = None, top_n: int = 10) -> dict:
     """多因子模型诊断：因子权重 / 族权重 / IC 排名 / 当前因子值。
 
@@ -2035,6 +2093,7 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py tune                     # optuna 超参搜索（LightGBM，S15/G5）
   python main.py tune --n-trials 50       # 更多试验数
   python main.py confidence               # 置信度阈值曲线（高置信样本命中率，S15/G5）
+  python main.py confidence-gate          # 置信度子集门禁决策单（双指标，须人工签字，S15/G5）
         """,
     )
     parser.add_argument("command", choices=[
@@ -2044,7 +2103,7 @@ def build_parser() -> argparse.ArgumentParser:
         "signal", "orders", "trade", "backtest", "macro", "monitor",
         "ic", "ic-trend", "ic-pool", "pool-train", "horizon-scan", "horizon-decision",
         "feature-experiment", "label-ab", "qlib-ab", "trials", "release-check",
-        "tune", "confidence",
+        "tune", "confidence", "confidence-gate",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -2092,6 +2151,8 @@ def build_parser() -> argparse.ArgumentParser:
                              "缺省用配置 prediction_horizons")
     parser.add_argument("--decided-by", dest="decided_by", default="",
                         help="horizon-decision 命令：人工确认人（非空才可能把决策单置为 confirmed）")
+    parser.add_argument("--chosen-threshold", dest="chosen_threshold", default=None,
+                        help="confidence-gate 命令：人工挑定的置信度阈值（须落在候选区间内）")
     parser.add_argument("--reason", dest="reason", default="",
                         help="horizon-decision 命令：人工确认/驳回的理由（写入决策单审计字段）")
     parser.add_argument("--n-trials", dest="n_trials", type=int, default=20,
@@ -2279,6 +2340,13 @@ def main():
             except ValueError:
                 logger.warning(f"--trials-horizons 解析失败，改用配置 prediction_horizons: {_raw_h}")
         run_confidence(config, symbols=_cli_symbols(args), horizons=_h)
+    elif args.command == "confidence-gate":
+        _ct = getattr(args, "chosen_threshold", None)
+        run_confidence_gate(
+            config,
+            decided_by=str(getattr(args, "decided_by", "") or ""),
+            chosen_threshold=float(_ct) if _ct not in (None, "") else None,
+            reason=str(getattr(args, "reason", "") or ""))
     elif args.command == "gate":
         run_gate(config, args.args[0] if args.args else None)
     elif args.command == "gate-diagnose":

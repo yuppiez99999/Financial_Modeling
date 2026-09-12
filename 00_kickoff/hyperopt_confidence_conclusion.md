@@ -161,3 +161,67 @@
   `478af328e8df8d7b`）；
 - 保留期命中率高于 walk-forward 属于时段效应 + 独立切分的正常差异，
   **不得择优引用**：两种口径的数字都完整列在上表与曲线报告中。
+
+---
+
+## 十、T15.3 结构重构交付（2026-09-12，须人工签字）
+
+> 用户指令：按「置信度 ≥thr 子集命中率 + 覆盖率下限」双指标重构门禁
+> （thr ∈ [0.2, 0.3]）——这是 G5 轮结束时唯一在独立保留期验证过的改善机制，
+> 但动 `strategy_gate` 结构，须人工签字。
+
+### 10.1 交付内容（代码，`affects_gate` 恒为 false）
+
+- **`src/eval/confidence_gate.py`**：双指标判定 + 候选区间扫描 + 决策单。
+  - `evaluate_threshold_row`：对单条阈值行做**双指标**判定 ——
+    命中率 ≥ `min_hit_rate` **且** 覆盖率 ≥ `min_coverage`，**两条腿必须同时过线**；
+    只过一条一律不合格（只过命中率 → "只留几个样本 100%"陷阱；
+    只过覆盖率 → 就是现行全样本口径，没有改善）；
+  - `evaluate_curve`：在 thr ∈ [thr_min, thr_max] 内找出**同时**满足双指标的
+    候选阈值**区间**（是范围不是单点）；
+  - `evaluate_holdout_evidence`：优先取**独立保留期**报告（唯一未参与任何扫描的口径），
+    walk-forward 曲线只作补充呈现、**不得替代**保留期证据；
+  - `build_decision_record`：决策单（verdict / status / blockers），
+    **无 `decided_by` 恒为 pending**，`chosen_threshold` 须落在候选区间内。
+- **`main.py confidence-gate`**：CLI 命令，落盘 `reports/confidence_gate_decision.json`。
+- **`configs/*.yaml strategy_gate.confidence_gate`**：默认 `mode: report_only`、
+  `freeze_structure: true`、`thr ∈ [0.2, 0.3]`、`min_hit_rate 0.52`、
+  `min_coverage 0.05`、`min_samples 50`。
+- **`tests/test_roadmap_s15_t153.py`**：32 例（双指标两腿、候选区间边界、
+  保留期优先、签字门槛、陈旧/缺失报告、恒 `affects_gate=false`、CLI 接线）。
+
+### 10.2 双指标口径（与既有纪律一致）
+
+| 指标 | 口径 | 默认 |
+|------|------|------|
+| 子集命中率 | 置信度 ≥thr 子集的方向命中率（同 `ic.hit_rate` 中性带口径） | ≥ 0.52 |
+| 覆盖率 | 保留该阈值的样本占比 | ≥ 0.05 |
+| 候选阈值 | 落在 `[0.2, 0.3]` 且**双指标同时过线** | thr ∈ [0.2, 0.3] |
+
+**为什么必须是双指标**：单看子集命中率会被"把阈值调到只留极少数样本"刷高
+（退化解）；单看覆盖率则退化为现行全样本口径。两者同时约束，才是
+「只在模型有把握时给信号，且信号量不低于可交易下限」。
+
+### 10.3 决策单状态机（fail-close）
+
+| 条件 | verdict | status |
+|------|---------|--------|
+| 保留期报告缺失 / 过期 | defer | pending / stale |
+| 无阈值双指标同时过线 | reject | pending |
+| 有候选但未挑定阈值 | defer | pending |
+| 挑定阈值但无签字 | defer | pending |
+| 挑定阈值**且人工签字** | approve | **confirmed** |
+
+**关键纪律**：`approve` 批准的是**证据**，不是"门禁已改"。
+实际切换 `strategy_gate` 结构仍须人工落配置并重做泄漏/偏差审查，
+`confidence_gate` 模块**不代改配置**（`freeze_structure: true`）。
+
+### 10.4 边界与遗留
+
+- `affects_gate` 恒为 false：本模块只产出决策材料，`strategy_gate` 放行结论零变更；
+- 保留期是**单一时段**（最近 ~30% 行情），已显式标注 `single_period_warning`，
+  多时段滚动复验（逐季度保留期）属下一轮工作；
+- 遗留人工检查点累计 **5 个**：T11.2 成本三档、T12.3 标签主线、T13.4 qlib 因子、
+  T14.3 回退链顺序、T15.3 门禁结构（本次交付决策单，签字待办）；
+- `neuralforecast` 概率区间 → 置信度换算已就绪（`confidence_from_interval`）
+  但未实装，若人工要"模型原生不确定度"而非"概率距离"，可作为 S16+ 候选。

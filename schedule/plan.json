@@ -908,10 +908,12 @@
         },
         {
           "id": "T15.3",
-          "name": "『置信度 ≥X 才输出信号』的命中率曲线评审与是否提门禁决策（人工检查点）",
+          "name": "『置信度 ≥thr 子集命中率 + 覆盖率下限』双指标重构门禁（thr∈[0.2,0.3]）与是否提门禁决策（人工签字检查点）",
           "status": "pending",
           "auto_run": false,
-          "completed_at": null
+          "completed_at": null,
+          "implementation_status": "delivered",
+          "blocked_on": "human_signature"
         }
       ],
       "auto_acceptable": [
@@ -921,7 +923,7 @@
       "manual_checkpoint": [
         "T15.3"
       ],
-      "note": "仍不自动改门禁。里程碑 10-04：若 short/mid 命中率过 52% 且 IC 稳定，走人工审批切换 strategy_gate；未过则如实记入 SALES_PLAN §8.2 并说明原因。 | T15.1/T15.2 已落地（2026-09-11）：optuna 搜索（tune 命令）与置信度阈值曲线（confidence 命令）均 report_only/affects_gate=false。 | T15.3 补充验证完成（2026-09-12，真实 38 标的池）：① optuna 60 trials 收敛重跑——IC 增量真实但有限（+0.007~+0.033），OOT 命中率 50.9%~51.3% 未过 52%，调参不是门禁瓶颈；② 独立保留期（后 30%，未参与任何扫描）复验置信度阈值——阈值↑命中率↑单调成立，候选区间 thr∈[0.2,0.3]，保留期命中率 52.9%~58.5%、覆盖 5.6%~35.6%；结论与材料见 00_kickoff/hyperopt_confidence_conclusion.md §六~§九、reports/confidence_holdout_verify.json。T15.3 人工签字仍待办。",
+      "note": "仍不自动改门禁。里程碑 10-04：若 short/mid 命中率过 52% 且 IC 稳定，走人工审批切换 strategy_gate；未过则如实记入 SALES_PLAN §8.2 并说明原因。 | T15.1/T15.2 已落地（2026-09-11）：optuna 搜索（tune 命令）与置信度阈值曲线（confidence 命令）均 report_only/affects_gate=false。 | T15.3 补充验证完成（2026-09-12，真实 38 标的池）：① optuna 60 trials 收敛重跑——IC 增量真实但有限（+0.007~+0.033），OOT 命中率 50.9%~51.3% 未过 52%，调参不是门禁瓶颈；② 独立保留期（后 30%，未参与任何扫描）复验置信度阈值——阈值↑命中率↑单调成立，候选区间 thr∈[0.2,0.3]，保留期命中率 52.9%~58.5%、覆盖 5.6%~35.6%；结论与材料见 00_kickoff/hyperopt_confidence_conclusion.md §六~§九、reports/confidence_holdout_verify.json。T15.3 人工签字仍待办。 | T15.3 结构重构交付（2026-09-12）：新增 src/eval/confidence_gate.py 双指标判定 + main.py confidence-gate 决策单（reports/confidence_gate_decision.json），configs/strategy_gate.confidence_gate 段默认 report_only、freeze_structure=true。affects_gate=false，strategy_gate 放行结论零变更；无人工签字恒为 pending，chosen_threshold 须落在候选区间内。详见 00_kickoff/hyperopt_confidence_conclusion.md §十。",
       "source": "Issue #29 高质量项目集成 · G5（optuna / Nixtla neuralforecast）",
       "depends_on": [
         "S13"
@@ -934,5 +936,5 @@
   "next_run_date": "2026-09-12",
   "blockers": [],
   "result": "s15_g5_t15_1_t15_2_supplementary_verified",
-  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。"
+  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。"
 }

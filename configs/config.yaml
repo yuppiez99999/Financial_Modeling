@@ -332,6 +332,20 @@ strategy_gate:
   min_audit_verified: 10    # 审计交叉验证所需最少已验证样本
   min_audit_hit_rate: 0.5   # 审计命中率下限
   report_dir: "reports"     # 判定结果输出目录（strategy_gate.json）
+  # S15/G5 T15.3：置信度子集门禁（"置信度 ≥thr 子集命中率 + 覆盖率下限"双指标）
+  # ⚠️ 默认 report_only：只产出决策材料，**不改变** strategy_gate 结构与放行结论。
+  #    落地该结构属产品口径变更，必须人工签字（`main.py confidence-gate --decided-by`）。
+  confidence_gate:
+    mode: "report_only"     # report_only(只产出决策材料) / enforce(结构变更由人工落配置)
+    thr_min: 0.2            # 候选阈值区间下限（Issue #29 指令：thr ∈ [0.2, 0.3]）
+    thr_max: 0.3            # 候选阈值区间上限
+    min_hit_rate: 0.52      # 双指标之一：子集命中率下限（与 strategy_gate.min_hit_rate 同源）
+    min_coverage: 0.05      # 双指标之二：覆盖率下限（防"只留几个样本 100%"退化解）
+    min_samples: 50         # 单阈值行最少样本数（不足不发指标，不猜）
+    max_report_age_days: 7  # 保留期报告最大可接受年龄（超龄→stale，证据不可复现）
+    freeze_structure: true  # true = 冻结 strategy_gate 结构，禁止自动改（须人工落配置）
+    report_dir: "reports"   # 决策单输出目录（confidence_gate_decision.json）
+
   # S7 门禁解锁：训练折中性带（过滤 ≈0.5 的噪音样本，仅用训练折学常数，无前视）
   # S9 按资产类别分池放行（默认关闭 = 分池只做补充证据，不改放行结论）
   pool_scope:
