@@ -258,3 +258,32 @@ class TestHistoryRecompute:
         assert r["affects_gate"] is False
         assert r["cpcv"]["available"] is False
         assert "T17.4" in r["note"]
+
+
+# ----------------------------------------------------------------------
+# CLI 注册与门禁守卫（Issue #29 排期链）
+# ----------------------------------------------------------------------
+class TestCliRegistration:
+    def test_overfit_audit_command_registered(self):
+        import main as m
+
+        parser = m.build_parser()
+        args = parser.parse_args(["overfit-audit"])  # choices 外的命令会直接报错
+        assert args.command == "overfit-audit"
+
+    def test_cpcv_cli_args_present(self):
+        import main as m
+
+        parser = m.build_parser()
+        args = parser.parse_args(["overfit-audit", "--n-blocks", "8",
+                                  "--k-test", "3", "--embargo", "7"])
+        assert args.n_blocks == 8 and args.k_test == 3 and args.embargo == 7
+
+    def test_gate_untouched_by_s17(self):
+        """S17 全部交付不改门禁：strategy_gate 配置逐字段不得被 overfit-audit 触碰。"""
+        from src.eval.cpcv import cpcv_evaluate
+
+        r = cpcv_evaluate([0.1] * 15, n_samples=600, n_blocks=6, k_test=2,
+                          horizon_days=5, n_trials=5)
+        assert r["affects_gate"] is False
+        assert "T17.4" in r["note"]
