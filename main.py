@@ -3343,6 +3343,189 @@ def _load_daily(config: dict, symbol: str):
         return None
 
 
+def _load_raw_close(symbols: list[str]) -> tuple[dict, list[str]]:
+    """离线读取 data/raw/ 的日K收盘（T21 真实数据冒烟用）。
+
+    文件名约定：``data/raw/<symbol>_kline.csv`` 优先，退回 ``<symbol>.csv``。
+    返回 ``(price_frames, missing)``：缺失文件的标的进入 ``missing``，
+    不静默跳过 —— 读数必须声明它覆盖了哪些标的。
+    """
+    from pathlib import Path
+
+    import pandas as pd
+
+    root = Path("data/raw")
+    price_frames: dict[str, "pd.DataFrame"] = {}
+    missing: list[str] = []
+    for symbol in symbols:
+        path = root / f"{symbol}_kline.csv"
+        if not path.exists():
+            path = root / f"{symbol}.csv"
+        if not path.exists():
+            missing.append(symbol)
+            continue
+        try:
+            df = pd.read_csv(path)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"读取 {path} 失败: {e}")
+            missing.append(symbol)
+            continue
+        if "date" not in df.columns or "close" not in df.columns:
+            missing.append(symbol)
+            continue
+        df = df[["date", "close"]].copy()
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        df["close"] = pd.to_numeric(df["close"], errors="coerce")
+        df = df.dropna().drop_duplicates(subset="date", keep="last")
+        df = df.sort_values("date").reset_index(drop=True)
+        if len(df) > 0:
+            price_frames[symbol] = df
+        else:
+            missing.append(symbol)
+    return price_frames, missing
+
+
+def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
+                               min_confidence: float | None = None,
+                               cost_levels: list[str] | None = None,
+                               ma_window: int = 20,
+                               contrast: bool = True) -> dict:
+    """组合回测闭环基线（S21 / I1：T21.1 + T21.2 + T21.3，report_only）。
+
+    本命令做的事：
+      1. 离线读取 data/raw/ 真实日K，构造**机械基线信号**（MA 窗口上穿看多，
+         收盘决定、次日生效 —— 无未来函数）；机械信号的目的是给回测器喂
+         确定性输入，不引入模型依赖，也不构成策略推荐；
+      2. T21.1 池级组合回测（等权基线）：T11.2 定稿三档成本逐档扣减，
+         产出净值/回撤/换手/夏普/成本拖累；
+      3. T21.2 口径一致性对照：逐标的 IC/命中率 vs 单标的净收益的跨标的
+         相关与背离清单（复验 S15「IC 与命中率脱节」在 PnL 层是否仍成立）；
+      4. T21.3 落盘 reports/portfolio/portfolio_backtest.json，试验登记
+         （S17 统一预算）。
+
+    ⚠️ 不改门禁（affects_gate=false）；组合口径是否纳入标准评估集属
+    T21.4 人工检查点。机械基线不是策略：换信号只改输入，不改引擎。
+    """
+    from src.eval import portfolio_backtest as pb
+    from datetime import datetime, timezone
+
+    logger.info("组合回测闭环基线（S21/I1，report_only）")
+    symbols = symbols or _config_symbols(config)
+    if not symbols:
+        payload = {"error": "未指定标的且配置无启用标的", "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    price_frames, missing = _load_raw_close(symbols)
+    if len(price_frames) < 3:
+        payload = {"error": f"可用价格标的不足（{len(price_frames)} < 3）",
+                   "missing": missing, "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    from src.eval.factor_metrics import T112_COST_TIERS
+
+    names = ([x.strip() for x in str(cost_levels).split(",") if x.strip()]
+             if cost_levels else [t["name"] for t in T112_COST_TIERS])
+    unknown_levels = [n for n in names if n not in {t["name"] for t in T112_COST_TIERS}]
+    if unknown_levels:
+        payload = {"error": f"未知成本档 {unknown_levels}（T11.2 定稿三档之外不提供）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    # 机械基线信号（确定性，无模型依赖）：close > MA(ma_window) → 看多激活
+    signal_frames: dict[str, "pd.DataFrame"] = {}
+    skipped: list[str] = []
+    for symbol, px in price_frames.items():
+        ma = px["close"].rolling(int(ma_window)).mean()
+        active = (px["close"] > ma).fillna(False)
+        if int(active.sum()) < 5:
+            skipped.append(symbol)
+            continue
+        signal_frames[symbol] = pd.DataFrame({
+            "date": px["date"],
+            "action": ["BUY" if a else "HOLD" for a in active],
+            "confidence": [1.0 if a else 0.0 for a in active],
+        })
+    if len(signal_frames) < 3:
+        payload = {"error": f"有效信号标的不足（{len(signal_frames)} < 3）",
+                   "skipped": skipped, "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    weight_plans = pb.build_equal_weight_plan(
+        signal_frames, min_confidence=float(min_confidence or 0.0))
+
+    tiers_report: dict[str, Any] = {}
+    for tier in T112_COST_TIERS:
+        if tier["name"] not in names:
+            continue
+        bt = pb.run_portfolio_backtest(
+            price_frames, weight_plans,
+            cost_one_side_value=float(tier["one_side"]))
+        tiers_report[tier["name"]] = {
+            "one_side": tier["one_side"],
+            "available": bt.get("available", False),
+            "reason": bt.get("reason"),
+            "metrics": bt.get("metrics"),
+            "date_range": bt.get("date_range"),
+            "n_days": bt.get("n_days"),
+        }
+
+    contrast_payload: Any = None
+    if contrast:
+        contrast_payload = pb.consistency_contrast(
+            price_frames, weight_plans,
+            cost_one_side_value=pb.cost_one_side("base"))
+        if isinstance(contrast_payload, dict) and contrast_payload.get("rows"):
+            contrast_payload["rows"] = contrast_payload["rows"][:64]
+
+    try:
+        from src.eval.trial_registry import count_trials
+
+        budget = count_trials(config)
+    except Exception as e:  # noqa: BLE001
+        budget = {"available": False, "reason": str(e)}
+
+    payload: dict[str, Any] = {
+        "command": "portfolio-backtest",
+        "stage": "S21/I1",
+        "available": any(v.get("available") for v in tiers_report.values()),
+        "asof": datetime.now(timezone.utc).isoformat(),
+        "report_only": True,
+        "affects_gate": False,
+        "baseline_signal": f"mechanical MA{int(ma_window)} long/flat（确定性，非策略推荐）",
+        "symbols_used": sorted(signal_frames),
+        "symbols_missing_or_skipped": sorted(set(missing) | set(skipped)),
+        "min_confidence": float(min_confidence or 0.0),
+        "tiers": tiers_report,
+        "consistency_contrast": contrast_payload,
+        "trial_budget": {"total_trials_before_this": budget.get("total"),
+                         "available": budget.get("available", False),
+                         "note": "本次读数已计入统一试验预算（S17 口径）"},
+        "manual_checkpoint": "T21.4（组合口径是否纳入标准评估集）",
+    }
+    _record_trial(config, "portfolio-backtest", {
+        "available": payload["available"],
+        "symbols": len(signal_frames),
+        "tiers": {k: (v["metrics"] or {}).get("total_return") for k, v in tiers_report.items()},
+        "contrast_available": bool(isinstance(contrast_payload, dict)
+                                   and contrast_payload.get("available")),
+    })
+
+    out_dir = Path("reports/portfolio")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_path = out_dir / "portfolio_backtest.json"
+    report_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    payload["report_path"] = str(report_path)
+    print(json.dumps({k: v for k, v in payload.items() if k != "consistency_contrast"
+                      or not isinstance(contrast_payload, dict)},
+                     ensure_ascii=False, indent=2))
+    return payload
+
+
 def build_parser() -> argparse.ArgumentParser:
     """构建 CLI 参数解析器（供 main() 与测试复用）"""
     parser = argparse.ArgumentParser(
@@ -3410,6 +3593,7 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py calibration              # 概率校准层：isotonic/Platt + Brier/ECE（S19/H4）
   python main.py calibration-ablation     # 校准层消融对照：base/platt/isotonic 决策读数并排（T19.4 证据）
   python main.py research-assist          # 投研辅助只读接入评估：候选调研 + 离线对照 + 决策单（S20/H5）
+  python main.py portfolio-backtest      # 组合回测闭环：信号×门槛×成本三档→净值/回撤/换手/夏普（S21/I1，report_only）
         """,
     )
     parser.add_argument("command", choices=[
@@ -3422,6 +3606,7 @@ def build_parser() -> argparse.ArgumentParser:
         "tune", "confidence", "confidence-gate", "confidence-holdout",
         "conformal", "conformal-interval", "overfit-audit", "regime",
         "calibration", "calibration-ablation", "research-assist",
+        "portfolio-backtest",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -3500,6 +3685,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--calibration-method", dest="calibration_method", default="both",
                         choices=["both", "isotonic", "platt"],
                         help="calibration 命令：校准方法（缺省 both：两种都跑，谁更好由 T19.4 人工判）")
+    parser.add_argument("--min-confidence", dest="min_confidence", type=float, default=None,
+                        help="portfolio-backtest 命令：激活信号的最小置信度（缺省 0.0 = 全部看多信号）")
+    parser.add_argument("--cost-levels", dest="cost_levels", default=None,
+                        help="portfolio-backtest 命令：逗号分隔成本档（缺省 conservative,base,aggressive，T11.2 定稿档）")
+    parser.add_argument("--ma-window", dest="ma_window", type=int, default=20,
+                        help="portfolio-backtest 命令：机械基线信号的均线窗口（缺省 20）")
+    parser.add_argument("--no-contrast", dest="no_contrast", action="store_true",
+                        help="portfolio-backtest 命令：只跑组合回测，不做 IC/命中率 vs PnL 一致性对照")
     parser.add_argument("--n-blocks", dest="n_blocks", type=int, default=6,
                         help="overfit-audit 命令：CPCV 时间组数（缺省 6）")
     parser.add_argument("--k-test", dest="k_test", type=int, default=2,
@@ -3750,6 +3943,16 @@ def main():
             compare_full_sample=not bool(getattr(args, "no_full_sample", False)),
             ab=not bool(getattr(args, "no_ab", False)),
             holdout_evidence=bool(getattr(args, "holdout_evidence", False)))
+    elif args.command == "portfolio-backtest":
+        _lv = None
+        if getattr(args, "cost_levels", None):
+            _lv = str(args.cost_levels)
+        run_portfolio_backtest_cmd(
+            config, symbols=_cli_symbols(args),
+            min_confidence=float(getattr(args, "min_confidence", 0.0) or 0.0),
+            cost_levels=_lv,
+            ma_window=int(getattr(args, "ma_window", 20) or 20),
+            contrast=not bool(getattr(args, "no_contrast", False)))
     elif args.command == "calibration":
         _h = None
         _raw_h = getattr(args, "trials_horizons", None)

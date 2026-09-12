@@ -249,6 +249,20 @@ def horizon_decay(scores: Sequence[float],
     }
 
 
+# T11.2 成本三档（单一事实源）：佣金 + 滑点 = 单边成本。
+# 2026-09-12 经人工检查点定稿（schedule/manual_checkpoints.json T11.2 confirmed）；
+# 消费方：cost_sensitivity（本模块）与 src.eval.portfolio_backtest（S21 组合回测）。
+# 三档参数写成常量、不得被配置覆盖 —— 否则「换一组参数就能翻盘」的自由度又回来了。
+T112_COST_TIERS = [
+    {"name": "conservative", "commission": 0.00025, "slippage": 0.0010,
+     "one_side": 0.00125, "note": "保守档：小盘流动性差的场景"},
+    {"name": "base", "commission": 0.00025, "slippage": 0.0005,
+     "one_side": 0.00075, "note": "基准档：大盘常规场景"},
+    {"name": "aggressive", "commission": 0.00010, "slippage": 0.0002,
+     "one_side": 0.00030, "note": "乐观档：流动性充裕 + 低佣场景"},
+]
+
+
 def cost_sensitivity(quantile_spread: Optional[float], turnover: Optional[float],
                      horizons: Sequence[Dict[str, Any]],
                      levels: Optional[Sequence[Dict[str, Any]]] = None) -> Dict[str, Any]:
@@ -259,24 +273,11 @@ def cost_sensitivity(quantile_spread: Optional[float], turnover: Optional[float]
       净收益 ≈ spread × 参与率 − 单边成本 × 2 × 调仓频率
 
     其中调仓频率 = turnover / horizon_days（每期翻转率折算到持有期内的
-    实际翻转次数上界）。三档成本：
+    实际翻转次数上界）。三档成本见模块常量 ``T112_COST_TIERS``（单一事实源）。
 
-      - conservative（保守）：佣金 0.025% + 滑点 0.10% → 单边 0.125%
-      - base      （基准）  ：佣金 0.025% + 滑点 0.05% → 单边 0.075%
-      - aggressive（乐观）  ：佣金 0.010% + 滑点 0.02% → 单边 0.030%
-
-    ⚠️ 本函数是**口径草案**（manual_checkpoint T11.2）：三档参数写成常量并
-    显式登记在本 docstring，人工定稿前不得被配置覆盖 —— 否则「换一组参数
-    就能翻盘」的自由度又回来了。定稿后可迁入 config。
+    ⚠️ 三档参数为定稿常量（T11.2 confirmed），不得被配置覆盖。
     """
-    levels = list(levels) if levels is not None else [
-        {"name": "conservative", "commission": 0.00025, "slippage": 0.0010,
-         "note": "保守档：小盘流动性差的场景"},
-        {"name": "base", "commission": 0.00025, "slippage": 0.0005,
-         "note": "基准档：大盘常规场景"},
-        {"name": "aggressive", "commission": 0.00010, "slippage": 0.0002,
-         "note": "乐观档：流动性充裕 + 低佣场景"},
-    ]
+    levels = list(levels) if levels is not None else [dict(t) for t in T112_COST_TIERS]
     if quantile_spread is None or turnover is None:
         return {
             "available": False,
