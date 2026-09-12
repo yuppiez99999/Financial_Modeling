@@ -926,6 +926,268 @@
       "depends_on": [
         "S13"
       ]
+    },
+    {
+      "id": "S16",
+      "name": "概率区间校准（H1：MAPIE 保形预测 + neuralforecast 区间实装）",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "scheduled_dates": "2026-10-05 ~ 2026-10-11",
+      "tasks": [
+        {
+          "id": "T16.1",
+          "name": "接入 MAPIE（scikit-learn-contrib/MAPIE，BSD-3-Clause）：在现行 LightGBM 上用保形预测产出带覆盖率保证的预测区间，输出校准曲线到 reports/calibration/",
+          "status": "pending",
+          "auto_run": true,
+          "completed_at": null
+        },
+        {
+          "id": "T16.2",
+          "name": "把区间宽度经既有 confidence_from_interval 换算为置信分，与现行 |p-0.5|×2 口径做同数据同折对照",
+          "status": "pending",
+          "auto_run": true,
+          "completed_at": null
+        },
+        {
+          "id": "T16.3",
+          "name": "多时段滚动保留期复验：逐季度切分保留期（补 T15.3 遗留限制），检验 thr∈[0.2,0.3] 命中率优势是否跨时段稳定",
+          "status": "pending",
+          "auto_run": true,
+          "completed_at": null
+        },
+        {
+          "id": "T16.4",
+          "name": "区间口径 vs 概率距离口径的取舍定稿（人工检查点，含覆盖率下限与信号量权衡）",
+          "status": "pending",
+          "auto_run": false,
+          "completed_at": null
+        }
+      ],
+      "auto_acceptable": [
+        "T16.1",
+        "T16.2",
+        "T16.3"
+      ],
+      "manual_checkpoint": [
+        "T16.4"
+      ],
+      "note": "直接回应 T15.3 遗留项：保留期只有一个 + neuralforecast 未实装。区间换算机制在 S15 已抽象就绪（confidence_from_interval），本轮只喂数据不改链路。",
+      "source": "Issue #40 高质量项目集成2 · H1（scikit-learn-contrib/MAPIE + Nixtla/neuralforecast）",
+      "depends_on": [
+        "S15"
+      ],
+      "result": null
+    },
+    {
+      "id": "S17",
+      "name": "评估防过拟合加固（H2：CPCV + 试验多重比较记账）",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "scheduled_dates": "2026-10-12 ~ 2026-10-18",
+      "tasks": [
+        {
+          "id": "T17.1",
+          "name": "组合式净化交叉验证（CPCV）实现：purge/embargo 对齐 leakage_checklist，产出 DSR/PSR 类过拟合概率指标，接入 src/eval/",
+          "status": "pending",
+          "auto_run": true,
+          "completed_at": null
+        },
+        {
+          "id": "T17.2",
+          "name": "把 trials 登记（append-only）与 CPCV/多重比较校正打通：报告里自动标注「本次读数已扫描 N 次」的选择自由度",
+          "status": "pending",
+          "auto_run": true,
+          "completed_at": null
+        },
+        {
+          "id": "T17.3",
+          "name": "对 S11~S15 全部历史读数回算校正后显著性，如实入库（预期多数结论维持否定）",
+          "status": "pending",
+          "auto_run": true,
+          "completed_at": null
+        },
+        {
+          "id": "T17.4",
+          "name": "门禁是否引入过拟合概率下限的决策（人工检查点）",
+          "status": "pending",
+          "auto_run": false,
+          "completed_at": null
+        }
+      ],
+      "auto_acceptable": [
+        "T17.1",
+        "T17.2",
+        "T17.3"
+      ],
+      "manual_checkpoint": [
+        "T17.4"
+      ],
+      "note": "延续 S11 多重比较校正口径，把「选择自由度」从事后补记升级为流水线内建。属方法论加固，不直接动模型。",
+      "source": "Issue #40 高质量项目集成2 · H2（Advances in Financial ML 方法论 · CPCV/DSR）",
+      "depends_on": [
+        "S11",
+        "S16"
+      ],
+      "result": null
+    },
+    {
+      "id": "S18",
+      "name": "市场状态分层（H3：HMM 状态识别 + 状态内分层评估）",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "scheduled_dates": "2026-10-19 ~ 2026-10-25",
+      "tasks": [
+        {
+          "id": "T18.1",
+          "name": "接入 hmmlearn 做市场状态识别（牛/熊/震荡），状态标签严格只用当日及之前信息（无前视）",
+          "status": "pending",
+          "auto_run": true,
+          "completed_at": null
+        },
+        {
+          "id": "T18.2",
+          "name": "按状态分层评估现行三周期模型命中率，回答「模型是否只在特定状态有效」——这是 README 已知限制「按标的分层」的状态维度补充",
+          "status": "pending",
+          "auto_run": true,
+          "completed_at": null
+        },
+        {
+          "id": "T18.3",
+          "name": "状态作为特征的增量验证（同口径 A/B：仅加一个变量），结论好坏如实入库",
+          "status": "pending",
+          "auto_run": true,
+          "completed_at": null
+        },
+        {
+          "id": "T18.4",
+          "name": "状态分层是否进入信号门禁/风控 withheld 语义（人工检查点）",
+          "status": "pending",
+          "auto_run": false,
+          "completed_at": null
+        }
+      ],
+      "auto_acceptable": [
+        "T18.1",
+        "T18.2",
+        "T18.3"
+      ],
+      "manual_checkpoint": [
+        "T18.4"
+      ],
+      "note": "与 S9 分池（资产类别维度）正交：S9 解决「谁的池」，H3 解决「什么时候」。用于解释「IC 为正但命中率卡线」的时间维度成因。",
+      "source": "Issue #40 高质量项目集成2 · H3（hmmlearn 市场状态识别）",
+      "depends_on": [
+        "S16"
+      ],
+      "result": null
+    },
+    {
+      "id": "S19",
+      "name": "推理链路概率校准（H4：isotonic/Platt 校准 + 服务侧不确定性暴露）",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "scheduled_dates": "2026-10-26 ~ 2026-10-30",
+      "tasks": [
+        {
+          "id": "T19.1",
+          "name": "概率校准层：isotonic / Platt 校准器接在 LightGBM 输出后，用独立保留期验证校准误差（Brier / ECE）",
+          "status": "pending",
+          "auto_run": true,
+          "completed_at": null
+        },
+        {
+          "id": "T19.2",
+          "name": "校准后置信度阈值曲线复算：校准是否让 thr 曲线更单调、更可解释（不改现行阈值）",
+          "status": "pending",
+          "auto_run": true,
+          "completed_at": null
+        },
+        {
+          "id": "T19.3",
+          "name": "API 契约扩展：/api/v1/portfolio/summary 与 /signal 增加 calibrated_probability 与 uncertainty 字段（向后兼容，28 侧可渐进消费）",
+          "status": "pending",
+          "auto_run": true,
+          "completed_at": null
+        },
+        {
+          "id": "T19.4",
+          "name": "校准层是否进主推理链路的决策（人工检查点）",
+          "status": "pending",
+          "auto_run": false,
+          "completed_at": null
+        }
+      ],
+      "auto_acceptable": [
+        "T19.1",
+        "T19.2",
+        "T19.3"
+      ],
+      "manual_checkpoint": [
+        "T19.4"
+      ],
+      "note": "置信度门槛（S15）当前吃的是原始概率；若概率本身未校准，阈值语义会漂移。本阶段补上概率语义的前提。",
+      "source": "Issue #40 高质量项目集成2 · H4（scikit-learn 校准 + Nixtla 概率口径）",
+      "depends_on": [
+        "S16",
+        "S18"
+      ],
+      "result": null
+    },
+    {
+      "id": "S20",
+      "name": "投研辅助链路（H5：LLM 投研 Agent 只读接入，严格离线对照）",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "scheduled_dates": "2026-10-31 ~ 2026-11-06",
+      "tasks": [
+        {
+          "id": "T20.1",
+          "name": "调研 TradingAgents-CN / qusong0627/QuantMind 的 A 股数据适配与输出契约，产出一页评估（是否值得引入、依赖代价、许可证）",
+          "status": "pending",
+          "auto_run": false,
+          "completed_at": null
+        },
+        {
+          "id": "T20.2",
+          "name": "如评估通过：以「只读辅助」形式接入——LLM 投研结论仅作报告附注，不进信号路径、不影响概率与门禁（延续只读信号源纪律）",
+          "status": "pending",
+          "auto_run": true,
+          "completed_at": null
+        },
+        {
+          "id": "T20.3",
+          "name": "离线对照实验：同一批样本上「有/无 LLM 附注」的命中率差异（若无法量化则如实记录为不可验证并止损）",
+          "status": "pending",
+          "auto_run": true,
+          "completed_at": null
+        },
+        {
+          "id": "T20.4",
+          "name": "是否保留该链路的决策（人工检查点，含成本与噪声风险）",
+          "status": "pending",
+          "auto_run": false,
+          "completed_at": null
+        }
+      ],
+      "auto_acceptable": [
+        "T20.2",
+        "T20.3"
+      ],
+      "manual_checkpoint": [
+        "T20.1",
+        "T20.4"
+      ],
+      "note": "优先级最低、风险最高的一档：LLM 投研结论与当前数值模型不同源，严禁进入门禁。若 T20.1 评估不通过则整阶段取消（允许取消，不允许硬塞）。",
+      "source": "Issue #40 高质量项目集成2 · H5（TauricResearch/TradingAgents · hsliuping/TradingAgents-CN · qusong0627/QuantMind）",
+      "depends_on": [
+        "S19"
+      ],
+      "result": null
     }
   ],
   "current_stage_index": 18,
@@ -934,5 +1196,5 @@
   "next_run_date": "2026-09-12",
   "blockers": [],
   "result": "s15_g5_t15_1_t15_2_supplementary_verified",
-  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。"
+  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。"
 }
