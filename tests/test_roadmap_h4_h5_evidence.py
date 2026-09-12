@@ -5,7 +5,8 @@
   - 消融对照必须**同一拟合**：AUC 必须不变（校准是单调映射），变了即装配错误；
   - 对照**不做择优**：一升一降必须是 mixed，负面读数必须保留；
   - 决策材料必须**不悬空**：清单引用的文件与文档必须真实存在；
-  - 阶段恒 `in_progress`、检查点恒 `pending`、priority 唯一连续；
+  - 检查点只允许 `pending` / `confirmed`（2026-09-12 用户确认后为 `confirmed`）、
+    priority 唯一连续；阶段收官须带人工确认字段；
   - **T11.2 不得再出现 `completed_at`**（防「status=pending + completed_at」回潮）。
 """
 from __future__ import annotations
@@ -196,7 +197,7 @@ class TestAblationNoCherryPicking:
 
 
 # ----------------------------------------------------------------------
-# 决策材料：不得悬空 / 阶段恒 in_progress
+# 决策材料：不得悬空 / 检查点状态可追溯
 # ----------------------------------------------------------------------
 class TestDecisionMaterialsNotDangling:
     def test_h45_checkpoints_are_registered(self):
@@ -204,10 +205,19 @@ class TestDecisionMaterialsNotDangling:
         missing = H45_CHECKPOINT_IDS - ids
         assert not missing, f"H4/H5 检查点未进决策包: {sorted(missing)}"
 
-    def test_h45_checkpoints_are_pending(self):
+    def test_h45_checkpoints_are_pending_or_confirmed(self):
+        """H4/H5 检查点只允许 `pending` / `confirmed`（`completed` 即代签）。
+
+        2026-09-12 用户确认（Issue #40）后落定为 `confirmed`：
+        确认 ≠ 代签，但必须带签署字段（见 test_roadmap_manual_checkpoints.py）。
+        """
         by = {cp["id"]: cp for cp in _manifest()["checkpoints"]}
         for cid in H45_CHECKPOINT_IDS:
-            assert by[cid]["status"] == "pending", f"{cid} 被改动"
+            st = by[cid]["status"]
+            assert st in ("pending", "confirmed"), f"{cid} 状态非法: {st}"
+            if st == "confirmed":
+                for key in ("confirmed_by", "confirmed_at", "decision"):
+                    assert by[cid].get(key), f"{cid} 标 confirmed 却缺 {key}（无签字依据）"
 
     def test_all_referenced_evidence_paths_are_declared_kinds(self):
         """引用的路径必须是 `00_kickoff/` 文档或 `reports/` 产物（防引到不存在的东西）。"""
@@ -229,10 +239,16 @@ class TestDecisionMaterialsNotDangling:
         assert len(ps) == len(set(ps)), "priority 重复"
         assert sorted(ps) == list(range(1, len(ps) + 1)), f"priority 不连续: {sorted(ps)}"
 
-    def test_h_round_stages_stay_in_progress(self):
-        """人工签字前，H 轮阶段不得标 completed。"""
+    def test_h_round_stages_closed_with_signature(self):
+        """H 轮阶段不得「无签字收官」：`completed` 必须带人工确认字段与 closing。"""
         for sid in ("S16", "S17", "S18", "S19", "S20"):
-            assert _stage(sid)["status"] == "in_progress", f"{sid} 被标完成"
+            s = _stage(sid)
+            assert s["status"] in ("in_progress", "completed"), f"{sid} 状态非法"
+            if s["status"] == "completed":
+                assert s.get("confirmed_by") and s.get("confirmed_at"), \
+                    f"{sid} 标 completed 却无人工确认字段（防阶段假完成）"
+                assert (s.get("closing") or {}).get("affects_gate") is False, \
+                    f"{sid} closing 未声明 affects_gate=false"
 
     def test_decision_doc_covers_new_checkpoints(self):
         doc = DOC_PATH.read_text(encoding="utf-8")
@@ -244,7 +260,7 @@ class TestDecisionMaterialsNotDangling:
     def test_decision_doc_declares_count_eleven(self):
         """文档声明的条目数必须与清单一致（防文档与清单漂移）。"""
         doc = DOC_PATH.read_text(encoding="utf-8")
-        assert "11 条全部" in doc, "决策包文档声明的条目数与清单不一致"
+        assert "11 条" in doc, "决策包文档声明的条目数与清单不一致"
         assert len(_manifest()["checkpoints"]) == 11
 
 
@@ -257,9 +273,13 @@ class TestT112Bookkeeping:
         return next(t for t in stage["tasks"] if t["id"] == "T11.2")
 
     def test_no_completed_at_on_manual_checkpoint(self):
-        """状态 pending 与 completed_at 并存 = 记账矛盾，必须钉死。"""
+        """人工检查点与 `completed_at` 并存 = 记账矛盾，必须钉死。
+
+        状态可为 `pending` / `confirmed`（2026-09-12 用户确认后为 `confirmed`），
+        但**永远不得**出现 `completed_at` / `result`（那等于把「已交付」当「已决策」）。
+        """
         t = self._task()
-        assert t["status"] == "pending"
+        assert t["status"] in ("pending", "confirmed"), f"状态非法: {t['status']}"
         assert not t.get("completed_at"), "T11.2 又出现 completed_at（记账矛盾回潮）"
         assert not t.get("result"), "T11.2 又出现 result（视为已决策）"
 
@@ -269,10 +289,13 @@ class TestT112Bookkeeping:
         assert "0.125" in name or "三档" in name
         assert "pending" in name or "草案" in name
 
-    def test_manifest_entry_has_no_decision_artifacts(self):
+    def test_manifest_entry_status_is_allowed(self):
+        """清单条目状态只允许 `pending` / `confirmed`；若已确认须可追溯。"""
         by = {cp["id"]: cp for cp in _manifest()["checkpoints"]}
-        assert by["T11.2"]["status"] == "pending"
-        assert "decided_by" not in by["T11.2"]
+        st = by["T11.2"]["status"]
+        assert st in ("pending", "confirmed"), f"状态非法: {st}"
+        if st == "confirmed":
+            assert by["T11.2"].get("confirmed_by") and by["T11.2"].get("confirmed_at")
 
 
 # ----------------------------------------------------------------------
@@ -298,7 +321,7 @@ class TestS19S20Structure:
         manual = set(s["manual_checkpoint"])
         for t in s["tasks"]:
             if t["id"] in manual:
-                assert t["status"] == "pending"
+                assert t["status"] in ("pending", "confirmed"), t["status"]
                 assert not t.get("completed_at")
                 continue
             assert t["status"] == "completed"
