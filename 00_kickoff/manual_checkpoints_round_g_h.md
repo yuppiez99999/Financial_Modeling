@@ -487,8 +487,13 @@ python main.py research-assist                                 # H5 证据（T20
 
 **注意**：阶段 `status` 的推进受人工签字约束 —— 人工检查点 `confirmed` 且阶段
 带 `confirmed_by` / `confirmed_at` 之前，**不会**被标 `completed`
-（`tests/test_roadmap_s16_s20.py` 钉死）。本轮 11 项确认后，S16~S20 已具备收官依据；
-收口侧按「自动交付 ≠ 阶段完成」口径保留 `in_progress`，两种口径均须带人工确认背书。
+（`tests/test_roadmap_s16_s20.py` 钉死）。本轮 11 项确认后，S16~S20 已具备收官依据。
+
+**2026-09-12 收官（口径统一）**：此前存在两种等价口径 —— 确认侧置 `completed`、
+收口侧按「自动交付 ≠ 阶段完成」保留 `in_progress`。本轮按**「确认即收官」**统一为
+`completed`，并逐阶段补齐 `completed_at`（G 轮同批补 `auto_acceptable_completed_at`）。
+**收官 ≠ 改配置**：确认对象始终是「现状默认值」，`strategy_gate` 零改动、
+`affects_gate` 恒 false；**人工检查点自身永不标 `completed`**（确认与代签是两回事）。
 
 ### 14.3 复现纪律（缺依赖不静默降级）
 
