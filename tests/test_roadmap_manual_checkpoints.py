@@ -1,12 +1,16 @@
 """人工检查点守卫：遗留检查点**不得自动通过**，决策包必须与排期一致（fail-close）。
 
 设计要点（这是纪律测试，不是功能测试）：
-  - 人工检查点任务恒 `pending`：标 completed 即为「代签」，直接失败；
+  - 人工检查点**只能处于 `pending` 或 `confirmed`**：`confirmed` 必须带
+    人工签署字段（confirmed_by / confirmed_at / decision），**任何 `completed`
+    都是代签**——自动流程不得自行签字（2026-09-12 起用户可在 Issue 确认，见 §"确认即签字"）；
   - 人工检查点不得出现在 `auto_acceptable`：防选择自由度被自动吞掉；
   - `schedule/manual_checkpoints.json` 与 `plan.json` 必须**双向**一致：
     清单里的 id 必须真的是人工检查点、排期里的人工检查点必须在清单里；
   - 决策包文档必须存在且覆盖全部检查点 id；
-  - 清单只允许 `status=pending` 且 `npc_may_decide=false`。
+  - 清单只允许 `status ∈ {pending, confirmed}` 且 `npc_may_decide=false`；
+    条目一旦 `confirmed`，必须能追溯到**用户指令原文 + 签署人 + 时间 + 决策**——
+    没有人工签字的 `confirmed` 与没有依据的 `completed` 一样是假进度。
 """
 from __future__ import annotations
 
@@ -81,11 +85,34 @@ def _all_checkpoint_ids() -> set:
 # ----------------------------------------------------------------------
 # 不得自动通过
 # ----------------------------------------------------------------------
+# 人工检查点允许的状态：pending（待签）/ confirmed（已由人工签字确认）。
+# completed **不在**其中——那意味着自动流程自行把「结论已出」当成「已采纳」。
+CHECKPOINT_STATUSES = {"pending", "confirmed"}
+DECISION_WORDS = {"keep", "defer", "reject", "cancel", "moot_by_convention"}
+
+
 class TestNeverAutoPass:
-    def test_no_manual_checkpoint_is_completed(self):
-        """人工检查点标 completed = 代签，必须恒 pending（fail-close）。"""
-        bad = [t["id"] for _, t in _all_checkpoint_tasks() if t["status"] != "pending"]
+    def test_no_manual_checkpoint_is_auto_completed(self):
+        """人工检查点标 completed = 代签，永远不允许（fail-close）。"""
+        bad = [t["id"] for _, t in _all_checkpoint_tasks()
+               if t["status"] not in CHECKPOINT_STATUSES]
         assert not bad, f"人工检查点被自动完成（代签）: {bad}"
+
+    def test_confirmed_checkpoints_carry_human_signature(self):
+        """`confirmed` **必须**带人工签署字段：没有签字的 confirmed 就是假进度。"""
+        for _, t in _all_checkpoint_tasks():
+            if t["status"] != "confirmed":
+                continue
+            for key in ("confirmed_by", "confirmed_at", "confirmed_in", "decision"):
+                assert t.get(key), f"{t['id']} 标 confirmed 却缺少 {key}（无签字依据）"
+            assert t["decision"] in DECISION_WORDS, \
+                f"{t['id']} 决策词表外取值: {t['decision']}"
+
+    def test_confirmed_checkpoints_cannot_be_auto_run(self):
+        """已确认的检查点仍不得被自动推进（确认 ≠ 交给自动流程执行）。"""
+        for _, t in _all_checkpoint_tasks():
+            if t["status"] == "confirmed":
+                assert t.get("auto_run") is False, f"{t['id']} 被标 auto_run=true"
 
     def test_manual_checkpoint_not_in_auto_acceptable(self):
         for stage in _plan()["stages"]:
@@ -111,11 +138,32 @@ class TestManifestConsistency:
     def test_manifest_exists_and_policy_locks_decision(self):
         m = _manifest()
         assert m["policy"]["npc_may_decide"] is False
-        assert m["policy"]["statuses_allowed"] == ["pending"]
+        assert set(m["policy"]["statuses_allowed"]) <= CHECKPOINT_STATUSES
+        assert m["policy"].get("never_auto_filled") is True, \
+            "清单必须声明「只能由人工指令置 confirmed」"
 
-    def test_all_manifest_entries_pending(self):
+    def test_all_manifest_entries_in_allowed_status(self):
         for cp in _manifest()["checkpoints"]:
-            assert cp["status"] == "pending", f"{cp['id']} 状态被改动: {cp['status']}"
+            assert cp["status"] in CHECKPOINT_STATUSES, \
+                f"{cp['id']} 状态非法（completed 即代签）: {cp['status']}"
+
+    def test_confirmed_manifest_entries_are_traceable(self):
+        """已确认条目必须可追溯：签署人 + 时间 + 决策 + 依据 + 范围 + 证据。"""
+        m = _manifest()
+        for cp in m["checkpoints"]:
+            if cp["status"] != "confirmed":
+                continue
+            for key in ("decision", "decision_basis", "script_must", "scope",
+                        "out_of_scope", "confirmed_by", "confirmed_at"):
+                assert cp.get(key), f"{cp['id']} 已确认却缺少 {key}"
+            assert cp["decision"] in DECISION_WORDS, \
+                f"{cp['id']} 决策词表外取值: {cp['decision']}"
+            assert cp["evidence"], f"{cp['id']} 已确认却无证据引用"
+        # 确认必须指向签发指令（Issue #40），否则属无据确认
+        instr = m.get("instruction") or {}
+        assert instr.get("issue"), "清单缺少 instruction.issue（确认来源）"
+        assert instr.get("confirmed_by"), "清单缺少 instruction.confirmed_by"
+        assert instr.get("text"), "清单缺少 instruction.text（指令原文）"
 
     def test_required_checkpoints_all_present(self):
         ids = {cp["id"] for cp in _manifest()["checkpoints"]}
@@ -226,12 +274,25 @@ class TestHRoundStageClosing:
             assert s["closing"].get("auto_scope"), f"{s['id']} closing 缺 auto_scope"
             assert s["closing"].get("evidence"), f"{s['id']} closing 缺 evidence"
 
-    def test_auto_completed_stages_keep_in_progress_status(self):
-        """自动部分交付 ≠ 阶段完成：人工签字前 status 必须仍是 in_progress。"""
+    def test_auto_completed_stage_status_is_backed_by_signature(self):
+        """自动部分交付 ≠ 阶段完成：无人工签字不得标 completed。
+
+        两种合法状态，二选一（与 G 轮同口径）：
+        - ``in_progress``：自动部分已交付、人工检查点仍 ``pending``（未签字）；
+        - ``completed``：自动部分已交付 **且** 人工检查点已 ``confirmed``
+          （``closing.manual_scope`` 声明已确认 + 阶段带 ``confirmed_by`` / ``confirmed_at``）。
+
+        自动交付本身**不构成**阶段 ``completed`` 的依据 —— 这正是防「假进度」的钉子。
+        """
         for s in self._h_stages():
-            assert s["status"] == "in_progress", \
-                f"{s['id']} 自动交付后 status 应为 in_progress，实际 {s['status']}"
+            assert s["status"] in ("in_progress", "completed"), \
+                f"{s['id']} status 非法: {s['status']}"
             assert s["closing"]["manual_scope"], f"{s['id']} closing 缺 manual_scope"
+            if s["status"] == "completed":
+                assert "已确认" in s["closing"]["manual_scope"], \
+                    f"{s['id']} 标 completed 但 manual_scope 未声明已确认"
+                assert s.get("confirmed_by") and s.get("confirmed_at"), \
+                    f"{s['id']} 标 completed 却缺签署字段（疑似代签）"
 
 
 # ----------------------------------------------------------------------

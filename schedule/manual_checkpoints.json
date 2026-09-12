@@ -1,14 +1,22 @@
 {
-  "generated_at": "2026-09-12T05:20:00+00:00",
-  "source": "Issue #29（高质量项目集成）G 轮遗留 + Issue #40（高质量项目集成 2）H 轮 · 人工检查点决策包",
+  "generated_at": "2026-09-12T14:05:00+08:00",
+  "source": "Issue #29（高质量项目集成）· Issue #40（高质量项目集成2）· G/H 轮遗留人工检查点决策包",
   "doc": "00_kickoff/manual_checkpoints_round_g_h.md",
   "policy": {
     "npc_may_decide": false,
     "auto_acceptable_must_not_contain": "manual_checkpoint",
     "statuses_allowed": [
-      "pending"
+      "confirmed"
     ],
-    "note": "本清单全部条目恒 pending（fail-close）；NPC 不代签、不代选、不代改配置。"
+    "never_auto_filled": true,
+    "note": "本清单条目**只能由人工指令置为 confirmed**（fail-close）：NPC 不得自行写入 confirmed、不得把「结论已出」等同于「已采纳」。",
+    "decision_vocabulary": {
+      "keep": "确认按现状默认值执行",
+      "defer": "确认「暂不切换/暂不引入」，现状即决策",
+      "reject": "明确不采纳/不引入",
+      "cancel": "整阶段取消",
+      "moot_by_convention": "该项无「默认值」意义上的有效决策，按现约定处理（不改配置）"
+    }
   },
   "checkpoints": [
     {
@@ -26,7 +34,24 @@
       "blocks": [
         "10-04 里程碑门禁结论"
       ],
-      "status": "pending"
+      "status": "confirmed",
+      "decision": "defer",
+      "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认门禁维持只读：strategy_gate.confidence_gate.mode=report_only、freeze_structure=true，本次不解锁门禁",
+      "rationale": "多时段滚动复验为 partially_stable：T15.3 的单时段结论跨时段未复现；S17 收缩后 IC 为正但 PBO 不可用。证据不足以支撑改门禁结构，故确认维持现状。",
+      "scope": "确认「现状 = 门禁不解锁」，并归档「不改门禁」与「跨时段未复现」两条依据",
+      "out_of_scope": [
+        "门禁/风控阈值、校准层与状态分层的链路接入、现行阈值与超参的变更",
+        "不给门禁放行签字；不放宽 52% 口径与 thr 区间"
+      ],
+      "confirmed_by": "yuppiez328",
+      "confirmed_by_nick": "安然",
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "boundary": [
+        "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
+        "strategy_gate 逐字段零变更，affects_gate 恒为 false"
+      ]
     },
     {
       "id": "T16.4",
@@ -36,13 +61,32 @@
       "current_default": "model.factors.conformal.enabled=false（不进生产链路）",
       "evidence": [
         "reports/calibration/conformal_interval.json",
-        "reports/calibration/conformal_vs_proba.json"
+        "reports/calibration/conformal_vs_proba.json",
+        "reports/confidence_rolling_verify.json"
       ],
       "doc": "00_kickoff/conformal_interval_conclusion.md#四",
       "blocks": [
         "S19/H4 校准层接入方式"
       ],
-      "status": "pending"
+      "status": "confirmed",
+      "known_gap": "null 结构与 mapie 未安装时 backend=native，覆盖率承诺不成立；区间置信分粒度只有 {0, 0.5} 两档（与概率距离口径的连续刻度不同口径），对照判定 mixed，不择优",
+      "decision": "defer",
+      "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认置信分口径不切换：现行 |p−0.5|×2 概率距离口径继续作生产刻度；conformal 区间口径 stay report_only（enabled=false）",
+      "rationale": "两口径同数据同折对照判定 mixed（实测无实质差异），不构成切换依据；区间口径粒度仅 {0,0.5}，不适合作连续刻度。",
+      "scope": "确认「不切口径、两者并存」：概率距离口径作生产刻度，保形区间口径作覆盖率审计与风控旁证",
+      "out_of_scope": [
+        "门禁/风控阈值、校准层与状态分层的链路接入、现行阈值与超参的变更",
+        "不把区间置信分接入生产链路"
+      ],
+      "confirmed_by": "yuppiez328",
+      "confirmed_by_nick": "安然",
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "boundary": [
+        "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
+        "strategy_gate 逐字段零变更，affects_gate 恒为 false"
+      ]
     },
     {
       "id": "T17.4",
@@ -59,7 +103,24 @@
         "S19/H4 门禁叙事"
       ],
       "known_gap": "PBO 需多候选×路径矩阵，本轮未扫多候选 → available=false，不冒充",
-      "status": "pending"
+      "status": "confirmed",
+      "decision": "defer",
+      "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认门禁不引入该腿：overfit-audit 继续只产报告（report_only），门禁判据不变",
+      "rationale": "PBO 因未扫「候选 × 路径」矩阵而 available=false，当前不构成引入依据；补多候选矩阵扫描属后续 S17 范畴，不自行放宽。",
+      "scope": "确认「本次不引入」，维持 report_only",
+      "out_of_scope": [
+        "门禁/风控阈值、校准层与状态分层的链路接入、现行阈值与超参的变更",
+        "不把 PBO/过拟合概率写入门禁判据"
+      ],
+      "confirmed_by": "yuppiez328",
+      "confirmed_by_nick": "安然",
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "boundary": [
+        "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
+        "strategy_gate 逐字段零变更，affects_gate 恒为 false"
+      ]
     },
     {
       "id": "T18.4",
@@ -75,7 +136,24 @@
       "blocks": [
         "H3 是否继续投入"
       ],
-      "status": "pending"
+      "status": "confirmed",
+      "decision": "moot_by_convention",
+      "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认状态分层不进门禁、不接风控 withheld 语义：model.factors.regime.enabled=false；若需“轻量消费”，只能走既有 analysis.review 附注口径，不改判据",
+      "rationale": "全池读数显示状态分层有信息量（熊 62.55% vs 震荡 48.72%，差 13.83pp），但「分层是否用于放行/风控」是策略决策，无默认值可确认；状态作为特征则 A/B=degraded。故本次不改任何配置。",
+      "scope": "确认「当前无有效决策」：既不进门禁/风控，也不作为生产特征；状态特征 A/B = degraded 为「不作为特征」提供了依据",
+      "out_of_scope": [
+        "门禁/风控阈值、校准层与状态分层的链路接入、现行阈值与超参的变更",
+        "不为「评估/风控分层」这一档签字（那属策略决策，无“默认值”可确认）"
+      ],
+      "confirmed_by": "yuppiez328",
+      "confirmed_by_nick": "安然",
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "boundary": [
+        "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
+        "strategy_gate 逐字段零变更，affects_gate 恒为 false"
+      ]
     },
     {
       "id": "T12.3",
@@ -90,7 +168,24 @@
       "blocks": [
         "所有下游读数口径"
       ],
-      "status": "pending"
+      "status": "confirmed",
+      "decision": "defer",
+      "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认标签主线不切换：target_{h}d 继续作训练主线，label_tb_* 不进主线",
+      "rationale": "10 日 IC/命中率有正向但 5 日混合，稳健性（换种子/换折数）与障碍参数未扫；口径切换会改变所有下游读数，需先补稳健性证据。",
+      "scope": "确认「维持现状」，10 日 A/B 的正向读数归档待复验后再议",
+      "out_of_scope": [
+        "门禁/风控阈值、校准层与状态分层的链路接入、现行阈值与超参的变更",
+        "不替换 data.prediction_horizons 与标签主线口径"
+      ],
+      "confirmed_by": "yuppiez328",
+      "confirmed_by_nick": "安然",
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "boundary": [
+        "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
+        "strategy_gate 逐字段零变更，affects_gate 恒为 false"
+      ]
     },
     {
       "id": "T13.4",
@@ -103,7 +198,24 @@
       ],
       "doc": "00_kickoff/qlib_alpha158_conclusion.md#四",
       "blocks": [],
-      "status": "pending"
+      "status": "confirmed",
+      "decision": "reject",
+      "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认不纳入：qlib_alpha158.enabled 保持 false，factor_a158_* 不进生产特征集",
+      "rationale": "5 日 −0.0024/+0.01pt、10 日 −0.0049/−0.09pt、20 日 +0.0008/+0.07pt（低于噪声）；与 S12「瓶颈不在特征侧」一致，故明确不纳入。",
+      "scope": "明确不纳入（三个周期 A/B 均未改善，20 日读数为低于噪声的正号，不构成依据）",
+      "out_of_scope": [
+        "门禁/风控阈值、校准层与状态分层的链路接入、现行阈值与超参的变更",
+        "不把 Alpha158 因子接入生产链路（工程能力保留）"
+      ],
+      "confirmed_by": "yuppiez328",
+      "confirmed_by_nick": "安然",
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "boundary": [
+        "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
+        "strategy_gate 逐字段零变更，affects_gate 恒为 false"
+      ]
     },
     {
       "id": "T14.3",
@@ -118,7 +230,24 @@
       "blocks": [
         "标的池与训练量"
       ],
-      "status": "pending"
+      "status": "confirmed",
+      "decision": "keep",
+      "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认按现状定稿：回退链 wind → akshare → tencent → simulation；futures.enabled / forex.enabled 保持 true（期货/外汇进训练主线）",
+      "rationale": "验收 38/38 标的 + 5/5 宏观 = 100% ≥ 95%，akshare 在 tencent 前覆盖更广且提供第二通道交叉验证；期货/外汇已启用且实测可取数。",
+      "scope": "确认按现状定稿，外汇报价池保持现状（USDCNH/USDCNY 两个），不扩充",
+      "out_of_scope": [
+        "门禁/风控阈值、校准层与状态分层的链路接入、现行阈值与超参的变更",
+        "不新增外汇品种（EURUSD/USDJPY/GBPUSD 等未实测项不加入）"
+      ],
+      "confirmed_by": "yuppiez328",
+      "confirmed_by_nick": "安然",
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "boundary": [
+        "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
+        "strategy_gate 逐字段零变更，affects_gate 恒为 false"
+      ]
     },
     {
       "id": "T11.2",
@@ -133,7 +262,24 @@
       "blocks": [
         "所有净收益读数"
       ],
-      "status": "pending"
+      "status": "confirmed",
+      "decision": "keep",
+      "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认三档口径定稿：保守 0.125% / 基准 0.075% / 乐观 0.030%（单边），继续写成常量并禁止配置覆盖",
+      "rationale": "三档口径已交付并被 factor_metrics 消费；「禁止配置覆盖」是纪律而非缺省——允许按场景切档会让「换一组参数就能翻盘」的选择自由度回流。",
+      "scope": "确认定稿并维持「禁止配置覆盖」纪律",
+      "out_of_scope": [
+        "门禁/风控阈值、校准层与状态分层的链路接入、现行阈值与超参的变更",
+        "不新增成本档位；不允许按场景切换成本档（避免选择自由度回流）"
+      ],
+      "confirmed_by": "yuppiez328",
+      "confirmed_by_nick": "安然",
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "boundary": [
+        "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
+        "strategy_gate 逐字段零变更，affects_gate 恒为 false"
+      ]
     },
     {
       "id": "T19.4",
@@ -142,16 +288,35 @@
       "question": "概率校准层（isotonic/Platt）是否进主推理链路：校准后概率是否成为门禁阈值与 API 的默认语义",
       "current_default": "校准层已在 src/inference/probability_calibrator.py 就绪但只读；configs `model.factors.probability_calibration.enabled=false`，主推理链路仍吃原始概率",
       "evidence": [
+        "reports/calibration/calibration_ablation.json",
         "reports/probability_calibration_5d.json",
-        "models/probability_calibration_5d.json"
+        "reports/probability_calibration_10d.json",
+        "reports/probability_calibration_20d.json"
       ],
-      "doc": "00_kickoff/probability_calibration_conclusion.md#四",
+      "doc": "00_kickoff/probability_calibration_conclusion.md",
       "blocks": [
-        "T15.3 阈值语义",
-        "所有下游概率读数"
+        "主推理链路概率语义",
+        "T18.4 / T15.3 阈值语义"
       ],
       "known_gap": "校准器需要按 horizon 生成模型文件（models/probability_calibration_<h>.json，不入 git）；未生成时推理期如实降级为原始概率",
-      "status": "pending"
+      "status": "confirmed",
+      "decision": "defer",
+      "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认校准层暂不接管主推理链路：model.calibration.enabled 保持 false；API 只保留追加的只读字段（calibrated_probability / uncertainty / calibration_applied）",
+      "rationale": "校准是单调映射，全样本口径下方向命中率与 AUC 恒等，差异只在阈值子集口径；ECE/Brier 改善幅度随周期递减（20d isotonic 的 Brier 反而略升）。决策读数消融未给出「进链路」的充分依据，故确认暂不进。",
+      "scope": "确认「暂不进链路」，维持只读字段暴露；§A 校准质量与 §B 决策读数分开归档",
+      "out_of_scope": [
+        "门禁/风控阈值、校准层与状态分层的链路接入、现行阈值与超参的变更",
+        "不改主链路概率语义；不改现行阈值；不把校准后概率作为门禁输入"
+      ],
+      "confirmed_by": "yuppiez328",
+      "confirmed_by_nick": "安然",
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "boundary": [
+        "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
+        "strategy_gate 逐字段零变更，affects_gate 恒为 false"
+      ]
     },
     {
       "id": "T20.1",
@@ -162,12 +327,29 @@
       "evidence": [
         "reports/research_assist_evaluation.json"
       ],
-      "doc": "00_kickoff/research_assist_conclusion.md#三",
+      "doc": "00_kickoff/research_assist_conclusion.md",
       "blocks": [
-        "T20.4 整阶段去留"
+        "T20.4 是否保留链路"
       ],
       "known_gap": "离线对照结构性不可量化（附注不参与打分）→ 记 unverifiable，不编造提升命中率的故事",
-      "status": "pending"
+      "status": "confirmed",
+      "decision": "reject",
+      "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认不采纳该调研结论：不引入 3 个候选中的任何一个，docs/THIRD_PARTY.md 的 H5 条目保持「待评估/未引入」",
+      "rationale": "0/3 同时满足三项准入：共性阻塞是三者都以在线 LLM 为核心依赖，与「离线可复现 / CI 不触网」纪律冲突；QuantMind 许可证为 NOASSERTION 未逐项核实。",
+      "scope": "明确不采纳，且不放宽三项准入（不因“想引入”而降低 A股适配 / 离线可复现 / 许可证门槛）",
+      "out_of_scope": [
+        "门禁/风控阈值、校准层与状态分层的链路接入、现行阈值与超参的变更",
+        "不放宽准入条件；不引入任何在线 LLM 依赖"
+      ],
+      "confirmed_by": "yuppiez328",
+      "confirmed_by_nick": "安然",
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "boundary": [
+        "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
+        "strategy_gate 逐字段零变更，affects_gate 恒为 false"
+      ]
     },
     {
       "id": "T20.4",
@@ -176,21 +358,38 @@
       "question": "LLM 投研只读链路是否保留（含成本与噪声风险）；不保留则整阶段取消",
       "current_default": "默认 cancel / pending（无人工签字不放行）",
       "evidence": [
-        "reports/research_assist_evaluation.json"
+        "reports/research_assist_decision.json"
       ],
-      "doc": "00_kickoff/research_assist_conclusion.md#四",
+      "doc": "00_kickoff/research_assist_conclusion.md",
       "blocks": [
         "H5 是否继续投入"
       ],
       "known_gap": "附注只挂报告层，affects_signal 恒 false，结构性不进信号路径",
-      "status": "pending"
+      "status": "confirmed",
+      "decision": "cancel",
+      "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认整阶段取消：不投入后续排期，不接入任何在线 LLM；已落地的只读附注代码保留但 disabled，继续 affects_signal=false、不进信号路径",
+      "rationale": "离线对照差异结构性为 0（附注不参与打分）→ unverifiable；在无数值证据的前提下，保留在线 LLM 链路只增加成本与噪声风险，故取消。",
+      "scope": "确认 cancel（与「0/3 候选满足准入」一致），代码保留但不启用、不投入后续开发",
+      "out_of_scope": [
+        "门禁/风控阈值、校准层与状态分层的链路接入、现行阈值与超参的变更",
+        "不编造成效：离线对照结构性不可量化，保持 unverifiable 并止损"
+      ],
+      "confirmed_by": "yuppiez328",
+      "confirmed_by_nick": "安然",
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "boundary": [
+        "本次确认只覆盖“已交付结论 + 现状默认值”本身，不自行新增配置变更",
+        "strategy_gate 逐字段零变更，affects_gate 恒为 false"
+      ]
     }
   ],
-  "scope_note": "G 轮（S11~S15，Issue #29）与 H 轮（S16~S20，Issue #40）人工检查点统一收口。H 轮自动任务已全部交付（收口字段见 plan.json 各阶段 closing），故 H 轮人工检查点**全部进清单**：至此再无「已交付但未登记」的检查点。",
+  "scope_note": "G 轮（S11~S15，Issue #29）与 H 轮（S16~S20，Issue #40）人工检查点统一收口：H 轮自动任务已全部交付（收口字段见 plan.json 各阶段 closing），H 轮人工检查点**全部进清单**——至此再无「已交付但未登记」；11 项均已由用户指令于 Issue #40 确认（确认对象 = 现状默认值）。",
   "closing_fields": {
     "auto_acceptable_completed_at": "各阶段自动任务交付时间（plan.json 阶段字段）",
     "auto_acceptable_verified": "自动任务可验证标记",
-    "manual_scope": "未决策的人工检查点 id 列表",
+    "manual_scope": "对应人工检查点 id 列表（已确认 / 未决策由 status 区分）",
     "affects_gate": "恒 false —— 全部阶段零门禁改动"
   },
   "known_optional_evidence": [
@@ -209,7 +408,24 @@
     "reports/factor_metrics.json",
     "reports/probability_calibration_5d.json",
     "reports/research_assist_evaluation.json",
-    "models/probability_calibration_5d.json"
+    "models/probability_calibration_5d.json",
+    "reports/calibration/calibration_ablation.json",
+    "reports/probability_calibration_10d.json",
+    "reports/probability_calibration_20d.json",
+    "reports/research_assist_decision.json"
   ],
-  "known_optional_evidence_note": "以下证据为**按需生成、不入 git** 的产物（跑对应命令才落盘）；登记在此是为了让「缺失」显式可见，而不是让引用悬空。守卫测试 tests/test_roadmap_manual_checkpoints.py::TestNoDanglingEvidenceRefs 双向校验。"
+  "known_optional_evidence_note": "以下证据为**按需生成、不入 git** 的产物（跑对应命令才落盘）；登记在此是为了让「缺失」显式可见，而不是让引用悬空。守卫测试 tests/test_roadmap_manual_checkpoints.py::TestNoDanglingEvidenceRefs 双向校验。",
+  "instruction": {
+    "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+    "text": "用户指令原文：「这11项确认 并继续按排期计划开发」",
+    "confirmed_by": "yuppiez328",
+    "confirmed_by_nick": "安然",
+    "confirmed_at": "2026-09-12T14:05:00+08:00",
+    "interpretation": "用户指令是「确认」既有决策材料，不是新开一轮选型：每条按决策包给出的「现状默认值」落定，NPC 不代选、不放宽已定纪律。"
+  },
+  "boundary": {
+    "strategy_gate_changed": false,
+    "affects_gate": false,
+    "note": "本次确认**只固定现状与纪律**，不含任何阈值/配置文件变更；任何需要改 strategy_gate 结构的动作须另开 PR 逐字段 diff 后再人工确认。"
+  }
 }
