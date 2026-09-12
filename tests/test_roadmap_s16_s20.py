@@ -39,30 +39,40 @@ def test_round2_stages_exist():
 
 
 def test_round2_stages_progress_is_honest_no_fake_completion():
-    """进度必须诚实：不得出现「整阶段完成」的假进度，人工检查点永远 pending。
+    """进度必须诚实：阶段 completed 只能建立在「自动任务全交付 + 检查点已签字」之上。
 
-    合并两侧守卫（上游严格版 + 本轮落地）：
-      - 阶段状态允许 ``pending`` / ``in_progress``，**整阶段 completed
-        必须等人工检查点签字之后**（防自动流程代签）；
+    合并两侧守卫（上游严格版 + 本轮落地 + 2026-09-12 人工确认）：
+      - 阶段状态允许 ``pending`` / ``in_progress`` / ``completed``，但 **completed
+        必须三者齐备**：全部任务已落定、人工检查点处于 ``confirmed``（带签署字段）、
+        且阶段自身带 ``confirmed_by`` / ``confirmed_at``（防自动流程代签）；
       - 非 pending 阶段须有 ``started_at`` 证据；
       - 标 ``completed`` 的任务须有 ``completed_at`` 与 ``result``（可审计）；
-      - 人工检查点任务恒 ``pending``。
+      - 人工检查点只允许 ``pending`` / ``confirmed``，**绝不允许 ``completed``**。
     """
-    allowed_stage = {"pending", "in_progress"}
+    allowed_stage = {"pending", "in_progress", "completed"}
     for s in _round2_stages():
         assert s["status"] in allowed_stage, (
-            f"{s['id']} 不得在人工检查点未签字时标 completed，实际 {s['status']}")
+            f"{s['id']} 阶段状态非法: {s['status']}")
         if s["status"] != "pending":
             assert s.get("started_at"), f"{s['id']} 非 pending 却无 started_at"
         manual = set(s.get("manual_checkpoint") or [])
         for t in s["tasks"]:
-            assert t["status"] in ("pending", "completed"), f"{t['id']} 状态非法"
+            assert t["status"] in ("pending", "confirmed", "completed"), \
+                f"{t['id']} 状态非法"
             if t["id"] in manual:
-                assert t["status"] == "pending", (
-                    f"人工检查点 {t['id']} 不得被自动流程标记完成")
+                assert t["status"] != "completed", (
+                    f"人工检查点 {t['id']} 不得被自动流程标记完成（代签）")
+                if t["status"] == "confirmed":
+                    assert t.get("confirmed_by") and t.get("confirmed_at"), (
+                        f"{t['id']} 标 confirmed 却无人工签署字段")
             elif t["status"] == "completed":
                 assert t.get("completed_at") and t.get("result"), (
                     f"{t['id']} 标 completed 却无 completed_at/result")
+        if s["status"] == "completed":
+            assert s.get("confirmed_by") and s.get("confirmed_at"), (
+                f"{s['id']} 标 completed 却无人工确认字段（防阶段假完成）")
+            assert s.get("closing", {}).get("affects_gate") is False, (
+                f"{s['id']} closing 未声明 affects_gate=false")
 
 
 def test_round2_stages_have_required_fields():

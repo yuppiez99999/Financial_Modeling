@@ -48,13 +48,40 @@ def test_plan_task_index_in_range_for_current_stage():
     )
 
 
+# 阶段/任务的「已落定」状态集合。
+# 背景（2026-09-12）：人工检查点由**用户确认**后不再是 `pending`，而是
+# `confirmed`（带 confirmed_by / confirmed_at / decision）。`confirmed` 与
+# `completed` 同属「已落定」——但两者的**来源不同**：`completed` 来自自动任务，
+# `confirmed` **只能来自人工签字**（守卫见 test_roadmap_manual_checkpoints.py）。
+DONE_STATUSES = {"completed", "confirmed"}
+
+
 def test_plan_tasks_are_completed_atomically_per_stage():
-    """阶段标记 completed 的前提是其下任务全部 completed（防「阶段假完成」）。"""
+    """阶段标记 completed 的前提是其下任务全部已落定（防「阶段假完成」）。
+
+    已落定 = `completed`（自动任务）或 `confirmed`（人工签字确认）。
+    任何仍为 `pending` 的任务都会让本断言失败。
+    """
     plan = _load_plan()
     for stage in plan["stages"]:
         if stage.get("status") == "completed":
-            pending = [t["id"] for t in stage.get("tasks", []) if t.get("status") != "completed"]
+            pending = [t["id"] for t in stage.get("tasks", [])
+                       if t.get("status") not in DONE_STATUSES]
             assert not pending, f"阶段 {stage.get('id')} 标记完成但仍有未完成任务: {pending}"
+
+
+def test_plan_confirmed_tasks_carry_human_signature():
+    """`confirmed` 是人工签字态：必须带签署人与时间（防自动流程自签）。"""
+    plan = _load_plan()
+    for stage in plan["stages"]:
+        for t in stage.get("tasks", []):
+            if t.get("status") != "confirmed":
+                continue
+            assert t.get("confirmed_by"), f"{t['id']} 标 confirmed 却无 confirmed_by"
+            assert t.get("confirmed_at"), f"{t['id']} 标 confirmed 却无 confirmed_at"
+            assert t.get("decision") in {"keep", "defer", "reject", "cancel",
+                                         "moot_by_convention"}, \
+                f"{t['id']} 决策词表外的取值: {t.get('decision')}"
 
 
 def test_blockers_is_a_list():

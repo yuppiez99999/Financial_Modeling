@@ -3,9 +3,10 @@
 设计要点（这是**纪律测试**，不是功能测试）：
   - **自动任务收官**必须有可审计证据：`auto_acceptable` 全 completed、
     每个任务带 `completed_at` + `result`；
-  - **阶段不得提前 completed**：人工检查点签字前 `status` 只能是
-    `pending` / `in_progress`；
-  - **人工检查点恒 pending**：H 轮 5 项不得被自动流程代签；
+  - **阶段不得提前 completed**：人工确认字段齐备前 `status` 只能是
+    `pending` / `in_progress`（2026-09-12 用户于 Issue #40 确认后，已带确认字段的阶段可收官）；
+  - **人工检查点不得被代签**：H 轮 5 项只允许 `pending` / `confirmed`
+    （`confirmed` 必须带人工签署字段），**任何 `completed` 都是代签**；
   - **决策包必须覆盖 H 轮全部检查点**：T16.4 / T17.4 / T18.4 / T19.4 / T20.4
     必须在 `schedule/manual_checkpoints.json` 且 priority 唯一；
   - **结论文档必须存在**：H4 / H5 结论文件不得只在清单里挂空路径；
@@ -89,20 +90,39 @@ class TestAutoScopeClosed:
 # 阶段不得提前 completed
 # ----------------------------------------------------------------------
 class TestStageNotPrematurelyCompleted:
-    def test_stage_status_not_completed(self):
-        """人工检查点未签字 → 阶段不得 completed。"""
-        for s in _h_stages():
-            assert s["status"] in ("pending", "in_progress"), (
-                f"{s['id']} 在人工检查点未签字时标 {s['status']}（假进度）")
-            assert s["status"] != "completed", f"{s['id']} 不得 completed"
+    def test_stage_completed_requires_human_confirmation(self):
+        """人工检查点未签字 → 阶段不得 completed；标 completed 必须带确认背书。
 
-    def test_manual_checkpoints_stay_pending(self):
-        """H 轮 5 项人工检查点恒 pending，且无 completed_at / result。"""
+        2026-09-12：H 轮 5 项经用户于 Issue #40 确认后，S16~S20 已带
+        `confirmed_by` / `confirmed_at` 收官 —— 但「代签」仍被禁止：
+        没有人工确认字段的 `completed` 一律判为假进度。
+        """
+        for s in _h_stages():
+            if s["status"] != "completed":
+                assert s["status"] in ("pending", "in_progress"), (
+                    f"{s['id']} 状态非法: {s['status']}")
+                continue
+            assert s.get("confirmed_by") and s.get("confirmed_at"), (
+                f"{s['id']} 标 completed 却无人工确认字段（假进度）")
+            assert s.get("confirmed_in", "").endswith("/issues/40"), (
+                f"{s['id']} 收官未指向人工确认来源")
+            for t in s["tasks"]:
+                if t["id"] in set(s["manual_checkpoint"]):
+                    assert t["status"] == "confirmed", (
+                        f"{t['id']} 未确认却让 {s['id']} 收官")
+
+    def test_manual_checkpoints_never_auto_completed(self):
+        """H 轮 5 项人工检查点只允许 pending / confirmed，且无 completed_at / result。"""
         for s in _h_stages():
             manual = set(s["manual_checkpoint"])
             for t in s["tasks"]:
                 if t["id"] in manual:
-                    assert t["status"] == "pending", f"{t['id']} 被代签"
+                    assert t["status"] in ("pending", "confirmed"), (
+                        f"{t['id']} 被代签（completed 即自动流程自签）")
+                    if t["status"] == "confirmed":
+                        for key in ("confirmed_by", "confirmed_at", "confirmed_in",
+                                    "decision"):
+                            assert t.get(key), f"{t['id']} 标 confirmed 却缺 {key}"
                     assert t.get("auto_run") is False, f"{t['id']} 标 auto_run"
                     assert not t.get("completed_at"), f"{t['id']} 有 completed_at"
                     assert not t.get("result"), f"{t['id']} 有 result"
@@ -117,10 +137,16 @@ class TestManifestCoversHRound:
         missing = H_ROUND_CHECKPOINT_IDS - ids
         assert not missing, f"决策包缺 H 轮检查点: {sorted(missing)}"
 
-    def test_h_checkpoints_all_pending(self):
+    def test_h_checkpoints_signature_state_is_honest(self):
+        """H 轮 5 项：只允许 pending / confirmed；confirmed 必须带签署字段。"""
         for cp in _manifest()["checkpoints"]:
             if cp["id"] in H_ROUND_CHECKPOINT_IDS:
-                assert cp["status"] == "pending", f"{cp['id']} 状态被改动"
+                assert cp["status"] in ("pending", "confirmed"), (
+                    f"{cp['id']} 状态非法（completed 即代签）: {cp['status']}")
+                if cp["status"] == "confirmed":
+                    for key in ("confirmed_by", "confirmed_at", "decision",
+                                "decision_basis", "scope", "out_of_scope"):
+                        assert cp.get(key), f"{cp['id']} 已确认却缺 {key}"
 
     def test_manifest_priorities_unique_and_sequential(self):
         ps = [c["priority"] for c in _manifest()["checkpoints"]]
@@ -176,12 +202,20 @@ class TestBoundaryHolds:
             overlap = set(s["auto_acceptable"]) & set(s["manual_checkpoint"])
             assert not overlap, f"{s['id']} 检查点混入自动项: {sorted(overlap)}"
 
-    def test_manual_scope_names_the_pending_checkpoints(self):
-        """closing.manual_scope 必须点名未决策的检查点，不能含糊。"""
+    def test_manual_scope_names_every_checkpoint(self):
+        """closing.manual_scope 必须点名人工检查点并说明其状态，不能含糊。"""
         for s in _h_stages():
             scope = s["closing"]["manual_scope"]
             for cid in s["manual_checkpoint"]:
                 assert cid in scope, f"{s['id']}.closing.manual_scope 未点名 {cid}"
+            done = {t["id"] for t in s["tasks"]
+                    if t["id"] in set(s["manual_checkpoint"]) and t["status"] == "confirmed"}
+            if done:
+                assert "已确认" in scope, (
+                    f"{s['id']}.closing.manual_scope 未说明检查点已确认")
+            else:
+                assert "未决策" in scope, (
+                    f"{s['id']}.closing.manual_scope 未说明检查点未决策")
 
     def test_evidence_paths_are_repo_relative(self):
         for s in _h_stages():
