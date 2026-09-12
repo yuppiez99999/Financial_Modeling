@@ -98,6 +98,7 @@
 - **调参与门槛** — optuna 超参搜索 + 置信度阈值曲线（S15/G5）；真实池 60-trials 收敛复跑 + 独立保留期阈值复验已完成；**T15.3 双指标门禁结构重构已交付**（`python main.py confidence-gate`，决策单 `reports/confidence_gate_decision.json`，`affects_gate=false`，**是否切换门禁结构待人工签字**）
 - **保形预测区间** — `python main.py conformal-interval`（S16/T16.1+T16.2）：MAPIE split conformal（LAC）在现行 LightGBM 上产**带覆盖率保证**的预测区间 → 置信分（复用 `confidence_from_interval`，与 `|p−0.5|×2` **同数据同折对照**）；覆盖率审计（目标 vs 实测 + bootstrap 95% CI）、可靠性曲线（Brier/ECE，含 isotonic 参考臂）、区间宽度校准，落 `reports/calibration/`；`affects_gate=false`，区间口径缺省不进生产链路，口径取舍属 T16.4 人工检查点
 - **保留期证据链** — `python main.py confidence-holdout`（S16/T16.3）：决策单证据源 `reports/confidence_holdout_verify.json` 首次有可复现生成命令（训练只用前 70%，保留期从未参与训练/扫描/调参）；同时把保留期切成 n 个互不重叠时段做滚动复验（`--no-rolling` 可关），检验 thr∈[0.2,0.3] 命中率优势是否跨时段稳定，stable/unstable/insufficient 三态如实输出（`reports/confidence_rolling_verify.json`，补充证据）；`affects_gate=false`，挑阈值与签字仍属人工检查点
+- **市场状态分层** — `python main.py regime`（S18/H3，T18.1~T18.3）：HMM（GaussianHMM，固定 3 态 → `bull/range/bear`）识别市场状态，`expanding` 口径**第 t 天只用 [0,t] 观测重训**（严格无前视；`full_sample` 全样本口径仅作对照并明确标注 `lookahead_prefixed=true`）；状态内分层评估（逐状态 IC/命中率/样本数 + 分得开判定）与状态 one-hot **单变量**增量 A/B（保守四态，一升一降一律 mixed）；落 `reports/regime/`，`affects_gate=false`，状态缺省**不进**生产链路，`hmmlearn` 未安装时明确报错不降级，是否进门禁/风控属 T18.4 人工检查点
 
 </td>
 </tr>
