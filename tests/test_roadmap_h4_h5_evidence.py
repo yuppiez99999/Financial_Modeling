@@ -284,10 +284,11 @@ class TestT112Bookkeeping:
         assert not t.get("result"), "T11.2 又出现 result（视为已决策）"
 
     def test_delivery_fact_is_preserved_in_name(self):
-        """移除状态字段不得丢交付事实：三档口径必须仍可追溯。"""
+        """状态字段变化不得丢交付事实：三档口径必须仍可追溯。"""
         name = self._task()["name"]
         assert "0.125" in name or "三档" in name
-        assert "pending" in name or "草案" in name
+        # 人工检查点性质必须写在任务名里（恒不自动完成、不代签）
+        assert "人工检查点" in name
 
     def test_manifest_entry_status_is_allowed(self):
         """清单条目状态只允许 `pending` / `confirmed`；若已确认须可追溯。"""

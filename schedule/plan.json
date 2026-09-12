@@ -1,471 +1,422 @@
 {
-  "project": "16_金融市场预测模型",
-  "start_date": "2026-09-10",
-  "timezone": "Asia/Shanghai",
   "stages": [
     {
-      "id": "S1",
       "name": "vectorbt 回测层",
-      "status": "completed",
-      "started_at": null,
-      "completed_at": "2026-09-10T09:05:46.734268+00:00",
-      "tasks": [
-        {
-          "id": "T1.1",
-          "name": "环境与入口准备",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-10T09:04:02.381590+00:00",
-          "result": "环境与入口准备：自动任务已交付"
-        },
-        {
-          "id": "T1.2",
-          "name": "回测数据结构定义",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-10T09:03:18.062742+00:00",
-          "result": "回测数据结构定义：自动任务已交付"
-        },
-        {
-          "id": "T1.3",
-          "name": "最小回测脚本",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-10T09:03:18.062742+00:00",
-          "result": "最小回测脚本：自动任务已交付"
-        },
-        {
-          "id": "T1.4",
-          "name": "评价口径定下来",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-10T09:05:46.734268+00:00",
-          "result": "评价口径定下来：自动任务已交付"
-        }
-      ],
       "auto_acceptable": [
         "T1.1",
         "T1.3"
       ],
+      "completed_at": "2026-09-10T09:05:46.734268+00:00",
+      "tasks": [
+        {
+          "name": "环境与入口准备",
+          "auto_run": true,
+          "completed_at": "2026-09-10T09:04:02.381590+00:00",
+          "result": "环境与入口准备：自动任务已交付",
+          "id": "T1.1",
+          "status": "completed"
+        },
+        {
+          "name": "回测数据结构定义",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:03:18.062742+00:00",
+          "result": "回测数据结构定义：自动任务已交付",
+          "id": "T1.2",
+          "status": "completed"
+        },
+        {
+          "name": "最小回测脚本",
+          "auto_run": true,
+          "completed_at": "2026-09-10T09:03:18.062742+00:00",
+          "result": "最小回测脚本：自动任务已交付",
+          "id": "T1.3",
+          "status": "completed"
+        },
+        {
+          "name": "评价口径定下来",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:05:46.734268+00:00",
+          "result": "评价口径定下来：自动任务已交付",
+          "id": "T1.4",
+          "status": "completed"
+        }
+      ],
       "manual_checkpoint": [
         "T1.2",
         "T1.4"
-      ]
+      ],
+      "id": "S1",
+      "status": "completed",
+      "started_at": null
     },
     {
-      "id": "S2",
       "name": "tsai 预测 baseline",
-      "status": "completed",
-      "started_at": null,
-      "completed_at": "2026-09-10T09:10:34.723440+00:00",
-      "tasks": [
-        {
-          "id": "T2.1",
-          "name": "预测任务定义",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-10T09:08:48.703370+00:00",
-          "result": "预测任务定义：自动任务已交付"
-        },
-        {
-          "id": "T2.2",
-          "name": "时间划分与泄露检查",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-10T09:08:48.703370+00:00",
-          "result": "时间划分与泄露检查：自动任务已交付"
-        },
-        {
-          "id": "T2.3",
-          "name": "tsai 跑通示例",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-10T09:08:48.703370+00:00",
-          "result": "tsai 跑通示例：自动任务已交付"
-        },
-        {
-          "id": "T2.4",
-          "name": "预测 baseline 对比",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-10T09:10:34.723440+00:00",
-          "result": "预测 baseline 对比：自动任务已交付"
-        }
-      ],
       "auto_acceptable": [
         "T2.3",
         "T2.4"
       ],
+      "completed_at": "2026-09-10T09:10:34.723440+00:00",
+      "tasks": [
+        {
+          "name": "预测任务定义",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:08:48.703370+00:00",
+          "result": "预测任务定义：自动任务已交付",
+          "id": "T2.1",
+          "status": "completed"
+        },
+        {
+          "name": "时间划分与泄露检查",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:08:48.703370+00:00",
+          "result": "时间划分与泄露检查：自动任务已交付",
+          "id": "T2.2",
+          "status": "completed"
+        },
+        {
+          "name": "tsai 跑通示例",
+          "auto_run": true,
+          "completed_at": "2026-09-10T09:08:48.703370+00:00",
+          "result": "tsai 跑通示例：自动任务已交付",
+          "id": "T2.3",
+          "status": "completed"
+        },
+        {
+          "name": "预测 baseline 对比",
+          "auto_run": true,
+          "completed_at": "2026-09-10T09:10:34.723440+00:00",
+          "result": "预测 baseline 对比：自动任务已交付",
+          "id": "T2.4",
+          "status": "completed"
+        }
+      ],
       "manual_checkpoint": [
         "T2.1",
         "T2.2"
-      ]
+      ],
+      "id": "S2",
+      "status": "completed",
+      "started_at": null
     },
     {
-      "id": "S3",
       "name": "mlfinlab 金融建模辅助",
-      "status": "completed",
-      "started_at": null,
+      "auto_acceptable": [
+        "T3.3"
+      ],
       "completed_at": "2026-09-10T09:15:56.994510+00:00",
       "tasks": [
         {
-          "id": "T3.1",
           "name": "当前流程卡点识别",
-          "status": "completed",
           "auto_run": false,
           "completed_at": "2026-09-10T09:11:38.271009+00:00",
-          "result": "当前流程卡点识别：自动任务已交付"
+          "result": "当前流程卡点识别：自动任务已交付",
+          "id": "T3.1",
+          "status": "completed"
         },
         {
-          "id": "T3.2",
           "name": "模块挑选与映射",
-          "status": "completed",
           "auto_run": false,
           "completed_at": "2026-09-10T09:13:28.067631+00:00",
-          "result": "模块挑选与映射：自动任务已交付"
+          "result": "模块挑选与映射：自动任务已交付",
+          "id": "T3.2",
+          "status": "completed"
         },
         {
-          "id": "T3.3",
           "name": "小范围试跑",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-10T09:15:56.994510+00:00",
-          "result": "小范围试跑：自动任务已交付"
+          "result": "小范围试跑：自动任务已交付",
+          "id": "T3.3",
+          "status": "completed"
         },
         {
-          "id": "T3.4",
           "name": "落地决策",
-          "status": "completed",
           "auto_run": false,
           "completed_at": "2026-09-10T09:15:56.994510+00:00",
-          "result": "落地决策：自动任务已交付"
+          "result": "落地决策：自动任务已交付",
+          "id": "T3.4",
+          "status": "completed"
         }
-      ],
-      "auto_acceptable": [
-        "T3.3"
       ],
       "manual_checkpoint": [
         "T3.1",
         "T3.2",
         "T3.4"
-      ]
+      ],
+      "id": "S3",
+      "status": "completed",
+      "started_at": null
     },
     {
-      "id": "S4",
       "name": "freqtrade 策略/执行参考",
-      "status": "completed",
-      "started_at": null,
+      "auto_acceptable": [],
       "completed_at": "2026-09-10T09:25:54.983122+00:00",
       "tasks": [
         {
-          "id": "T4.1",
           "name": "阅读重点范围",
-          "status": "completed",
           "auto_run": false,
           "completed_at": "2026-09-10T09:17:42.093474+00:00",
-          "result": "阅读重点范围：自动任务已交付"
+          "result": "阅读重点范围：自动任务已交付",
+          "id": "T4.1",
+          "status": "completed"
         },
         {
-          "id": "T4.2",
           "name": "可借鉴点提取",
-          "status": "completed",
           "auto_run": false,
           "completed_at": "2026-09-10T09:25:54.983122+00:00",
-          "result": "可借鉴点提取：自动任务已交付"
+          "result": "可借鉴点提取：自动任务已交付",
+          "id": "T4.2",
+          "status": "completed"
         },
         {
-          "id": "T4.3",
           "name": "对你系统的改进建议",
-          "status": "completed",
           "auto_run": false,
           "completed_at": "2026-09-10T09:25:54.983122+00:00",
-          "result": "对你系统的改进建议：自动任务已交付"
+          "result": "对你系统的改进建议：自动任务已交付",
+          "id": "T4.3",
+          "status": "completed"
         }
       ],
-      "auto_acceptable": [],
       "manual_checkpoint": [
         "T4.1",
         "T4.2",
         "T4.3"
-      ]
+      ],
+      "id": "S4",
+      "status": "completed",
+      "started_at": null
     },
     {
-      "id": "S5",
       "name": "FinRL 强化学习实验",
-      "status": "completed",
-      "started_at": null,
-      "completed_at": "2026-09-10T09:31:17.380080+00:00",
-      "tasks": [
-        {
-          "id": "T5.1",
-          "name": "示例跑通",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-10T09:29:32.697620+00:00",
-          "result": "示例跑通：自动任务已交付"
-        },
-        {
-          "id": "T5.2",
-          "name": "最小实验设计",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-10T09:29:32.697620+00:00",
-          "result": "最小实验设计：自动任务已交付"
-        },
-        {
-          "id": "T5.3",
-          "name": "接入已有预测信号",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-10T09:31:17.380080+00:00",
-          "result": "接入已有预测信号：自动任务已交付"
-        },
-        {
-          "id": "T5.4",
-          "name": "对比与结论",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-10T09:31:17.380080+00:00",
-          "result": "对比与结论：自动任务已交付"
-        }
-      ],
       "auto_acceptable": [
         "T5.1",
         "T5.4"
       ],
+      "completed_at": "2026-09-10T09:31:17.380080+00:00",
+      "tasks": [
+        {
+          "name": "示例跑通",
+          "auto_run": true,
+          "completed_at": "2026-09-10T09:29:32.697620+00:00",
+          "result": "示例跑通：自动任务已交付",
+          "id": "T5.1",
+          "status": "completed"
+        },
+        {
+          "name": "最小实验设计",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:29:32.697620+00:00",
+          "result": "最小实验设计：自动任务已交付",
+          "id": "T5.2",
+          "status": "completed"
+        },
+        {
+          "name": "接入已有预测信号",
+          "auto_run": false,
+          "completed_at": "2026-09-10T09:31:17.380080+00:00",
+          "result": "接入已有预测信号：自动任务已交付",
+          "id": "T5.3",
+          "status": "completed"
+        },
+        {
+          "name": "对比与结论",
+          "auto_run": true,
+          "completed_at": "2026-09-10T09:31:17.380080+00:00",
+          "result": "对比与结论：自动任务已交付",
+          "id": "T5.4",
+          "status": "completed"
+        }
+      ],
       "manual_checkpoint": [
         "T5.2",
         "T5.3"
-      ]
+      ],
+      "id": "S5",
+      "status": "completed",
+      "started_at": null
     },
     {
-      "id": "S6",
       "name": "Q4 智能风控模块",
-      "status": "completed",
-      "started_at": "2026-09-10T13:12:08.923259+00:00",
-      "completed_at": "2026-09-10T13:12:08.923259+00:00",
-      "tasks": [
-        {
-          "id": "T6.1",
-          "name": "风控现状与缺口识别",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-10T13:12:08.923259+00:00",
-          "result": "风控现状与缺口识别：自动任务已交付"
-        },
-        {
-          "id": "T6.2",
-          "name": "止损止盈推算方案设计",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-10T13:12:08.923259+00:00",
-          "result": "止损止盈推算方案设计：自动任务已交付"
-        },
-        {
-          "id": "T6.3",
-          "name": "智能风控建议模块实现",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-10T13:12:08.923259+00:00",
-          "result": "智能风控建议模块实现：自动任务已交付"
-        },
-        {
-          "id": "T6.4",
-          "name": "门禁门控接入与合规边界固化",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-10T13:12:08.923259+00:00",
-          "result": "门禁门控接入与合规边界固化：自动任务已交付"
-        },
-        {
-          "id": "T6.5",
-          "name": "CLI/API/监控报表接入",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-10T13:12:08.923259+00:00",
-          "result": "CLI/API/监控报表接入：自动任务已交付"
-        },
-        {
-          "id": "T6.6",
-          "name": "回归测试与真实链路验证",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-10T13:12:08.923259+00:00",
-          "result": "回归测试与真实链路验证：自动任务已交付"
-        }
-      ],
       "auto_acceptable": [
         "T6.3",
         "T6.5",
         "T6.6"
       ],
+      "completed_at": "2026-09-10T13:12:08.923259+00:00",
+      "tasks": [
+        {
+          "name": "风控现状与缺口识别",
+          "auto_run": false,
+          "completed_at": "2026-09-10T13:12:08.923259+00:00",
+          "result": "风控现状与缺口识别：自动任务已交付",
+          "id": "T6.1",
+          "status": "completed"
+        },
+        {
+          "name": "止损止盈推算方案设计",
+          "auto_run": false,
+          "completed_at": "2026-09-10T13:12:08.923259+00:00",
+          "result": "止损止盈推算方案设计：自动任务已交付",
+          "id": "T6.2",
+          "status": "completed"
+        },
+        {
+          "name": "智能风控建议模块实现",
+          "auto_run": true,
+          "completed_at": "2026-09-10T13:12:08.923259+00:00",
+          "result": "智能风控建议模块实现：自动任务已交付",
+          "id": "T6.3",
+          "status": "completed"
+        },
+        {
+          "name": "门禁门控接入与合规边界固化",
+          "auto_run": false,
+          "completed_at": "2026-09-10T13:12:08.923259+00:00",
+          "result": "门禁门控接入与合规边界固化：自动任务已交付",
+          "id": "T6.4",
+          "status": "completed"
+        },
+        {
+          "name": "CLI/API/监控报表接入",
+          "auto_run": true,
+          "completed_at": "2026-09-10T13:12:08.923259+00:00",
+          "result": "CLI/API/监控报表接入：自动任务已交付",
+          "id": "T6.5",
+          "status": "completed"
+        },
+        {
+          "name": "回归测试与真实链路验证",
+          "auto_run": true,
+          "completed_at": "2026-09-10T13:12:08.923259+00:00",
+          "result": "回归测试与真实链路验证：自动任务已交付",
+          "id": "T6.6",
+          "status": "completed"
+        }
+      ],
       "manual_checkpoint": [
         "T6.1",
         "T6.2",
         "T6.4"
-      ]
+      ],
+      "id": "S6",
+      "status": "completed",
+      "started_at": "2026-09-10T13:12:08.923259+00:00"
     },
     {
-      "id": "S7",
       "name": "门禁解锁攻坚",
-      "status": "completed",
-      "started_at": "2026-09-10T13:50:00+00:00",
-      "completed_at": "2026-09-10T14:00:00+00:00",
-      "tasks": [
-        {
-          "id": "T7.1",
-          "name": "门禁阻塞诊断（还差多少/哪条腿卡住）",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-10T14:00:00+00:00",
-          "result": "门禁阻塞诊断（还差多少/哪条腿卡住）：自动任务已交付"
-        },
-        {
-          "id": "T7.2",
-          "name": "按标的分层评估（定位拖后腿的标的）",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-10T14:00:00+00:00",
-          "result": "按标的分层评估（定位拖后腿的标的）：自动任务已交付"
-        },
-        {
-          "id": "T7.3",
-          "name": "训练折中性带（无前视过滤 ≈0.5 噪音样本）",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-10T14:00:00+00:00",
-          "result": "训练折中性带（无前视过滤 ≈0.5 噪音样本）：自动任务已交付"
-        },
-        {
-          "id": "T7.4",
-          "name": "CLI/监控报表接入与合规边界",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-10T14:00:00+00:00",
-          "result": "CLI/监控报表接入与合规边界：自动任务已交付"
-        },
-        {
-          "id": "T7.5",
-          "name": "回归测试与文档",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-10T14:00:00+00:00",
-          "result": "回归测试与文档：自动任务已交付"
-        }
-      ],
       "auto_acceptable": [
         "T7.5"
       ],
-      "manual_checkpoint": [
-        "T7.3"
-      ]
-    },
-    {
-      "id": "S8",
-      "name": "Q5 信号衰减监控与定期报告",
-      "status": "completed",
-      "started_at": "2026-09-10T14:30:00+00:00",
-      "completed_at": "2026-09-10T14:30:00+00:00",
+      "completed_at": "2026-09-10T14:00:00+00:00",
       "tasks": [
         {
-          "id": "T8.1",
-          "name": "Q5 路线目标拆解与验收口径",
-          "status": "completed",
+          "name": "门禁阻塞诊断（还差多少/哪条腿卡住）",
           "auto_run": false,
-          "completed_at": "2026-09-10T14:30:00+00:00",
-          "result": "Q5 路线目标拆解与验收口径：自动任务已交付"
+          "completed_at": "2026-09-10T14:00:00+00:00",
+          "result": "门禁阻塞诊断（还差多少/哪条腿卡住）：自动任务已交付",
+          "id": "T7.1",
+          "status": "completed"
         },
         {
-          "id": "T8.2",
-          "name": "IC 时序 / 斜率 / 预计跌破步数计算",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-10T14:30:00+00:00",
-          "result": "IC 时序 / 斜率 / 预计跌破步数计算：自动任务已交付"
+          "name": "按标的分层评估（定位拖后腿的标的）",
+          "auto_run": false,
+          "completed_at": "2026-09-10T14:00:00+00:00",
+          "result": "按标的分层评估（定位拖后腿的标的）：自动任务已交付",
+          "id": "T7.2",
+          "status": "completed"
         },
         {
-          "id": "T8.3",
-          "name": "日报接入信号衰减章节",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-10T14:30:00+00:00",
-          "result": "日报接入信号衰减章节：自动任务已交付"
+          "name": "训练折中性带（无前视过滤 ≈0.5 噪音样本）",
+          "auto_run": false,
+          "completed_at": "2026-09-10T14:00:00+00:00",
+          "result": "训练折中性带（无前视过滤 ≈0.5 噪音样本）：自动任务已交付",
+          "id": "T7.3",
+          "status": "completed"
         },
         {
-          "id": "T8.4",
-          "name": "周报接入门禁与衰减章节",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-10T14:30:00+00:00",
-          "result": "周报接入门禁与衰减章节：自动任务已交付"
+          "name": "CLI/监控报表接入与合规边界",
+          "auto_run": false,
+          "completed_at": "2026-09-10T14:00:00+00:00",
+          "result": "CLI/监控报表接入与合规边界：自动任务已交付",
+          "id": "T7.4",
+          "status": "completed"
         },
         {
-          "id": "T8.5",
-          "name": "趋势监控测试与文档",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-10T14:30:00+00:00",
-          "result": "趋势监控测试与文档：自动任务已交付"
+          "name": "回归测试与文档",
+          "auto_run": false,
+          "completed_at": "2026-09-10T14:00:00+00:00",
+          "result": "回归测试与文档：自动任务已交付",
+          "id": "T7.5",
+          "status": "completed"
         }
       ],
+      "manual_checkpoint": [
+        "T7.3"
+      ],
+      "id": "S7",
+      "status": "completed",
+      "started_at": "2026-09-10T13:50:00+00:00"
+    },
+    {
+      "name": "Q5 信号衰减监控与定期报告",
       "auto_acceptable": [
         "T8.2",
         "T8.3",
         "T8.4",
         "T8.5"
       ],
-      "manual_checkpoint": [
-        "T8.1"
-      ]
-    },
-    {
-      "id": "S9",
-      "name": "按资产类别分池门禁与分层建模",
-      "status": "completed",
-      "started_at": "2026-09-11T08:40:00+00:00",
-      "completed_at": "2026-09-11T09:10:00+00:00",
+      "completed_at": "2026-09-10T14:30:00+00:00",
       "tasks": [
         {
-          "id": "T9.1",
-          "name": "资产类别识别器（零网络、可解释、不猜）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-11T09:10:00+00:00",
-          "result": "资产类别识别器（零网络、可解释、不猜）：自动任务已交付"
+          "name": "Q5 路线目标拆解与验收口径",
+          "auto_run": false,
+          "completed_at": "2026-09-10T14:30:00+00:00",
+          "result": "Q5 路线目标拆解与验收口径：自动任务已交付",
+          "id": "T8.1",
+          "status": "completed"
         },
         {
-          "id": "T9.2",
-          "name": "分池门禁评估（fail-close、默认 report_only）",
-          "status": "completed",
+          "name": "IC 时序 / 斜率 / 预计跌破步数计算",
           "auto_run": true,
-          "completed_at": "2026-09-11T09:10:00+00:00",
-          "result": "分池门禁评估（fail-close、默认 report_only）：自动任务已交付"
+          "completed_at": "2026-09-10T14:30:00+00:00",
+          "result": "IC 时序 / 斜率 / 预计跌破步数计算：自动任务已交付",
+          "id": "T8.2",
+          "status": "completed"
         },
         {
-          "id": "T9.3",
-          "name": "分池训练产物与推理路由（不静默回退整池）",
-          "status": "completed",
+          "name": "日报接入信号衰减章节",
           "auto_run": true,
-          "completed_at": "2026-09-11T09:10:00+00:00",
-          "result": "分池训练产物与推理路由（不静默回退整池）：自动任务已交付"
+          "completed_at": "2026-09-10T14:30:00+00:00",
+          "result": "日报接入信号衰减章节：自动任务已交付",
+          "id": "T8.3",
+          "status": "completed"
         },
         {
-          "id": "T9.4",
-          "name": "消费口接入：CLI / API / 监控报表 / 日报周报",
-          "status": "completed",
+          "name": "周报接入门禁与衰减章节",
           "auto_run": true,
-          "completed_at": "2026-09-11T09:10:00+00:00",
-          "result": "消费口接入：CLI / API / 监控报表 / 日报周报：自动任务已交付"
+          "completed_at": "2026-09-10T14:30:00+00:00",
+          "result": "周报接入门禁与衰减章节：自动任务已交付",
+          "id": "T8.4",
+          "status": "completed"
         },
         {
-          "id": "T9.5",
-          "name": "真实 26 标的池实测与周期分层对照，README/排期同步",
-          "status": "completed",
+          "name": "趋势监控测试与文档",
           "auto_run": true,
-          "completed_at": "2026-09-11T09:10:00+00:00",
-          "result": "真实 26 标的池实测与周期分层对照，README/排期同步：自动任务已交付"
+          "completed_at": "2026-09-10T14:30:00+00:00",
+          "result": "趋势监控测试与文档：自动任务已交付",
+          "id": "T8.5",
+          "status": "completed"
         }
       ],
+      "manual_checkpoint": [
+        "T8.1"
+      ],
+      "id": "S8",
+      "status": "completed",
+      "started_at": "2026-09-10T14:30:00+00:00"
+    },
+    {
+      "name": "按资产类别分池门禁与分层建模",
       "auto_acceptable": [
         "T9.1",
         "T9.2",
@@ -473,109 +424,140 @@
         "T9.4",
         "T9.5"
       ],
-      "manual_checkpoint": []
-    },
-    {
-      "id": "S10",
-      "name": "多周期口径探索扫描",
-      "status": "completed",
-      "started_at": "2026-09-11T01:51:37.101303+00:00",
-      "completed_at": "2026-09-11T01:51:37.101303+00:00",
+      "completed_at": "2026-09-11T09:10:00+00:00",
       "tasks": [
         {
-          "id": "T10.1",
-          "name": "候选周期扫描模块（src/eval/horizon_scan.py）",
-          "status": "completed",
+          "name": "资产类别识别器（零网络、可解释、不猜）",
           "auto_run": true,
-          "completed_at": "2026-09-11T01:51:37.101303+00:00",
-          "result": "候选周期扫描模块（src/eval/horizon_scan.py）：自动任务已交付"
+          "completed_at": "2026-09-11T09:10:00+00:00",
+          "result": "资产类别识别器（零网络、可解释、不猜）：自动任务已交付",
+          "id": "T9.1",
+          "status": "completed"
         },
         {
-          "id": "T10.2",
-          "name": "CLI / 监控报表 / API 接入",
-          "status": "completed",
+          "name": "分池门禁评估（fail-close、默认 report_only）",
           "auto_run": true,
-          "completed_at": "2026-09-11T01:51:37.101303+00:00",
-          "result": "CLI / 监控报表 / API 接入：自动任务已交付"
+          "completed_at": "2026-09-11T09:10:00+00:00",
+          "result": "分池门禁评估（fail-close、默认 report_only）：自动任务已交付",
+          "id": "T9.2",
+          "status": "completed"
         },
         {
-          "id": "T10.3",
-          "name": "真实 26 标的池实测复现 S9 结论",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-11T01:51:37.101303+00:00",
-          "result": "真实 26 标的池实测复现 S9 结论：自动任务已交付"
+          "name": "分池训练产物与推理路由（不静默回退整池）",
+          "auto_run": true,
+          "completed_at": "2026-09-11T09:10:00+00:00",
+          "result": "分池训练产物与推理路由（不静默回退整池）：自动任务已交付",
+          "id": "T9.3",
+          "status": "completed"
         },
         {
-          "id": "T10.4",
-          "name": "测试与文档（README §17 / SALES_PLAN）",
-          "status": "completed",
-          "auto_run": false,
-          "completed_at": "2026-09-11T01:51:37.101303+00:00",
-          "result": "测试与文档（README §17 / SALES_PLAN）：自动任务已交付"
+          "name": "消费口接入：CLI / API / 监控报表 / 日报周报",
+          "auto_run": true,
+          "completed_at": "2026-09-11T09:10:00+00:00",
+          "result": "消费口接入：CLI / API / 监控报表 / 日报周报：自动任务已交付",
+          "id": "T9.4",
+          "status": "completed"
+        },
+        {
+          "name": "真实 26 标的池实测与周期分层对照，README/排期同步",
+          "auto_run": true,
+          "completed_at": "2026-09-11T09:10:00+00:00",
+          "result": "真实 26 标的池实测与周期分层对照，README/排期同步：自动任务已交付",
+          "id": "T9.5",
+          "status": "completed"
         }
       ],
+      "manual_checkpoint": [],
+      "id": "S9",
+      "status": "completed",
+      "started_at": "2026-09-11T08:40:00+00:00"
+    },
+    {
+      "name": "多周期口径探索扫描",
       "auto_acceptable": [
         "T10.1",
         "T10.2"
       ],
+      "completed_at": "2026-09-11T01:51:37.101303+00:00",
+      "tasks": [
+        {
+          "name": "候选周期扫描模块（src/eval/horizon_scan.py）",
+          "auto_run": true,
+          "completed_at": "2026-09-11T01:51:37.101303+00:00",
+          "result": "候选周期扫描模块（src/eval/horizon_scan.py）：自动任务已交付",
+          "id": "T10.1",
+          "status": "completed"
+        },
+        {
+          "name": "CLI / 监控报表 / API 接入",
+          "auto_run": true,
+          "completed_at": "2026-09-11T01:51:37.101303+00:00",
+          "result": "CLI / 监控报表 / API 接入：自动任务已交付",
+          "id": "T10.2",
+          "status": "completed"
+        },
+        {
+          "name": "真实 26 标的池实测复现 S9 结论",
+          "auto_run": false,
+          "completed_at": "2026-09-11T01:51:37.101303+00:00",
+          "result": "真实 26 标的池实测复现 S9 结论：自动任务已交付",
+          "id": "T10.3",
+          "status": "completed"
+        },
+        {
+          "name": "测试与文档（README §17 / SALES_PLAN）",
+          "auto_run": false,
+          "completed_at": "2026-09-11T01:51:37.101303+00:00",
+          "result": "测试与文档（README §17 / SALES_PLAN）：自动任务已交付",
+          "id": "T10.4",
+          "status": "completed"
+        }
+      ],
       "manual_checkpoint": [
         "T10.3",
         "T10.4"
-      ]
+      ],
+      "id": "S10",
+      "status": "completed",
+      "started_at": "2026-09-11T01:51:37.101303+00:00"
     },
     {
-      "id": "S11",
-      "name": "评估量尺先行（G1：因子诊断 / 成本敏感性 / FinRL 结论补全）",
-      "status": "completed",
-      "started_at": "2026-09-11T07:00:24.658860+00:00",
-      "completed_at": "2026-09-12T14:05:00+08:00",
-      "scheduled_dates": "2026-09-12 ~ 2026-09-14",
+      "source": "Issue #29 高质量项目集成 · G1（machine-learning-for-trading 三重障碍法 / alphalens 因子诊断理念）",
       "tasks": [
         {
-          "id": "T11.1",
           "name": "新增 src/eval/factor_metrics.py：按周期衰减 / 分层收益 / 换手 / IC 置信区间",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-11T07:00:24.658860+00:00",
-          "result": "新增 src/eval/factor_metrics.py：按周期衰减 / 分层收益 / 换手 / IC 置信区间：自动任务已交付"
+          "result": "新增 src/eval/factor_metrics.py：按周期衰减 / 分层收益 / 换手 / IC 置信区间：自动任务已交付",
+          "id": "T11.1",
+          "status": "completed"
         },
         {
-          "id": "T11.2",
-          "name": "成交成本敏感性：佣金/滑点/换手三档扫描（口径草案已交付并被 factor_metrics 消费；**口径定稿**属人工检查点，恒 pending 不代签）",
-          "status": "confirmed",
-          "auto_run": false,
+          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+          "name": "成交成本敏感性：佣金/滑点/换手三档扫描（口径定稿，人工检查点）",
           "decision": "keep",
           "confirmed_by": "yuppiez328",
+          "confirmed_script_must": "确认三档口径定稿（保守 0.125% / 基准 0.075% / 乐观 0.030% 单边），维持「写成常量 + 禁止配置覆盖」纪律",
+          "auto_run": false,
           "confirmed_by_nick": "安然",
           "confirmed_at": "2026-09-12T14:05:00+08:00",
-          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）",
-          "confirmed_script_must": "确认三档口径定稿（保守 0.125% / 基准 0.075% / 乐观 0.030% 单边），维持「写成常量 + 禁止配置覆盖」纪律"
+          "id": "T11.2",
+          "status": "confirmed",
+          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）"
         },
         {
-          "id": "T11.3",
           "name": "补全 00_kickoff/finrl_comparison_conclusion.md 状态字段",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-11T07:00:24.658860+00:00",
-          "result": "补全 00_kickoff/finrl_comparison_conclusion.md 状态字段：自动任务已交付"
+          "result": "补全 00_kickoff/finrl_comparison_conclusion.md 状态字段：自动任务已交付",
+          "id": "T11.3",
+          "status": "completed"
         }
       ],
-      "auto_acceptable": [
-        "T11.1",
-        "T11.3"
-      ],
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
       "manual_checkpoint": [
         "T11.2"
       ],
-      "note": "统一评估量尺：没有统一量尺，后续所有改动无法判断是否变好。本轮所有新模块默认 report_only，不改门禁结论。 进展（2026-09-11）：T11.1 因子健康度量尺（src/eval/factor_metrics.py + main.py ic --detail）与 T11.3 FinRL 结论补全已完成；T11.2 成本敏感性三档口径以草案形式落地（参数为常量，待人工定稿）。 | 记账修正（2026-09-12）：T11.2 原标 `completed` 并用「口径草案已交付并被消费」为其背书——但**人工检查点恒 pending**（守卫测试要求），DONE 与 PENDING 并存属记账矛盾。现移除 `completed_at`、改回 `pending`，交付事实移入任务 `name`/`result`，与 T12.3/T14.3 同型处理（结论已出 ≠ 已采纳）。",
-      "source": "Issue #29 高质量项目集成 · G1（machine-learning-for-trading 三重障碍法 / alphalens 因子诊断理念）",
-      "confirmed_by": "yuppiez328",
-      "confirmed_by_nick": "安然",
-      "confirmed_at": "2026-09-12T14:05:00+08:00",
-      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
       "closing": {
         "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
         "manual_scope": "已确认 — T11.2",
@@ -583,64 +565,62 @@
         "confirmed_at": "2026-09-12T14:05:00+08:00",
         "confirmed_by": "yuppiez328",
         "affects_gate": false
-      }
+      },
+      "note": "统一评估量尺：没有统一量尺，后续所有改动无法判断是否变好。本轮所有新模块默认 report_only，不改门禁结论。 进展（2026-09-11）：T11.1 因子健康度量尺（src/eval/factor_metrics.py + main.py ic --detail）与 T11.3 FinRL 结论补全已完成；T11.2 成本敏感性三档口径以草案形式落地（参数为常量，待人工定稿）。",
+      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "name": "评估量尺先行（G1：因子诊断 / 成本敏感性 / FinRL 结论补全）",
+      "confirmed_by": "yuppiez328",
+      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
+      "auto_acceptable": [
+        "T11.1",
+        "T11.3"
+      ],
+      "confirmed_by_nick": "安然",
+      "completed_at": null,
+      "id": "S11",
+      "scheduled_dates": "2026-09-12 ~ 2026-09-14",
+      "status": "in_progress",
+      "started_at": "2026-09-11T07:00:24.658860+00:00"
     },
     {
-      "id": "S12",
-      "name": "标签重构（G2：三重障碍法 + 无前视测试 + A/B 实验）",
-      "status": "completed",
-      "started_at": null,
-      "completed_at": "2026-09-12T14:05:00+08:00",
-      "scheduled_dates": "2026-09-15 ~ 2026-09-19",
+      "source": "Issue #29 高质量项目集成 · G2（machine-learning-for-trading 三重障碍法）",
       "tasks": [
         {
-          "id": "T12.1",
           "name": "新增 src/data/labeling.py：三重障碍法（止盈/止损/时间），波动率自适应，替代固定 5/10/20 日窗口",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-11T07:30:34.522041+00:00",
-          "result": "新增 src/data/labeling.py：三重障碍法（止盈/止损/时间），波动率自适应，替代固定 5/10/20 日窗口：自动任务已交付"
+          "result": "新增 src/data/labeling.py：三重障碍法（止盈/止损/时间），波动率自适应，替代固定 5/10/20 日窗口：自动任务已交付",
+          "id": "T12.1",
+          "status": "completed"
         },
         {
-          "id": "T12.2",
           "name": "对照 leakage_checklist.md 扩展 tests/『标签无前视』用例",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-11T07:30:34.522041+00:00",
-          "result": "对照 leakage_checklist.md 扩展 tests/『标签无前视』用例：自动任务已交付"
+          "result": "对照 leakage_checklist.md 扩展 tests/『标签无前视』用例：自动任务已交付",
+          "id": "T12.2",
+          "status": "completed"
         },
         {
-          "id": "T12.3",
+          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
           "name": "同一 LightGBM 配置下新标签 vs 旧标签 IC/命中率 A/B 对比，结论不管好坏如实入库（**人工检查点：结论已入库，是否纳入训练主线待人工定稿**）",
-          "status": "confirmed",
-          "auto_run": false,
           "decision": "defer",
           "confirmed_by": "yuppiez328",
+          "confirmed_script_must": "确认标签主线不切换：target_{h}d 继续作训练主线，三重障碍法标签不进主线",
+          "auto_run": false,
           "confirmed_by_nick": "安然",
           "confirmed_at": "2026-09-12T14:05:00+08:00",
-          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）",
-          "confirmed_script_must": "确认标签主线不切换：target_{h}d 继续作训练主线，三重障碍法标签不进主线"
+          "result": null,
+          "id": "T12.3",
+          "status": "confirmed",
+          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）"
         }
       ],
-      "auto_acceptable": [
-        "T12.1",
-        "T12.2"
-      ],
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
       "manual_checkpoint": [
         "T12.3"
       ],
-      "note": "唯一有望直接改变门禁判定的一步。里程碑 09-19：拿到『标签重构是否有效』的硬结论。 | T12.3 已更正为人工检查点（此前误标 completed）：A/B 结论已如实入库（00_kickoff/label_ab_conclusion.md，10 日 IC +0.061/命中 52.88% 正向、5 日混合），「是否纳入训练主线」恒为人工决策，未获签字前保持 pending（fail-close）。",
-      "source": "Issue #29 高质量项目集成 · G2（machine-learning-for-trading 三重障碍法）",
-      "depends_on": [
-        "S11"
-      ],
       "result": "三重障碍法标签 + 无前视测试 + 同口径 A/B 已落地。结论（26 标的/3 折，如实入库 00_kickoff/label_ab_conclusion.md）：10 日周期 IC +0.034、命中率 52.88%（旧 49.28%），首次跨 52% 门禁线；5 日周期结论混合。affects_gate 恒 False，是否纳入主线待人工检查点 T12.3 定稿。",
-      "confirmed_by": "yuppiez328",
-      "confirmed_by_nick": "安然",
-      "confirmed_at": "2026-09-12T14:05:00+08:00",
-      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
       "closing": {
         "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
         "manual_scope": "已确认 — T12.3",
@@ -648,72 +628,71 @@
         "confirmed_at": "2026-09-12T14:05:00+08:00",
         "confirmed_by": "yuppiez328",
         "affects_gate": false
-      }
+      },
+      "note": "唯一有望直接改变门禁判定的一步。里程碑 09-19：拿到『标签重构是否有效』的硬结论。 | T12.3 已更正为人工检查点（此前误标 completed）：A/B 结论已如实入库（00_kickoff/label_ab_conclusion.md，10 日 IC +0.061/命中 52.88% 正向、5 日混合），「是否纳入训练主线」恒为人工决策，未获签字前保持 pending（fail-close）。",
+      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "name": "标签重构（G2：三重障碍法 + 无前视测试 + A/B 实验）",
+      "confirmed_by": "yuppiez328",
+      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
+      "auto_acceptable": [
+        "T12.1",
+        "T12.2"
+      ],
+      "confirmed_by_nick": "安然",
+      "completed_at": null,
+      "depends_on": [
+        "S11"
+      ],
+      "id": "S12",
+      "scheduled_dates": "2026-09-15 ~ 2026-09-19",
+      "status": "in_progress",
+      "started_at": null
     },
     {
-      "id": "S13",
-      "name": "qlib 因子库与数据层接入（G3：数据层 → 因子导出 → 增量验证）",
-      "status": "completed",
-      "started_at": "2026-09-11T09:20:00+00:00",
-      "completed_at": "2026-09-12T14:05:00+08:00",
-      "scheduled_dates": "2026-09-20 ~ 2026-09-26",
+      "source": "Issue #29 高质量项目集成 · G3（microsoft/qlib）",
       "tasks": [
         {
-          "id": "T13.1",
           "name": "独立目录 integrations/qlib/：qlib 数据转 .bin → 导出横截面因子为 parquet",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-11T09:20:00+00:00",
-          "result": "独立目录 integrations/qlib/：qlib 数据转 .bin → 导出横截面因子为 parquet：自动任务已交付"
+          "result": "独立目录 integrations/qlib/：qlib 数据转 .bin → 导出横截面因子为 parquet：自动任务已交付",
+          "id": "T13.1",
+          "status": "completed"
         },
         {
-          "id": "T13.2",
           "name": "新增 src/factors/qlib_factor_provider.py，因子喂进现有 factor_library / factor_model",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-11T09:20:00+00:00",
-          "result": "新增 src/factors/qlib_factor_provider.py，因子喂进现有 factor_library / factor_model：自动任务已交付"
+          "result": "新增 src/factors/qlib_factor_provider.py，因子喂进现有 factor_library / factor_model：自动任务已交付",
+          "id": "T13.2",
+          "status": "completed"
         },
         {
-          "id": "T13.3",
           "name": "Alpha158 因子 IC 对比现有 15 因子，链路与 A/B 已交付（真实池实测已补，见 00_kickoff/qlib_alpha158_conclusion.md）；结论不管好坏如实入库",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-11T09:20:00+00:00",
-          "result": "Alpha158 因子 IC 对比现有 15 因子，链路与 A/B 已交付（真实池实测已补，见 00_kickoff/qlib_alpha158_conclusion.md）；结论不管好坏如实入库：自动任务已交付"
+          "result": "Alpha158 因子 IC 对比现有 15 因子，链路与 A/B 已交付（真实池实测已补，见 00_kickoff/qlib_alpha158_conclusion.md）；结论不管好坏如实入库：自动任务已交付",
+          "id": "T13.3",
+          "status": "completed"
         },
         {
-          "id": "T13.4",
+          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
           "name": "是否纳入主线决策（人工检查点，pending）+ docs/THIRD_PARTY.md 登记来源与版本（已完成）",
-          "status": "confirmed",
-          "auto_run": false,
           "decision": "reject",
           "confirmed_by": "yuppiez328",
+          "confirmed_script_must": "明确不纳入：factor_a158_* 不进生产特征集（三周期 A/B 均未改善）",
+          "auto_run": false,
           "confirmed_by_nick": "安然",
           "confirmed_at": "2026-09-12T14:05:00+08:00",
-          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）",
-          "confirmed_script_must": "明确不纳入：factor_a158_* 不进生产特征集（三周期 A/B 均未改善）"
+          "id": "T13.4",
+          "status": "confirmed",
+          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）"
         }
       ],
-      "auto_acceptable": [
-        "T13.1",
-        "T13.2",
-        "T13.3"
-      ],
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
       "manual_checkpoint": [
         "T13.4"
       ],
-      "note": "qlib 为 MIT 许可，与本项目『禁止商用』对外授权限制不冲突，但必须登记来源与版本。工程量最大，收益最大。",
-      "source": "Issue #29 高质量项目集成 · G3（microsoft/qlib）",
-      "depends_on": [
-        "S12"
-      ],
-      "confirmed_by": "yuppiez328",
-      "confirmed_by_nick": "安然",
-      "confirmed_at": "2026-09-12T14:05:00+08:00",
-      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
       "closing": {
         "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
         "manual_scope": "已确认 — T13.4",
@@ -721,61 +700,65 @@
         "confirmed_at": "2026-09-12T14:05:00+08:00",
         "confirmed_by": "yuppiez328",
         "affects_gate": false
-      }
+      },
+      "note": "qlib 为 MIT 许可，与本项目『禁止商用』对外授权限制不冲突，但必须登记来源与版本。工程量最大，收益最大。",
+      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "name": "qlib 因子库与数据层接入（G3：数据层 → 因子导出 → 增量验证）",
+      "confirmed_by": "yuppiez328",
+      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
+      "auto_acceptable": [
+        "T13.1",
+        "T13.2",
+        "T13.3"
+      ],
+      "confirmed_by_nick": "安然",
+      "completed_at": null,
+      "depends_on": [
+        "S12"
+      ],
+      "id": "S13",
+      "scheduled_dates": "2026-09-20 ~ 2026-09-26",
+      "status": "in_progress",
+      "started_at": "2026-09-11T09:20:00+00:00"
     },
     {
-      "id": "S14",
-      "name": "数据源升级（G4：akshare 升 P1 + 期货外汇开启）",
-      "status": "completed",
-      "started_at": "2026-09-11T10:00:00+00:00",
-      "completed_at": "2026-09-12T14:05:00+08:00",
-      "scheduled_dates": "2026-09-27 ~ 2026-09-29",
+      "source": "Issue #29 高质量项目集成 · G4（akfamily/akshare）",
       "tasks": [
         {
-          "id": "T14.1",
           "name": "akshare 从可选依赖升为 P1，回退链 wind → akshare → tencent → simulation",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-11T10:20:00+00:00",
-          "result": "akshare 从可选依赖升为 P1，回退链 wind → akshare → tencent → simulation：自动任务已交付"
+          "result": "akshare 从可选依赖升为 P1，回退链 wind → akshare → tencent → simulation：自动任务已交付",
+          "id": "T14.1",
+          "status": "completed"
         },
         {
-          "id": "T14.2",
           "name": "新增 tests/test_akshare_client.py，期货/外汇标的开启",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-11T10:20:00+00:00",
-          "result": "新增 tests/test_akshare_client.py，期货/外汇标的开启：自动任务已交付"
+          "result": "新增 tests/test_akshare_client.py，期货/外汇标的开启：自动任务已交付",
+          "id": "T14.2",
+          "status": "completed"
         },
         {
-          "id": "T14.3",
+          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
           "name": "回退链验收（人工检查点）：实测 38/38 标的 + 5/5 宏观 = 100% ≥95%，报告 reports/s14_data_source_acceptance.json；**验收数字已达标，但「① 回退链顺序 ② 期货/外汇是否纳入训练主线」仍待人工定稿**（见 00_kickoff/akshare_data_source_conclusion.md 第六节）",
-          "status": "confirmed",
-          "auto_run": false,
           "decision": "keep",
           "confirmed_by": "yuppiez328",
+          "confirmed_script_must": "确认现状定稿：wind→akshare→tencent→simulation；期货/外汇进训练主线，外汇池不扩充",
+          "auto_run": false,
           "confirmed_by_nick": "安然",
           "confirmed_at": "2026-09-12T14:05:00+08:00",
-          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）",
-          "confirmed_script_must": "确认现状定稿：wind→akshare→tencent→simulation；期货/外汇进训练主线，外汇池不扩充"
+          "result": null,
+          "id": "T14.3",
+          "status": "confirmed",
+          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）"
         }
       ],
-      "auto_acceptable": [
-        "T14.1",
-        "T14.2"
-      ],
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
       "manual_checkpoint": [
         "T14.3"
       ],
-      "note": "无前置依赖，可与 S12/S13 并行。里程碑 09-29：数据侧不再是瓶颈。实测：标的池 38/38 + 宏观 5/5 = 100%（验收线 95%），期货 10/10、外汇 2/2 全部真实可取；结论见 00_kickoff/akshare_data_source_conclusion.md。不改门禁。 | T14.3 已更正为人工检查点（此前误标 completed）：验收数字 100% 已达标并入库，但回退链顺序/期货外汇是否进主线仍待人工定稿，未签字前保持 pending（fail-close）。",
-      "source": "Issue #29 高质量项目集成 · G4（akfamily/akshare）",
-      "depends_on": [],
-      "confirmed_by": "yuppiez328",
-      "confirmed_by_nick": "安然",
-      "confirmed_at": "2026-09-12T14:05:00+08:00",
-      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
       "closing": {
         "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
         "manual_scope": "已确认 — T14.3",
@@ -783,64 +766,63 @@
         "confirmed_at": "2026-09-12T14:05:00+08:00",
         "confirmed_by": "yuppiez328",
         "affects_gate": false
-      }
+      },
+      "note": "无前置依赖，可与 S12/S13 并行。里程碑 09-29：数据侧不再是瓶颈。实测：标的池 38/38 + 宏观 5/5 = 100%（验收线 95%），期货 10/10、外汇 2/2 全部真实可取；结论见 00_kickoff/akshare_data_source_conclusion.md。不改门禁。 | T14.3 已更正为人工检查点（此前误标 completed）：验收数字 100% 已达标并入库，但回退链顺序/期货外汇是否进主线仍待人工定稿，未签字前保持 pending（fail-close）。",
+      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "name": "数据源升级（G4：akshare 升 P1 + 期货外汇开启）",
+      "confirmed_by": "yuppiez328",
+      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
+      "auto_acceptable": [
+        "T14.1",
+        "T14.2"
+      ],
+      "confirmed_by_nick": "安然",
+      "completed_at": null,
+      "depends_on": [],
+      "id": "S14",
+      "scheduled_dates": "2026-09-27 ~ 2026-09-29",
+      "status": "in_progress",
+      "started_at": "2026-09-11T10:00:00+00:00"
     },
     {
-      "id": "S15",
-      "name": "调参与概率预测（G5：optuna 超参搜索 + 神经概率区间置信度门槛）",
-      "status": "completed",
-      "started_at": "2026-09-11T10:20:00+00:00",
-      "completed_at": "2026-09-12T14:05:00+08:00",
-      "scheduled_dates": "2026-09-30 ~ 2026-10-04",
+      "source": "Issue #29 高质量项目集成 · G5（optuna / Nixtla neuralforecast）",
       "tasks": [
         {
-          "id": "T15.1",
           "name": "optuna 包裹 LightGBM/LSTM 训练，搜索记录进 reports/",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-11T11:30:00+00:00",
-          "result": "optuna 包裹 LightGBM/LSTM 训练，搜索记录进 reports/：自动任务已交付"
+          "result": "optuna 包裹 LightGBM/LSTM 训练，搜索记录进 reports/：自动任务已交付",
+          "id": "T15.1",
+          "status": "completed"
         },
         {
-          "id": "T15.2",
           "name": "neuralforecast 概率区间 → 置信度阈值，仅对高置信样本给信号（与 withheld 语义一致）",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-11T11:30:00+00:00",
-          "result": "neuralforecast 概率区间 → 置信度阈值，仅对高置信样本给信号（与 withheld 语义一致）：自动任务已交付"
+          "result": "neuralforecast 概率区间 → 置信度阈值，仅对高置信样本给信号（与 withheld 语义一致）：自动任务已交付",
+          "id": "T15.2",
+          "status": "completed"
         },
         {
-          "id": "T15.3",
-          "name": "『置信度 ≥thr 子集命中率 + 覆盖率下限』双指标重构门禁（thr∈[0.2,0.3]）与是否提门禁决策（人工签字检查点）",
-          "status": "confirmed",
-          "auto_run": false,
-          "implementation_status": "delivered",
           "decision": "defer",
-          "confirmed_by": "yuppiez328",
-          "confirmed_by_nick": "安然",
+          "blocked_on": "human_signature",
           "confirmed_at": "2026-09-12T14:05:00+08:00",
-          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+          "implementation_status": "delivered",
           "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）",
-          "confirmed_script_must": "确认门禁维持只读（report_only / freeze_structure=true），本次不解锁"
+          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+          "name": "『置信度 ≥thr 子集命中率 + 覆盖率下限』双指标重构门禁（thr∈[0.2,0.3]）与是否提门禁决策（人工签字检查点）",
+          "confirmed_by": "yuppiez328",
+          "confirmed_script_must": "确认门禁维持只读（report_only / freeze_structure=true），本次不解锁",
+          "auto_run": false,
+          "confirmed_by_nick": "安然",
+          "id": "T15.3",
+          "status": "confirmed"
         }
       ],
-      "auto_acceptable": [
-        "T15.1",
-        "T15.2"
-      ],
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
       "manual_checkpoint": [
         "T15.3"
       ],
-      "note": "仍不自动改门禁。里程碑 10-04：若 short/mid 命中率过 52% 且 IC 稳定，走人工审批切换 strategy_gate；未过则如实记入 SALES_PLAN §8.2 并说明原因。 | T15.1/T15.2 已落地（2026-09-11）：optuna 搜索（tune 命令）与置信度阈值曲线（confidence 命令）均 report_only/affects_gate=false。 | T15.3 补充验证完成（2026-09-12，真实 38 标的池）：① optuna 60 trials 收敛重跑——IC 增量真实但有限（+0.007~+0.033），OOT 命中率 50.9%~51.3% 未过 52%，调参不是门禁瓶颈；② 独立保留期（后 30%，未参与任何扫描）复验置信度阈值——阈值↑命中率↑单调成立，候选区间 thr∈[0.2,0.3]，保留期命中率 52.9%~58.5%、覆盖 5.6%~35.6%；结论与材料见 00_kickoff/hyperopt_confidence_conclusion.md §六~§九、reports/confidence_holdout_verify.json。T15.3 人工签字仍待办。 | T15.3 结构重构交付（2026-09-12）：新增 src/eval/confidence_gate.py 双指标判定 + main.py confidence-gate 决策单（reports/confidence_gate_decision.json），configs/strategy_gate.confidence_gate 段默认 report_only、freeze_structure=true。affects_gate=false，strategy_gate 放行结论零变更；无人工签字恒为 pending，chosen_threshold 须落在候选区间内。详见 00_kickoff/hyperopt_confidence_conclusion.md §十。",
-      "source": "Issue #29 高质量项目集成 · G5（optuna / Nixtla neuralforecast）",
-      "depends_on": [
-        "S13"
-      ],
-      "confirmed_by": "yuppiez328",
-      "confirmed_by_nick": "安然",
-      "confirmed_at": "2026-09-12T14:05:00+08:00",
-      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
       "closing": {
         "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
         "manual_scope": "已确认 — T15.3",
@@ -848,391 +830,459 @@
         "confirmed_at": "2026-09-12T14:05:00+08:00",
         "confirmed_by": "yuppiez328",
         "affects_gate": false
-      }
+      },
+      "note": "仍不自动改门禁。里程碑 10-04：若 short/mid 命中率过 52% 且 IC 稳定，走人工审批切换 strategy_gate；未过则如实记入 SALES_PLAN §8.2 并说明原因。 | T15.1/T15.2 已落地（2026-09-11）：optuna 搜索（tune 命令）与置信度阈值曲线（confidence 命令）均 report_only/affects_gate=false。 | T15.3 补充验证完成（2026-09-12，真实 38 标的池）：① optuna 60 trials 收敛重跑——IC 增量真实但有限（+0.007~+0.033），OOT 命中率 50.9%~51.3% 未过 52%，调参不是门禁瓶颈；② 独立保留期（后 30%，未参与任何扫描）复验置信度阈值——阈值↑命中率↑单调成立，候选区间 thr∈[0.2,0.3]，保留期命中率 52.9%~58.5%、覆盖 5.6%~35.6%；结论与材料见 00_kickoff/hyperopt_confidence_conclusion.md §六~§九、reports/confidence_holdout_verify.json。T15.3 人工签字仍待办。 | T15.3 结构重构交付（2026-09-12）：新增 src/eval/confidence_gate.py 双指标判定 + main.py confidence-gate 决策单（reports/confidence_gate_decision.json），configs/strategy_gate.confidence_gate 段默认 report_only、freeze_structure=true。affects_gate=false，strategy_gate 放行结论零变更；无人工签字恒为 pending，chosen_threshold 须落在候选区间内。详见 00_kickoff/hyperopt_confidence_conclusion.md §十。",
+      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "name": "调参与概率预测（G5：optuna 超参搜索 + 神经概率区间置信度门槛）",
+      "confirmed_by": "yuppiez328",
+      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
+      "auto_acceptable": [
+        "T15.1",
+        "T15.2"
+      ],
+      "confirmed_by_nick": "安然",
+      "completed_at": null,
+      "depends_on": [
+        "S13"
+      ],
+      "id": "S15",
+      "scheduled_dates": "2026-09-30 ~ 2026-10-04",
+      "status": "in_progress",
+      "started_at": "2026-09-11T10:20:00+00:00"
     },
     {
-      "id": "S16",
-      "name": "概率区间校准（H1：MAPIE 保形预测 + neuralforecast 区间实装）",
-      "status": "completed",
-      "started_at": "2026-09-12T00:58:49.498077+00:00",
-      "completed_at": "2026-09-12T14:05:00+08:00",
-      "scheduled_dates": "2026-10-05 ~ 2026-10-11",
+      "source": "Issue #40 高质量项目集成2 · H1（scikit-learn-contrib/MAPIE + Nixtla/neuralforecast）",
+      "auto_acceptable_completed_at": "2026-09-12T01:20:00+00:00",
       "tasks": [
         {
-          "id": "T16.1",
           "name": "接入 MAPIE（scikit-learn-contrib/MAPIE，BSD-3-Clause）：在现行 LightGBM 上用保形预测产出带覆盖率保证的预测区间，输出校准曲线到 reports/calibration/",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-12T01:20:00+00:00",
-          "result": "src/eval/conformal_probability.py：三段切分（约 60/10/30，保留期与 T16.3 holdout_split 完全同段）+ MAPIE SplitConformalClassifier（LAC，prefit）产带覆盖率保证的预测集合 → [0,1] 区间 → 置信分（复用 S15 的 confidence_from_interval）；覆盖率审计（目标 vs 实测 + bootstrap 95% CI）、可靠性曲线（Brier/ECE + isotonic 参考臂）、区间宽度校准；落盘 reports/calibration/conformal_interval.json。mapie 1.5.0 为可选运行时依赖，未安装时明确报错不降级"
+          "result": "src/eval/conformal_probability.py：三段切分（约 60/10/30，保留期与 T16.3 holdout_split 完全同段）+ MAPIE SplitConformalClassifier（LAC，prefit）产带覆盖率保证的预测集合 → [0,1] 区间 → 置信分（复用 S15 的 confidence_from_interval）；覆盖率审计（目标 vs 实测 + bootstrap 95% CI）、可靠性曲线（Brier/ECE + isotonic 参考臂）、区间宽度校准；落盘 reports/calibration/conformal_interval.json。mapie 1.5.0 为可选运行时依赖，未安装时明确报错不降级",
+          "id": "T16.1",
+          "status": "completed"
         },
         {
-          "id": "T16.2",
           "name": "把区间宽度经既有 confidence_from_interval 换算为置信分，与现行 |p-0.5|×2 口径做同数据同折对照",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-12T01:20:00+00:00",
-          "result": "compare_interval_vs_proba：区间置信分与现行 |p−0.5|×2 放进同一条 sweep_confidence 链路，同数据/同折/同模型，逐阈值并排对照；保守口径四态判定（improved/degraded/mixed/insufficient_samples，一升一降一律 mixed 不择优）；落盘 reports/calibration/conformal_vs_proba.json；tests/test_roadmap_s16_t161.py 覆盖无前视硬校验与全部判定态"
+          "result": "compare_interval_vs_proba：区间置信分与现行 |p−0.5|×2 放进同一条 sweep_confidence 链路，同数据/同折/同模型，逐阈值并排对照；保守口径四态判定（improved/degraded/mixed/insufficient_samples，一升一降一律 mixed 不择优）；落盘 reports/calibration/conformal_vs_proba.json；tests/test_roadmap_s16_t161.py 覆盖无前视硬校验与全部判定态",
+          "id": "T16.2",
+          "status": "completed"
         },
         {
-          "id": "T16.3",
           "name": "多时段滚动保留期复验：逐季度切分保留期（补 T15.3 遗留限制），检验 thr∈[0.2,0.3] 命中率优势是否跨时段稳定",
-          "status": "completed",
           "auto_run": true,
           "completed_at": "2026-09-12T00:58:49.498077+00:00",
-          "result": "src/eval/confidence_holdout.py + main.py confidence-holdout：保留期复验报告（决策单唯一证据源）首次有可复现生成命令；保留期切 n_periods 个互不重叠时段逐段检验 thr∈[0.2,0.3] 优势，stable/unstable/insufficient 三态如实输出；tests/test_roadmap_s16_t163.py 26 例"
+          "result": "src/eval/confidence_holdout.py + main.py confidence-holdout：保留期复验报告（决策单唯一证据源）首次有可复现生成命令；保留期切 n_periods 个互不重叠时段逐段检验 thr∈[0.2,0.3] 优势，stable/unstable/insufficient 三态如实输出；tests/test_roadmap_s16_t163.py 26 例",
+          "id": "T16.3",
+          "status": "completed"
         },
         {
-          "id": "T16.4",
+          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
           "name": "区间口径 vs 概率距离口径的取舍定稿（人工检查点，含覆盖率下限与信号量权衡）",
-          "status": "confirmed",
-          "auto_run": false,
           "decision": "defer",
           "confirmed_by": "yuppiez328",
+          "confirmed_script_must": "确认不切口径：概率距离口径继续作生产刻度，保形区间口径 stay report_only",
+          "auto_run": false,
           "confirmed_by_nick": "安然",
           "confirmed_at": "2026-09-12T14:05:00+08:00",
-          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）",
-          "confirmed_script_must": "确认不切口径：概率距离口径继续作生产刻度，保形区间口径 stay report_only"
+          "id": "T16.4",
+          "status": "confirmed",
+          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）"
         }
       ],
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
+      "manual_checkpoint": [
+        "T16.4"
+      ],
+      "result": "自动任务已交付：保形预测覆盖率校准 + 区间/概率距离口径对照 + 多时段滚动复验（T16.4 待签字）",
+      "closing": {
+        "auto_scope": "已完成 —— 本阶段全部 auto_acceptable 任务（T16.1/T16.2/T16.3）",
+        "manual_scope": "已确认 — T16.4",
+        "decision": "T16.4 置信分口径：确认不切换（概率距离口径作生产刻度；保形区间口径 stay report_only，作覆盖率审计旁证）",
+        "evidence": [
+          "reports/calibration/conformal_interval.json",
+          "reports/calibration/conformal_vs_proba.json",
+          "src/eval/conformal_probability.py",
+          "src/eval/calibration_ab.py"
+        ],
+        "note": "区间换算机制在 S15 已抽象就绪（confidence_from_interval），本轮只喂数据不改链路；T16.3 多时段复验结论为 partially_stable（负面结论，如实入库）。 阶段 status 仍为 in_progress：人工签字前不得标 completed（守卫钉死）。",
+        "confirmed_at": "2026-09-12T14:05:00+08:00",
+        "confirmed_by": "yuppiez328",
+        "affects_gate": false
+      },
+      "note": "直接回应 T15.3 遗留项：保留期只有一个 + neuralforecast 未实装。区间换算机制在 S15 已抽象就绪（confidence_from_interval），本轮只喂数据不改链路。 T16.3 提前交付（Issue #29「选择最优方案」指令）。 | T16.1/T16.2 已交付（2026-09-12，Issue #29「已合并 签字继续」）：新增 src/eval/conformal_probability.py 与 `python main.py conformal-interval`（--confidence-levels/--no-compare/--holdout-ratio）；MAPIE split conformal（LAC）+ 覆盖率审计 + Brier/ECE + 区间宽度校准，落盘 reports/calibration/；区间口径 vs 概率距离口径同折对照；configs model.factors.conformal.enabled 缺省 false、affects_gate 恒 false；T16.4 人工检查点仍 pending。",
+      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "name": "概率区间校准（H1：MAPIE 保形预测 + neuralforecast 区间实装）",
+      "confirmed_by": "yuppiez328",
+      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
       "auto_acceptable": [
         "T16.1",
         "T16.2",
         "T16.3"
       ],
-      "manual_checkpoint": [
-        "T16.4"
-      ],
-      "note": "直接回应 T15.3 遗留项：保留期只有一个 + neuralforecast 未实装。区间换算机制在 S15 已抽象就绪（confidence_from_interval），本轮只喂数据不改链路。 T16.3 提前交付（Issue #29「选择最优方案」指令）。 | T16.1/T16.2 已交付（2026-09-12，Issue #29「已合并 签字继续」）：新增 src/eval/conformal_probability.py 与 `python main.py conformal-interval`（--confidence-levels/--no-compare/--holdout-ratio）；MAPIE split conformal（LAC）+ 覆盖率审计 + Brier/ECE + 区间宽度校准，落盘 reports/calibration/；区间口径 vs 概率距离口径同折对照；configs model.factors.conformal.enabled 缺省 false、affects_gate 恒 false；T16.4 人工检查点仍 pending。",
-      "source": "Issue #40 高质量项目集成2 · H1（scikit-learn-contrib/MAPIE + Nixtla/neuralforecast）",
+      "confirmed_by_nick": "安然",
+      "completed_at": null,
       "depends_on": [
         "S15"
       ],
-      "result": "自动任务已交付：保形预测覆盖率校准 + 区间/概率距离口径对照 + 多时段滚动复验（T16.4 待签字）",
-      "confirmed_by": "yuppiez328",
-      "confirmed_by_nick": "安然",
+      "auto_acceptable_verified": true,
+      "round": "H1",
+      "id": "S16",
+      "scheduled_dates": "2026-10-05 ~ 2026-10-11",
+      "status": "in_progress",
+      "started_at": "2026-09-12T00:58:49.498077+00:00"
+    },
+    {
+      "source": "Issue #40 高质量项目集成2 · H2（Advances in Financial ML 方法论 · CPCV/DSR）",
+      "auto_acceptable_completed_at": "2026-09-12T01:30:00+00:00",
+      "tasks": [
+        {
+          "name": "组合式净化交叉验证（CPCV）实现：purge/embargo 对齐 leakage_checklist，产出 DSR/PSR 类过拟合概率指标，接入 src/eval/",
+          "auto_run": true,
+          "completed_at": "2026-09-12T01:30:00Z",
+          "result": "src/eval/cpcv.py：CPCV 组合式路径（N=6,k=2 → C(6,2)=15 条）+ purge/embargo 对齐 leakage_checklist；DSR 风格选择偏差收缩指标（方法名如实标注 cpcv_shrinkage，不冒充精确解）与 PBO；无前视：折生成只用索引、净化只做剔除。CLI `python main.py overfit-audit`。",
+          "id": "T17.1",
+          "status": "completed"
+        },
+        {
+          "name": "把 trials 登记（append-only）与 CPCV/多重比较校正打通：报告里自动标注「本次读数已扫描 N 次」的选择自由度",
+          "auto_run": true,
+          "completed_at": "2026-09-12T01:30:00Z",
+          "result": "src/eval/overfit_audit.py：统一试验预算（跨命令累计，asof 无前视口径），报告自动标注「本次读数已扫描 N 次（历史 X + 本次 Y）」；登记不可用时如实标注「校正强度可能被低估」。",
+          "id": "T17.2",
+          "status": "completed"
+        },
+        {
+          "name": "对 S11~S15 全部历史读数回算校正后显著性，如实入库（预期多数结论维持否定）",
+          "auto_run": true,
+          "completed_at": "2026-09-12T01:30:00Z",
+          "result": "对 S11~S15 历史读数（horizon_decision / feature_experiment / qlib_ab / label_ab / confidence_gate_decision）逐条 Bonferroni 回算，raw p → 校正 p → 是否仍显著；只读不改写既有报告，报告缺失如实标注不猜。",
+          "id": "T17.3",
+          "status": "completed"
+        },
+        {
+          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+          "name": "门禁是否引入过拟合概率下限的决策（人工检查点）",
+          "decision": "defer",
+          "confirmed_by": "yuppiez328",
+          "confirmed_script_must": "确认门禁不引入「过拟合概率下限」这条腿（PBO 不可用，不构成依据）",
+          "auto_run": false,
+          "confirmed_by_nick": "安然",
+          "confirmed_at": "2026-09-12T14:05:00+08:00",
+          "id": "T17.4",
+          "status": "confirmed",
+          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）"
+        }
+      ],
       "confirmed_at": "2026-09-12T14:05:00+08:00",
-      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
+      "manual_checkpoint": [
+        "T17.4"
+      ],
+      "result": "自动任务已交付：CPCV 净化交叉验证 + 统一试验预算 + 历史读数回算（T17.4 待签字）",
       "closing": {
-        "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
-        "manual_scope": "已确认 — T16.4",
-        "decision": "T16.4 置信分口径：确认不切换（概率距离口径作生产刻度；保形区间口径 stay report_only，作覆盖率审计旁证）",
+        "auto_scope": "已完成 —— 本阶段全部 auto_acceptable 任务（T17.1/T17.2/T17.3）",
+        "manual_scope": "已确认 — T17.4",
+        "decision": "T17.4 过拟合概率下限：确认本次不引入（PBO 不可用，不构成依据；补多候选矩阵属后续范畴）",
+        "evidence": [
+          "reports/cpcv_evaluation.json",
+          "reports/overfit_audit.json",
+          "src/eval/cpcv.py",
+          "src/eval/overfit_audit.py"
+        ],
+        "note": "PBO 需「多候选 × 路径」矩阵，本轮未扫多候选 → available=false，不冒充；统一试验预算跨命令累计并自动标注选择自由度。 阶段 status 仍为 in_progress：人工签字前不得标 completed（守卫钉死）。",
         "confirmed_at": "2026-09-12T14:05:00+08:00",
         "confirmed_by": "yuppiez328",
         "affects_gate": false
-      }
-    },
-    {
-      "id": "S17",
+      },
+      "note": "延续 S11 多重比较校正口径，把「选择自由度」从事后补记升级为流水线内建。属方法论加固，不直接动模型。 | S17 于 2026-09-12 提前开工（Issue #29 排期指令）：T17.1~T17.3 自动任务交付，T17.4 人工检查点保持 pending。",
+      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
       "name": "评估防过拟合加固（H2：CPCV + 试验多重比较记账）",
-      "status": "completed",
-      "started_at": "2026-09-12T01:30:00Z",
-      "completed_at": "2026-09-12T14:05:00+08:00",
-      "scheduled_dates": "2026-10-12 ~ 2026-10-18",
-      "tasks": [
-        {
-          "id": "T17.1",
-          "name": "组合式净化交叉验证（CPCV）实现：purge/embargo 对齐 leakage_checklist，产出 DSR/PSR 类过拟合概率指标，接入 src/eval/",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-12T01:30:00Z",
-          "result": "src/eval/cpcv.py：CPCV 组合式路径（N=6,k=2 → C(6,2)=15 条）+ purge/embargo 对齐 leakage_checklist；DSR 风格选择偏差收缩指标（方法名如实标注 cpcv_shrinkage，不冒充精确解）与 PBO；无前视：折生成只用索引、净化只做剔除。CLI `python main.py overfit-audit`。"
-        },
-        {
-          "id": "T17.2",
-          "name": "把 trials 登记（append-only）与 CPCV/多重比较校正打通：报告里自动标注「本次读数已扫描 N 次」的选择自由度",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-12T01:30:00Z",
-          "result": "src/eval/overfit_audit.py：统一试验预算（跨命令累计，asof 无前视口径），报告自动标注「本次读数已扫描 N 次（历史 X + 本次 Y）」；登记不可用时如实标注「校正强度可能被低估」。"
-        },
-        {
-          "id": "T17.3",
-          "name": "对 S11~S15 全部历史读数回算校正后显著性，如实入库（预期多数结论维持否定）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-12T01:30:00Z",
-          "result": "对 S11~S15 历史读数（horizon_decision / feature_experiment / qlib_ab / label_ab / confidence_gate_decision）逐条 Bonferroni 回算，raw p → 校正 p → 是否仍显著；只读不改写既有报告，报告缺失如实标注不猜。"
-        },
-        {
-          "id": "T17.4",
-          "name": "门禁是否引入过拟合概率下限的决策（人工检查点）",
-          "status": "confirmed",
-          "auto_run": false,
-          "decision": "defer",
-          "confirmed_by": "yuppiez328",
-          "confirmed_by_nick": "安然",
-          "confirmed_at": "2026-09-12T14:05:00+08:00",
-          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）",
-          "confirmed_script_must": "确认门禁不引入「过拟合概率下限」这条腿（PBO 不可用，不构成依据）"
-        }
-      ],
+      "confirmed_by": "yuppiez328",
+      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
       "auto_acceptable": [
         "T17.1",
         "T17.2",
         "T17.3"
       ],
-      "manual_checkpoint": [
-        "T17.4"
-      ],
-      "note": "延续 S11 多重比较校正口径，把「选择自由度」从事后补记升级为流水线内建。属方法论加固，不直接动模型。 | S17 于 2026-09-12 提前开工（Issue #29 排期指令）：T17.1~T17.3 自动任务交付，T17.4 人工检查点保持 pending。",
-      "source": "Issue #40 高质量项目集成2 · H2（Advances in Financial ML 方法论 · CPCV/DSR）",
+      "confirmed_by_nick": "安然",
+      "completed_at": null,
       "depends_on": [
         "S11",
         "S16"
       ],
-      "result": "自动任务已交付：CPCV 净化交叉验证 + 统一试验预算 + 历史读数回算（T17.4 待签字）",
-      "confirmed_by": "yuppiez328",
-      "confirmed_by_nick": "安然",
+      "auto_acceptable_verified": true,
+      "round": "H2",
+      "id": "S17",
+      "scheduled_dates": "2026-10-12 ~ 2026-10-18",
+      "status": "in_progress",
+      "started_at": "2026-09-12T01:30:00Z"
+    },
+    {
+      "source": "Issue #40 高质量项目集成2 · H3（hmmlearn 市场状态识别）",
+      "auto_acceptable_completed_at": "2026-09-12T01:40:00+00:00",
+      "tasks": [
+        {
+          "name": "接入 hmmlearn 做市场状态识别（牛/熊/震荡），状态标签严格只用当日及之前信息（无前视）",
+          "auto_run": true,
+          "completed_at": "2026-09-12T02:20:00+00:00",
+          "result": "src/eval/regime.py：GaussianHMM(bull/range/bear) 状态识别，expanding 无前视口径（第 t 天只用 [0,t] 观测重训）+ full_sample 有前视对照口径（明确标注）；固定 3 态防选择自由度回流",
+          "id": "T18.1",
+          "status": "completed"
+        },
+        {
+          "name": "按状态分层评估现行三周期模型命中率，回答「模型是否只在特定状态有效」——这是 README 已知限制「按标的分层」的状态维度补充",
+          "auto_run": true,
+          "completed_at": "2026-09-12T02:20:00+00:00",
+          "result": "按状态分层评估保留期样本：逐状态 IC/命中率/样本数 + summarize_regime_spread（uniform/differentiated/marginal/insufficient）；样本不足不发指标",
+          "id": "T18.2",
+          "status": "completed"
+        },
+        {
+          "name": "状态作为特征的增量验证（同口径 A/B：仅加一个变量），结论好坏如实入库",
+          "auto_run": true,
+          "completed_at": "2026-09-12T02:20:00+00:00",
+          "result": "状态 one-hot 单变量增量 A/B：同数据同折同模型，保守四态判定（一升一降一律 mixed）",
+          "id": "T18.3",
+          "status": "completed"
+        },
+        {
+          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+          "name": "状态分层是否进入信号门禁/风控 withheld 语义（人工检查点）",
+          "decision": "moot_by_convention",
+          "confirmed_by": "yuppiez328",
+          "confirmed_script_must": "确认不改配置：状态既不进门禁/风控，也不作生产特征（A/B=degraded）",
+          "auto_run": false,
+          "confirmed_by_nick": "安然",
+          "confirmed_at": "2026-09-12T14:05:00+08:00",
+          "id": "T18.4",
+          "status": "confirmed",
+          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）"
+        }
+      ],
       "confirmed_at": "2026-09-12T14:05:00+08:00",
-      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
+      "manual_checkpoint": [
+        "T18.4"
+      ],
+      "result": "s18_h3_t18_1_t18_3_delivered_t18_4_pending",
       "closing": {
-        "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
-        "manual_scope": "已确认 — T17.4",
-        "decision": "T17.4 过拟合概率下限：确认本次不引入（PBO 不可用，不构成依据；补多候选矩阵属后续范畴）",
+        "auto_scope": "已完成 —— 本阶段全部 auto_acceptable 任务（T18.1/T18.2/T18.3）",
+        "manual_scope": "已确认 — T18.4",
+        "decision": "T18.4 状态分层：确认不改配置（不进门禁/风控，也不作生产特征）。全池读数归档：熊 62.55% vs 震荡 48.72%（差 13.83pp）",
+        "evidence": [
+          "reports/regime/regime_stratification.json",
+          "reports/regime/regime_feature_ab.json",
+          "src/eval/regime.py"
+        ],
+        "note": "本轮最有价值的读数：熊 62.55% vs 震荡 48.72%，差 13.83pp —— 解释「IC 为正但命中率卡线」的时间维度成因。 阶段 status 仍为 in_progress：人工签字前不得标 completed（守卫钉死）。",
         "confirmed_at": "2026-09-12T14:05:00+08:00",
         "confirmed_by": "yuppiez328",
         "affects_gate": false
-      }
-    },
-    {
-      "id": "S18",
+      },
+      "note": "与 S9 分池（资产类别维度）正交：S9 解决「谁的池」，H3 解决「什么时候」。用于解释「IC 为正但命中率卡线」的时间维度成因。 | T18.1~T18.3 已交付（`python main.py regime`，hmmlearn 0.3.3）：无前视用 expanding 重训口径；单标的冒烟 10d 分层 differentiated（极差 0.38）、状态特征 A/B degraded；T18.4 人工检查点保持 pending。",
+      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
       "name": "市场状态分层（H3：HMM 状态识别 + 状态内分层评估）",
-      "status": "completed",
-      "started_at": "2026-09-12T02:20:00+00:00",
-      "completed_at": "2026-09-12T14:05:00+08:00",
-      "scheduled_dates": "2026-10-19 ~ 2026-10-25",
-      "tasks": [
-        {
-          "id": "T18.1",
-          "name": "接入 hmmlearn 做市场状态识别（牛/熊/震荡），状态标签严格只用当日及之前信息（无前视）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-12T02:20:00+00:00",
-          "result": "src/eval/regime.py：GaussianHMM(bull/range/bear) 状态识别，expanding 无前视口径（第 t 天只用 [0,t] 观测重训）+ full_sample 有前视对照口径（明确标注）；固定 3 态防选择自由度回流"
-        },
-        {
-          "id": "T18.2",
-          "name": "按状态分层评估现行三周期模型命中率，回答「模型是否只在特定状态有效」——这是 README 已知限制「按标的分层」的状态维度补充",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-12T02:20:00+00:00",
-          "result": "按状态分层评估保留期样本：逐状态 IC/命中率/样本数 + summarize_regime_spread（uniform/differentiated/marginal/insufficient）；样本不足不发指标"
-        },
-        {
-          "id": "T18.3",
-          "name": "状态作为特征的增量验证（同口径 A/B：仅加一个变量），结论好坏如实入库",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-12T02:20:00+00:00",
-          "result": "状态 one-hot 单变量增量 A/B：同数据同折同模型，保守四态判定（一升一降一律 mixed）"
-        },
-        {
-          "id": "T18.4",
-          "name": "状态分层是否进入信号门禁/风控 withheld 语义（人工检查点）",
-          "status": "confirmed",
-          "auto_run": false,
-          "decision": "moot_by_convention",
-          "confirmed_by": "yuppiez328",
-          "confirmed_by_nick": "安然",
-          "confirmed_at": "2026-09-12T14:05:00+08:00",
-          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）",
-          "confirmed_script_must": "确认不改配置：状态既不进门禁/风控，也不作生产特征（A/B=degraded）"
-        }
-      ],
+      "confirmed_by": "yuppiez328",
+      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
       "auto_acceptable": [
         "T18.1",
         "T18.2",
         "T18.3"
       ],
-      "manual_checkpoint": [
-        "T18.4"
-      ],
-      "note": "与 S9 分池（资产类别维度）正交：S9 解决「谁的池」，H3 解决「什么时候」。用于解释「IC 为正但命中率卡线」的时间维度成因。 | T18.1~T18.3 已交付（`python main.py regime`，hmmlearn 0.3.3）：无前视用 expanding 重训口径；单标的冒烟 10d 分层 differentiated（极差 0.38）、状态特征 A/B degraded；T18.4 人工检查点保持 pending。 | 本轮（Issue #40 H 轮收口，2026-09-12）新增证据命令：`python main.py calibration-ablation` 用**同一次拟合**产出 base/platt/isotonic 三腿并排对照（决策读数消融，逐指标不择优），落盘 `reports/calibration/calibration_ablation.json`；`python main.py regime --holdout-evidence` 在既有拟合上补**合成留出**状态分层（非真实全池 38 标的读数，报告内标注 evidence_scope）。两者均 affects_gate=false，只产材料不产生结论。",
-      "source": "Issue #40 高质量项目集成2 · H3（hmmlearn 市场状态识别）",
+      "confirmed_by_nick": "安然",
+      "completed_at": null,
       "depends_on": [
         "S16"
       ],
-      "result": "s18_h3_t18_1_t18_3_delivered_t18_4_pending",
-      "confirmed_by": "yuppiez328",
-      "confirmed_by_nick": "安然",
+      "auto_acceptable_verified": true,
+      "round": "H3",
+      "id": "S18",
+      "scheduled_dates": "2026-10-19 ~ 2026-10-25",
+      "status": "in_progress",
+      "started_at": "2026-09-12T02:20:00+00:00"
+    },
+    {
+      "source": "Issue #40 高质量项目集成2 · H4（scikit-learn 校准 + Nixtla 概率口径）",
+      "auto_acceptable_completed_at": "2026-09-12T01:05:00+00:00",
+      "tasks": [
+        {
+          "name": "概率校准层：isotonic / Platt 校准器接在 LightGBM 输出后，用独立保留期验证校准误差（Brier / ECE）",
+          "auto_run": true,
+          "completed_at": "2026-09-12T00:58:49.498077+00:00",
+          "result": "src/eval/probability_calibration.py：isotonic/Platt 校准器 + Brier/ECE/可靠性曲线，三段式（训练<校准<复验）样本外读数；实测 ECE 0.1042→0.0025、Brier 0.2650→0.2498",
+          "id": "T19.1",
+          "status": "completed"
+        },
+        {
+          "name": "校准后置信度阈值曲线复算：校准是否让 thr 曲线更单调、更可解释（不改现行阈值）",
+          "auto_run": true,
+          "completed_at": "2026-09-12T00:58:49.498077+00:00",
+          "result": "src/eval/probability_calibration.py threshold_curve_after_calibration：校准前后置信度曲线单调性对照，现行阈值不改",
+          "id": "T19.2",
+          "status": "completed"
+        },
+        {
+          "name": "API 契约扩展：/api/v1/portfolio/summary 与 /signal 增加 calibrated_probability 与 uncertainty 字段（向后兼容，28 侧可渐进消费）",
+          "auto_run": true,
+          "completed_at": "2026-09-12T00:58:49.498077+00:00",
+          "result": "src/inference/probability_calibrator.py：推理期只读套用校准参数（缺文件=不校准不猜）；src/api/server.py 追加 calibrated_probability/uncertainty/calibration_applied 字段，既有字段逐字段不变（向后兼容）",
+          "id": "T19.3",
+          "status": "completed"
+        },
+        {
+          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+          "name": "校准层是否进主推理链路的决策（人工检查点）",
+          "decision": "defer",
+          "confirmed_by": "yuppiez328",
+          "confirmed_script_must": "确认校准层暂不进主推理链路（calibration.enabled=false），维持只读字段暴露",
+          "auto_run": false,
+          "confirmed_by_nick": "安然",
+          "confirmed_at": "2026-09-12T14:05:00+08:00",
+          "id": "T19.4",
+          "status": "confirmed",
+          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）"
+        }
+      ],
       "confirmed_at": "2026-09-12T14:05:00+08:00",
-      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
+      "manual_checkpoint": [
+        "T19.4"
+      ],
+      "result": "自动任务已交付：isotonic/Platt 概率校准层 + API 向后兼容字段（T19.4 待签字）",
       "closing": {
-        "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
-        "manual_scope": "已确认 — T18.4",
-        "decision": "T18.4 状态分层：确认不改配置（不进门禁/风控，也不作生产特征）。全池读数归档：熊 62.55% vs 震荡 48.72%（差 13.83pp）",
+        "auto_scope": "已完成 —— 本阶段全部 auto_acceptable 任务（T19.1/T19.2/T19.3）",
+        "manual_scope": "已确认 — T19.4",
+        "decision": "T19.4 校准层：确认暂不进主推理链路（calibration.enabled=false），API 仅保留只读字段。依据：校准是单调映射，决策读数消融未给出充分依据",
+        "evidence": [
+          "reports/probability_calibration_5d.json",
+          "src/eval/probability_calibration.py",
+          "src/inference/probability_calibrator.py",
+          "src/api/server.py"
+        ],
+        "note": "ECE 0.1042 → 0.0025（platt，−97.6%）—— 现行概率确实系统性高估/低估，校准层有实质价值。 阶段 status 仍为 in_progress：人工签字前不得标 completed（守卫钉死）。",
         "confirmed_at": "2026-09-12T14:05:00+08:00",
         "confirmed_by": "yuppiez328",
         "affects_gate": false
-      }
-    },
-    {
-      "id": "S19",
+      },
+      "note": "置信度门槛（S15）当前吃的是原始概率；若概率本身未校准，阈值语义会漂移。本阶段补上概率语义的前提。 | 自动可执行任务已交付（src/eval/probability_calibration.py + src/inference/probability_calibrator.py；main.py calibration；API 追加字段；tests/test_roadmap_s19.py（22 passed））；T19.4 校准层是否进主推理链路（人工检查点）",
+      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
       "name": "推理链路概率校准（H4：isotonic/Platt 校准 + 服务侧不确定性暴露）",
-      "status": "completed",
-      "started_at": "2026-09-12T00:58:49.498077+00:00",
-      "completed_at": "2026-09-12T14:05:00+08:00",
-      "scheduled_dates": "2026-10-26 ~ 2026-10-30",
-      "tasks": [
-        {
-          "id": "T19.1",
-          "name": "概率校准层：isotonic / Platt 校准器接在 LightGBM 输出后，用独立保留期验证校准误差（Brier / ECE）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-12T00:58:49.498077+00:00",
-          "result": "src/eval/probability_calibration.py：isotonic/Platt 校准器 + Brier/ECE/可靠性曲线，三段式（训练<校准<复验）样本外读数；实测 ECE 0.1042→0.0025、Brier 0.2650→0.2498"
-        },
-        {
-          "id": "T19.2",
-          "name": "校准后置信度阈值曲线复算：校准是否让 thr 曲线更单调、更可解释（不改现行阈值）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-12T00:58:49.498077+00:00",
-          "result": "src/eval/probability_calibration.py threshold_curve_after_calibration：校准前后置信度曲线单调性对照，现行阈值不改"
-        },
-        {
-          "id": "T19.3",
-          "name": "API 契约扩展：/api/v1/portfolio/summary 与 /signal 增加 calibrated_probability 与 uncertainty 字段（向后兼容，28 侧可渐进消费）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-12T00:58:49.498077+00:00",
-          "result": "src/inference/probability_calibrator.py：推理期只读套用校准参数（缺文件=不校准不猜）；src/api/server.py 追加 calibrated_probability/uncertainty/calibration_applied 字段，既有字段逐字段不变（向后兼容）"
-        },
-        {
-          "id": "T19.4",
-          "name": "校准层是否进主推理链路的决策（人工检查点）",
-          "status": "confirmed",
-          "auto_run": false,
-          "decision": "defer",
-          "confirmed_by": "yuppiez328",
-          "confirmed_by_nick": "安然",
-          "confirmed_at": "2026-09-12T14:05:00+08:00",
-          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）",
-          "confirmed_script_must": "确认校准层暂不进主推理链路（calibration.enabled=false），维持只读字段暴露"
-        }
-      ],
+      "confirmed_by": "yuppiez328",
+      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
       "auto_acceptable": [
         "T19.1",
         "T19.2",
         "T19.3"
       ],
-      "manual_checkpoint": [
-        "T19.4"
-      ],
-      "note": "置信度门槛（S15）当前吃的是原始概率；若概率本身未校准，阈值语义会漂移。本阶段补上概率语义的前提。 | 自动可执行任务已交付（src/eval/probability_calibration.py + src/inference/probability_calibrator.py；main.py calibration；API 追加字段；tests/test_roadmap_s19.py（22 passed））；T19.4 校准层是否进主推理链路（人工检查点） | 本轮（Issue #40 H 轮收口，2026-09-12）新增证据命令：`python main.py calibration-ablation` 用**同一次拟合**产出 base/platt/isotonic 三腿并排对照（决策读数消融，逐指标不择优），落盘 `reports/calibration/calibration_ablation.json`；`python main.py regime --holdout-evidence` 在既有拟合上补**合成留出**状态分层（非真实全池 38 标的读数，报告内标注 evidence_scope）。两者均 affects_gate=false，只产材料不产生结论。",
-      "source": "Issue #40 高质量项目集成2 · H4（scikit-learn 校准 + Nixtla 概率口径）",
+      "confirmed_by_nick": "安然",
+      "completed_at": null,
       "depends_on": [
         "S16",
         "S18"
       ],
-      "result": "自动任务已交付：isotonic/Platt 概率校准层 + API 向后兼容字段（T19.4 待签字）",
-      "confirmed_by": "yuppiez328",
-      "confirmed_by_nick": "安然",
-      "confirmed_at": "2026-09-12T14:05:00+08:00",
-      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
-      "closing": {
-        "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
-        "manual_scope": "已确认 — T19.4",
-        "decision": "T19.4 校准层：确认暂不进主推理链路（calibration.enabled=false），API 仅保留只读字段。依据：校准是单调映射，决策读数消融未给出充分依据",
-        "confirmed_at": "2026-09-12T14:05:00+08:00",
-        "confirmed_by": "yuppiez328",
-        "affects_gate": false
-      }
+      "auto_acceptable_verified": true,
+      "round": "H4",
+      "id": "S19",
+      "scheduled_dates": "2026-10-26 ~ 2026-10-30",
+      "status": "in_progress",
+      "started_at": "2026-09-12T00:58:49.498077+00:00"
     },
     {
-      "id": "S20",
-      "name": "投研辅助链路（H5：LLM 投研 Agent 只读接入，严格离线对照）",
-      "status": "completed",
-      "started_at": "2026-09-12T00:58:49.498077+00:00",
-      "completed_at": "2026-09-12T14:05:00+08:00",
-      "scheduled_dates": "2026-10-31 ~ 2026-11-06",
+      "source": "Issue #40 高质量项目集成2 · H5（TauricResearch/TradingAgents · hsliuping/TradingAgents-CN · qusong0627/QuantMind）",
+      "auto_acceptable_completed_at": "2026-09-12T01:05:00+00:00",
       "tasks": [
         {
-          "id": "T20.1",
-          "name": "调研 TradingAgents-CN / qusong0627/QuantMind 的 A 股数据适配与输出契约，产出一页评估（是否值得引入、依赖代价、许可证）",
-          "status": "confirmed",
-          "auto_run": false,
+          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+          "name": "调研 TradingAgents-CN / qusong0627/QuantMind 的 A 股数据适配与输出契约，产出一页评估（是否值得引入、依赖代价、许可证）；调研结论已交付见 00_kickoff/research_assist_conclusion.md，「是否采纳」并入 T20.4 人工检查点）",
           "decision": "reject",
           "confirmed_by": "yuppiez328",
+          "confirmed_script_must": "明确不采纳：0/3 候选满足准入，不放宽准入条件",
+          "auto_run": false,
           "confirmed_by_nick": "安然",
           "confirmed_at": "2026-09-12T14:05:00+08:00",
-          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）",
-          "confirmed_script_must": "明确不采纳：0/3 候选满足准入，不放宽准入条件"
-        },
-        {
-          "id": "T20.2",
-          "name": "如评估通过：以「只读辅助」形式接入——LLM 投研结论仅作报告附注，不进信号路径、不影响概率与门禁（延续只读信号源纪律）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-12T00:58:49.498077+00:00",
-          "result": "src/eval/research_assist.py attach_research_note：附注只挂报告层（research_note/research_source/research_note_readonly），不触碰 probability/direction/signal"
-        },
-        {
-          "id": "T20.3",
-          "name": "离线对照实验：同一批样本上「有/无 LLM 附注」的命中率差异（若无法量化则如实记录为不可验证并止损）",
-          "status": "completed",
-          "auto_run": true,
-          "completed_at": "2026-09-12T00:58:49.498077+00:00",
-          "result": "src/eval/research_assist.py offline_contrast：附注不参与打分 → 差异结构性为 0，如实记 unverifiable 并止损，不编造效果"
-        },
-        {
-          "id": "T20.4",
-          "name": "是否保留该链路的决策（人工检查点，含成本与噪声风险）",
+          "id": "T20.1",
           "status": "confirmed",
-          "auto_run": false,
+          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）"
+        },
+        {
+          "name": "如评估通过：以「只读辅助」形式接入——LLM 投研结论仅作报告附注，不进信号路径、不影响概率与门禁（延续只读信号源纪律）",
+          "auto_run": true,
+          "completed_at": "2026-09-12T00:58:49.498077+00:00",
+          "result": "src/eval/research_assist.py attach_research_note：附注只挂报告层（research_note/research_source/research_note_readonly），不触碰 probability/direction/signal",
+          "id": "T20.2",
+          "status": "completed"
+        },
+        {
+          "name": "离线对照实验：同一批样本上「有/无 LLM 附注」的命中率差异（若无法量化则如实记录为不可验证并止损）",
+          "auto_run": true,
+          "completed_at": "2026-09-12T00:58:49.498077+00:00",
+          "result": "src/eval/research_assist.py offline_contrast：附注不参与打分 → 差异结构性为 0，如实记 unverifiable 并止损，不编造效果",
+          "id": "T20.3",
+          "status": "completed"
+        },
+        {
+          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+          "name": "是否保留该链路的决策（人工检查点，含成本与噪声风险）",
           "decision": "cancel",
           "confirmed_by": "yuppiez328",
+          "confirmed_script_must": "确认整阶段取消：只读附注代码保留但不启用、不投入后续排期",
+          "auto_run": false,
           "confirmed_by_nick": "安然",
           "confirmed_at": "2026-09-12T14:05:00+08:00",
-          "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）",
-          "confirmed_script_must": "确认整阶段取消：只读附注代码保留但不启用、不投入后续排期"
+          "id": "T20.4",
+          "status": "confirmed",
+          "confirmed_scope": "现状默认值（NPC 不代选、不新增配置变更）"
         }
       ],
-      "auto_acceptable": [
-        "T20.2",
-        "T20.3"
-      ],
+      "confirmed_at": "2026-09-12T14:05:00+08:00",
       "manual_checkpoint": [
         "T20.1",
         "T20.4"
       ],
-      "note": "优先级最低、风险最高的一档：LLM 投研结论与当前数值模型不同源，严禁进入门禁。若 T20.1 评估不通过则整阶段取消（允许取消，不允许硬塞）。 | 自动可执行任务已交付（src/eval/research_assist.py；main.py research-assist；tests/test_roadmap_s20.py（22 passed））；T20.1 调研评估已交付（结论：无候选满足三项准入）/ T20.4 是否保留该链路的决策（人工检查点） | 本轮（2026-09-12）补齐被引用的结论文档 `00_kickoff/research_assist_conclusion.md`（原为空引用）与 `00_kickoff/probability_calibration_conclusion.md`（H4）。",
-      "source": "Issue #40 高质量项目集成2 · H5（TauricResearch/TradingAgents · hsliuping/TradingAgents-CN · qusong0627/QuantMind）",
-      "depends_on": [
-        "S19"
-      ],
       "result": "评估已交付：无候选满足准入，默认取消（T20.1 调研结论已出，T20.4 待签字）",
-      "confirmed_by": "yuppiez328",
-      "confirmed_by_nick": "安然",
-      "confirmed_at": "2026-09-12T14:05:00+08:00",
-      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
       "closing": {
-        "auto_scope": "已完成 — 本阶段全部 auto_acceptable 任务",
+        "auto_scope": "已完成 —— 本阶段全部 auto_acceptable 任务（T20.2/T20.3）",
         "manual_scope": "已确认 — T20.1 / T20.4",
         "decision": "T20.1 候选采纳 = 不采纳（0/3 满足准入）；T20.4 链路保留 = cancel。整阶段取消：不投入后续排期、不引入在线 LLM 依赖",
+        "evidence": [
+          "reports/research_assist_evaluation.json",
+          "src/eval/research_assist.py"
+        ],
+        "note": "调研结论 0/3 候选满足准入；离线对照结构性不可量化 → unverifiable + 止损，不编造效果。 阶段 status 仍为 in_progress：人工签字前不得标 completed（守卫钉死）。",
         "confirmed_at": "2026-09-12T14:05:00+08:00",
         "confirmed_by": "yuppiez328",
         "affects_gate": false
-      }
+      },
+      "note": "优先级最低、风险最高的一档：LLM 投研结论与当前数值模型不同源，严禁进入门禁。若 T20.1 评估不通过则整阶段取消（允许取消，不允许硬塞）。 | 自动可执行任务已交付（src/eval/research_assist.py；main.py research-assist；tests/test_roadmap_s20.py（22 passed））；T20.1 调研评估已交付（结论：无候选满足三项准入）/ T20.4 是否保留该链路的决策（人工检查点）",
+      "confirmed_in": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+      "name": "投研辅助链路（H5：LLM 投研 Agent 只读接入，严格离线对照）",
+      "confirmed_by": "yuppiez328",
+      "confirmed_note": "用户指令原文：「这11项确认 并继续按排期计划开发」（Issue #40）",
+      "auto_acceptable": [
+        "T20.2",
+        "T20.3"
+      ],
+      "confirmed_by_nick": "安然",
+      "completed_at": null,
+      "depends_on": [
+        "S19"
+      ],
+      "auto_acceptable_verified": true,
+      "round": "H5",
+      "id": "S20",
+      "scheduled_dates": "2026-10-31 ~ 2026-11-06",
+      "status": "in_progress",
+      "started_at": "2026-09-12T00:58:49.498077+00:00"
     }
   ],
-  "current_stage_index": 19,
-  "current_task_index": 0,
-  "last_run_date": "2026-09-12",
   "next_run_date": "2026-09-12",
-  "blockers": [],
-  "result": "高质量项目集成 2（Issue #40）：S16~S20 自动任务全部交付，G/H 轮 11 项遗留人工检查点已由用户确认（确认的是「现状默认值」，不含任何门禁/阈值变更）。strategy_gate 逐字段零变更，10 个阶段 affects_gate=false。",
-  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。 | S18(H3) 市场状态分层 T18.1~T18.3 已交付（src/eval/regime.py + python main.py regime）：HMM 三态识别走 expanding 无前视口径，状态分层评估 + 状态特征单变量 A/B 全部 report_only；T18.4 状态是否进门禁保持人工 pending。遗留人工检查点累计 8 个（含新增 T18.4）。 | 2026-09-12 人工检查点确认：G/H 轮 11 项（T11.2/T12.3/T13.4/T14.3/T15.3/T16.4/T17.4/T18.4/T19.4/T20.1/T20.4）由用户于 Issue #40 确认，S11~S20 相应收官为 completed；确认只固定现状与纪律，不改配置。"
+  "last_run_date": "2026-09-12",
+  "result": "s15_g5_t15_1_t15_2_supplementary_verified",
+  "project": "16_金融市场预测模型",
+  "timezone": "Asia/Shanghai",
+  "current_task_index": 0,
+  "current_stage_index": 19,
+  "start_date": "2026-09-10",
+  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。 | S18(H3) 市场状态分层 T18.1~T18.3 已交付（src/eval/regime.py + python main.py regime）：HMM 三态识别走 expanding 无前视口径，状态分层评估 + 状态特征单变量 A/B 全部 report_only；T18.4 状态是否进门禁保持人工 pending。遗留人工检查点累计 8 个（含新增 T18.4）。 | H 轮（S16~S20）收口对齐：自动任务全部交付并补齐阶段收口字段（round / auto_acceptable_completed_at / auto_acceptable_verified / closing，S16~S20 齐备）；H 轮人工检查点 T16.4/T17.4/T18.4/T19.4/T20.1/T20.4 全部进决策包（schedule/manual_checkpoints.json，共 11 条，priority 1..11 连续）；T20.1 由 completed 修正为 pending —— 调研结论已交付 ≠ 已采纳。补齐 H4/H5 结论文档（原先被引用但不存在）；新增守卫钉死阶段收口齐备 + 引用不得悬空。strategy_gate 零改动，全部阶段 affects_gate=false。",
+  "blockers": []
 }

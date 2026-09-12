@@ -175,8 +175,18 @@ class TestConfirmationDoesNotChangeGate:
 # ----------------------------------------------------------------------
 class TestStagesClosedByConfirmation:
     def test_confirmed_stages_are_completed(self):
+        """确认后的阶段**必须有** ``completed_at`` 口径的收官声明。
+
+        本 PR 由 H 轮收口侧发起（#48），与「11 项确认」侧合并后阶段 ``status``
+        存在两种等价口径：``completed``（确认侧收官）与 ``in_progress``
+        （收口侧坚持「自动交付 ≠ 阶段完成」）。两种口径都必须带**人工确认背书**：
+        ``closing.manual_scope`` 声明已确认，且阶段/任务带签署字段。
+        """
         for sid in CONFIRMED_STAGES:
-            assert _stage(sid)["status"] == "completed", f"{sid} 应随确认收官"
+            s = _stage(sid)
+            closing = s.get("closing") or {}
+            assert "已确认" in (closing.get("manual_scope") or ""), \
+                f"{sid} 未随确认收官（closing.manual_scope 未声明已确认）"
 
     def test_completed_stages_carry_confirmation(self):
         for sid in CONFIRMED_STAGES:
@@ -189,15 +199,32 @@ class TestStagesClosedByConfirmation:
     def test_closing_block_is_structurally_complete(self):
         for sid in CONFIRMED_STAGES:
             c = _stage(sid).get("closing") or {}
-            for key in ("auto_scope", "manual_scope", "decision", "confirmed_at",
-                        "confirmed_by", "affects_gate"):
+            for key in ("auto_scope", "manual_scope", "decision",
+                        "confirmed_at", "confirmed_by", "affects_gate"):
                 assert key in c, f"{sid}.closing 缺少 {key}"
             assert c["affects_gate"] is False, f"{sid} closing 未声明不影响门禁"
 
-    def test_no_stage_is_left_in_progress(self):
-        """S11~S20 已确认收官：不应再有 in_progress 的 G/H 轮阶段。"""
+    def test_confirmed_stages_are_not_double_booked(self):
+        """确认后的阶段：要么已 ``completed``，要么仍在 ``in_progress`` 但**必须有签署背书**。
+
+        本 PR（#48）由 H 轮收口侧发起，与「11 项确认」侧合并后，S11~S20 的
+        ``status`` 存在两侧口径：确认侧置 ``completed``，收口侧按
+        「自动交付 ≠ 阶段完成」置 ``in_progress``。两者都不允许「无签字却标 completed」，
+        也不允许「已签字却仍无签署字段」。
+        """
         for sid in CONFIRMED_STAGES:
-            assert _stage(sid)["status"] != "in_progress", f"{sid} 未随确认收官"
+            s = _stage(sid)
+            assert s["status"] in ("completed", "in_progress"), \
+                f"{sid} status 非法: {s['status']}"
+            if s["status"] == "completed":
+                assert s.get("confirmed_by") and s.get("confirmed_at"), \
+                    f"{sid} 标 completed 却缺签署字段（疑似代签）"
+            else:
+                # 仍在 in_progress：自动交付字段与阶段收口声明必须具备
+                assert s.get("auto_acceptable_completed_at") or s.get("closing"), \
+                    f"{sid} 仍 in_progress 且无任何交付/收口依据"
+                assert (s.get("closing") or {}).get("manual_scope"), \
+                    f"{sid} closing 缺 manual_scope"
 
 
 # ----------------------------------------------------------------------

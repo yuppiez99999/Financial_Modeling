@@ -2,14 +2,6 @@
   "generated_at": "2026-09-12T14:05:00+08:00",
   "source": "Issue #29（高质量项目集成）· Issue #40（高质量项目集成2）· G/H 轮遗留人工检查点决策包",
   "doc": "00_kickoff/manual_checkpoints_round_g_h.md",
-  "instruction": {
-    "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
-    "text": "用户指令原文：「这11项确认 并继续按排期计划开发」",
-    "confirmed_by": "yuppiez328",
-    "confirmed_by_nick": "安然",
-    "confirmed_at": "2026-09-12T14:05:00+08:00",
-    "interpretation": "用户指令是「确认」既有决策材料，不是新开一轮选型：每条按决策包给出的「现状默认值」落定，NPC 不代选、不放宽已定纪律。"
-  },
   "policy": {
     "npc_may_decide": false,
     "auto_acceptable_must_not_contain": "manual_checkpoint",
@@ -25,11 +17,6 @@
       "cancel": "整阶段取消",
       "moot_by_convention": "该项无「默认值」意义上的有效决策，按现约定处理（不改配置）"
     }
-  },
-  "boundary": {
-    "strategy_gate_changed": false,
-    "affects_gate": false,
-    "note": "本次确认**只固定现状与纪律**，不含任何阈值/配置文件变更；任何需要改 strategy_gate 结构的动作须另开 PR 逐字段 diff 后再人工确认。"
   },
   "checkpoints": [
     {
@@ -81,8 +68,8 @@
       "blocks": [
         "S19/H4 校准层接入方式"
       ],
-      "known_gap": "null 结构与 mapie 未安装时 backend=native，覆盖率承诺不成立；区间置信分粒度只有 {0, 0.5} 两档（与概率距离口径的连续刻度不同口径），对照判定 mixed，不择优",
       "status": "confirmed",
+      "known_gap": "null 结构与 mapie 未安装时 backend=native，覆盖率承诺不成立；区间置信分粒度只有 {0, 0.5} 两档（与概率距离口径的连续刻度不同口径），对照判定 mixed，不择优",
       "decision": "defer",
       "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
       "script_must": "确认置信分口径不切换：现行 |p−0.5|×2 概率距离口径继续作生产刻度；conformal 区间口径 stay report_only（enabled=false）",
@@ -139,7 +126,7 @@
       "id": "T18.4",
       "stage": "S18",
       "priority": 4,
-      "question": "市场状态用于特征 / 评估风控分层 / 都不用（三选一）",
+      "question": "市场状态用于特征 / 评估风控分层 / 都不用",
       "current_default": "model.factors.regime.enabled=false（不进生产链路）",
       "evidence": [
         "reports/regime/regime_stratification.json",
@@ -210,6 +197,7 @@
         "reports/qlib_ab.json"
       ],
       "doc": "00_kickoff/qlib_alpha158_conclusion.md#四",
+      "blocks": [],
       "status": "confirmed",
       "decision": "reject",
       "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
@@ -297,8 +285,8 @@
       "id": "T19.4",
       "stage": "S19",
       "priority": 9,
-      "question": "校准层（isotonic / Platt）是否进主推理链路",
-      "current_default": "model.calibration.enabled=false（校准参数已固化但缺省不套用；API 仅追加只读字段）",
+      "question": "概率校准层（isotonic/Platt）是否进主推理链路：校准后概率是否成为门禁阈值与 API 的默认语义",
+      "current_default": "校准层已在 src/inference/probability_calibrator.py 就绪但只读；configs `model.factors.probability_calibration.enabled=false`，主推理链路仍吃原始概率",
       "evidence": [
         "reports/calibration/calibration_ablation.json",
         "reports/probability_calibration_5d.json",
@@ -310,7 +298,7 @@
         "主推理链路概率语义",
         "T18.4 / T15.3 阈值语义"
       ],
-      "known_gap": "ECE/Brier 改善幅度随周期递减（20d isotonic 的 Brier 反而略升）；决策读数消融见 reports/calibration/calibration_ablation.json",
+      "known_gap": "校准器需要按 horizon 生成模型文件（models/probability_calibration_<h>.json，不入 git）；未生成时推理期如实降级为原始概率",
       "status": "confirmed",
       "decision": "defer",
       "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
@@ -334,8 +322,8 @@
       "id": "T20.1",
       "stage": "S20",
       "priority": 10,
-      "question": "3 个 LLM 投研候选的调研结论是否采纳（TradingAgents / TradingAgents-CN / QuantMind）",
-      "current_default": "不采纳（0/3 满足准入：A股适配 + 离线可复现 + 许可证明确）",
+      "question": "LLM 投研链路调研结论是否采纳（3 个候选：TradingAgents / TradingAgents-CN / QuantMind）",
+      "current_default": "调研结论已交付（0/3 满足「A 股适配 + 离线可复现 + 许可证明确」）→ 默认不引入",
       "evidence": [
         "reports/research_assist_evaluation.json"
       ],
@@ -343,7 +331,7 @@
       "blocks": [
         "T20.4 是否保留链路"
       ],
-      "known_gap": "评估基于公开仓库自述与依赖清单，未做本地实装验证（未安装即不声称可用）",
+      "known_gap": "离线对照结构性不可量化（附注不参与打分）→ 记 unverifiable，不编造提升命中率的故事",
       "status": "confirmed",
       "decision": "reject",
       "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
@@ -367,8 +355,8 @@
       "id": "T20.4",
       "stage": "S20",
       "priority": 11,
-      "question": "LLM 投研只读链路是否保留（含成本与噪声风险）",
-      "current_default": "默认 cancel（附注只挂报告层，affects_signal 恒 false）",
+      "question": "LLM 投研只读链路是否保留（含成本与噪声风险）；不保留则整阶段取消",
+      "current_default": "默认 cancel / pending（无人工签字不放行）",
       "evidence": [
         "reports/research_assist_decision.json"
       ],
@@ -376,7 +364,7 @@
       "blocks": [
         "H5 是否继续投入"
       ],
-      "known_gap": "离线对照不可量化（附注不参与打分 → 差异结构性为 0），已如实记为 unverifiable",
+      "known_gap": "附注只挂报告层，affects_signal 恒 false，结构性不进信号路径",
       "status": "confirmed",
       "decision": "cancel",
       "decision_basis": "用户指令「这11项确认」= 确认决策包中给出的「现状默认值」；NPC 不代选、不另行放宽已定纪律",
@@ -396,5 +384,48 @@
         "strategy_gate 逐字段零变更，affects_gate 恒为 false"
       ]
     }
-  ]
+  ],
+  "scope_note": "G 轮（S11~S15，Issue #29）与 H 轮（S16~S20，Issue #40）人工检查点统一收口：H 轮自动任务已全部交付（收口字段见 plan.json 各阶段 closing），H 轮人工检查点**全部进清单**——至此再无「已交付但未登记」；11 项均已由用户指令于 Issue #40 确认（确认对象 = 现状默认值）。",
+  "closing_fields": {
+    "auto_acceptable_completed_at": "各阶段自动任务交付时间（plan.json 阶段字段）",
+    "auto_acceptable_verified": "自动任务可验证标记",
+    "manual_scope": "对应人工检查点 id 列表（已确认 / 未决策由 status 区分）",
+    "affects_gate": "恒 false —— 全部阶段零门禁改动"
+  },
+  "known_optional_evidence": [
+    "reports/confidence_holdout_verify.json",
+    "reports/confidence_rolling_verify.json",
+    "reports/confidence_gate_decision.json",
+    "reports/calibration/conformal_interval.json",
+    "reports/calibration/conformal_vs_proba.json",
+    "reports/cpcv_evaluation.json",
+    "reports/overfit_audit.json",
+    "reports/regime/regime_stratification.json",
+    "reports/regime/regime_feature_ab.json",
+    "reports/label_ab.json",
+    "reports/qlib_ab.json",
+    "reports/s14_data_source_acceptance.json",
+    "reports/factor_metrics.json",
+    "reports/probability_calibration_5d.json",
+    "reports/research_assist_evaluation.json",
+    "models/probability_calibration_5d.json",
+    "reports/calibration/calibration_ablation.json",
+    "reports/probability_calibration_10d.json",
+    "reports/probability_calibration_20d.json",
+    "reports/research_assist_decision.json"
+  ],
+  "known_optional_evidence_note": "以下证据为**按需生成、不入 git** 的产物（跑对应命令才落盘）；登记在此是为了让「缺失」显式可见，而不是让引用悬空。守卫测试 tests/test_roadmap_manual_checkpoints.py::TestNoDanglingEvidenceRefs 双向校验。",
+  "instruction": {
+    "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
+    "text": "用户指令原文：「这11项确认 并继续按排期计划开发」",
+    "confirmed_by": "yuppiez328",
+    "confirmed_by_nick": "安然",
+    "confirmed_at": "2026-09-12T14:05:00+08:00",
+    "interpretation": "用户指令是「确认」既有决策材料，不是新开一轮选型：每条按决策包给出的「现状默认值」落定，NPC 不代选、不放宽已定纪律。"
+  },
+  "boundary": {
+    "strategy_gate_changed": false,
+    "affects_gate": false,
+    "note": "本次确认**只固定现状与纪律**，不含任何阈值/配置文件变更；任何需要改 strategy_gate 结构的动作须另开 PR 逐字段 diff 后再人工确认。"
+  }
 }
