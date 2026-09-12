@@ -86,7 +86,7 @@ qlib 官方 Alpha158（`qlib/contrib/data/loader.py`）共 158 个表达式 =
 | 组件 | 来源 | 许可证 | 引入阶段 | 用途 | 引入方式（规划） |
 |------|------|--------|---------|------|-----------------|
 | MAPIE | https://github.com/scikit-learn-contrib/MAPIE | BSD-3-Clause | **S16 / H1（已实装）** | 保形预测 · 带覆盖率保证的预测区间 | 可选运行时依赖 `pip install mapie`（**已实装，MAPIE 1.5.0**）；未安装时 `conformal-interval` 明确报错，不降级、不静默 |
-| hmmlearn | https://github.com/hmmlearn/hmmlearn | BSD-3-Clause | S18 / H3（计划） | 市场状态识别（牛/熊/震荡） | 可选依赖 `pip install hmmlearn`；状态标签严格无前视 |
+| hmmlearn | https://github.com/hmmlearn/hmmlearn | BSD-3-Clause | **S18 / H3（已实装）** | 市场状态识别（牛/熊/震荡） | 可选运行时依赖 `pip install hmmlearn`（**已实装，hmmlearn 0.3.3**）；`regime` 命令未安装时明确报错，不静默降级为规则口径 |
 | scikit-learn（校准器） | https://github.com/scikit-learn/scikit-learn | BSD-3-Clause | S19 / H4（计划） | `CalibratedClassifierCV`（isotonic / Platt）概率校准 | 既有依赖，无需新增；校准器仅在独立保留期验证，不自动落地 |
 | TradingAgents 系（评估中） | https://github.com/TauricResearch/TradingAgents · https://github.com/hsliuping/TradingAgents-CN · https://github.com/qusong0627/QuantMind | Apache-2.0 / 部分仓库 NOASSERTION | S20 / H5（待 T20.1 评估） | LLM 投研辅助结论（**只读报告附注**） | **未确定引入**：T20.1 评估不通过则整阶段取消。若引入，严禁进入信号路径与门禁 |
 
@@ -102,11 +102,23 @@ qlib 官方 Alpha158（`qlib/contrib/data/loader.py`）共 158 个表达式 =
 | 保形分数选择 | **`lac`（唯一）**：单周期二分类（两个标签）下 MAPIE 明确拒绝 `aps/raps`（`ValueError: Invalid conformity score for binary target`），LAC 在给定覆盖率下集合期望规模最小 —— 既是唯一可行也是最优选择 |
 | 边界 | 仅离线研究用途；`model.factors.conformal.enabled` 缺省 **false**，区间口径**不进**特征/信号链路；`affects_gate` 恒 false；口径取舍属 T16.4 人工检查点 |
 
+### hmmlearn（S18 / H3 · T18.1 + T18.2 + T18.3 实装）
+
+| 项 | 内容 |
+|----|------|
+| 来源 | hmmlearn/hmmlearn（https://github.com/hmmlearn/hmmlearn） |
+| 许可证 | BSD-3-Clause |
+| 运行时版本 | **hmmlearn 0.3.3**（本轮实际 `pip install`） |
+| 引入方式 | **可选运行时依赖**：`src/eval/regime.py` 用 `hmmlearn.hmm.GaussianHMM`（`covariance_type="diag"`、固定 `random_state=42`）拟合市场状态；未安装时 `python main.py regime` 明确报错指引，**不降级为规则口径**（规则口径会引入「换一套规则凑达标」的选择自由度） |
+| 用途 | ① T18.1：市场层（多标的等权）日收益 + 20 日滚动波动 → 3 态隐状态 → 可读化为 `bull/range/bear`；② T18.2：状态内分层评估（逐状态 IC / 命中率 / 样本数）；③ T18.3：状态 one-hot 作为特征的**单变量**增量 A/B |
+| 无前视口径 | 主线为 **expanding 重训**（第 t 天只用 `[0, t]` 观测 fit，`refit_every` 控制步长）；`full_sample` 全样本 decode 口径**明确标注 `lookahead_prefixed=true`**，仅作差异对照、不得作达标证据 |
+| 边界 | 仅离线研究用途；`model.factors.regime.enabled` 缺省 **false**，状态**不进**特征/信号链路；`affects_gate` 恒 false；是否进门禁 / 风控属 T18.4 人工检查点 |
+
 ### 规划期合规说明
 
 - H1~H4 全部为 sklearn 风格轻量库或既有依赖，符合「零重型依赖、CI 离线可跑」纪律；
-- **H1（MAPIE）已由「规划期登记」转为「已实装」**：运行时版本号见上节；
-  H2~H4 仍为规划期登记，H5 待 T20.1 评估；
+- **H1（MAPIE）与 H3（hmmlearn）已由「规划期登记」转为「已实装」**：运行时版本号见上节；
+  H2/H4 仍为规划期登记，H5 待 T20.1 评估；
 - H5 涉及的 LLM Agent 框架依赖较重且输出不可量化，**登记为待评估而非待引入**，
   评估结论（含许可证逐项核查）落 `00_kickoff/` 后另行追加运行时版本号；
 - 配套候选评估与淘汰理由见 `00_kickoff/high_value_projects_round2_candidates.md`。

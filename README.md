@@ -99,6 +99,7 @@
 - **保形预测区间** — `python main.py conformal-interval`（S16/T16.1+T16.2）：MAPIE split conformal（LAC）在现行 LightGBM 上产**带覆盖率保证**的预测区间 → 置信分（复用 `confidence_from_interval`，与 `|p−0.5|×2` **同数据同折对照**）；覆盖率审计（目标 vs 实测 + bootstrap 95% CI）、可靠性曲线（Brier/ECE，含 isotonic 参考臂）、区间宽度校准，落 `reports/calibration/`；`affects_gate=false`，区间口径缺省不进生产链路，口径取舍属 T16.4 人工检查点
 - **过拟合审计** — `python main.py overfit-audit`（S17/H2，T17.1~T17.3）：CPCV 组合式净化交叉验证（N 组取 k 组作测试 → C(N,k) 条路径，purge/embargo 对齐 leakage_checklist）+ DSR 风格选择偏差收缩指标（方法名如实标注 `cpcv_shrinkage`，不冒充精确解）+ PBO + **统一试验预算**（跨命令累计「已扫描 N 次」，asof 无前视口径）+ S11~S15 历史读数 Bonferroni 回算（只读不改写既有报告）；落 `reports/overfit_audit.json` 与 `reports/cpcv_evaluation.json`；`affects_gate=false`，是否引入过拟合概率下限属 T17.4 人工检查点，详见 `00_kickoff/s17_overfit_audit_conclusion.md`
 - **保留期证据链** — `python main.py confidence-holdout`（S16/T16.3）：决策单证据源 `reports/confidence_holdout_verify.json` 首次有可复现生成命令（训练只用前 70%，保留期从未参与训练/扫描/调参）；同时把保留期切成 n 个互不重叠时段做滚动复验（`--no-rolling` 可关），检验 thr∈[0.2,0.3] 命中率优势是否跨时段稳定，stable/unstable/insufficient 三态如实输出（`reports/confidence_rolling_verify.json`，补充证据）；`affects_gate=false`，挑阈值与签字仍属人工检查点
+- **市场状态分层** — `python main.py regime`（S18/H3，T18.1~T18.3）：HMM（GaussianHMM，固定 3 态 → `bull/range/bear`）识别市场状态，`expanding` 口径**第 t 天只用 [0,t] 观测重训**（严格无前视；`full_sample` 全样本口径仅作对照并明确标注 `lookahead_prefixed=true`）；状态内分层评估（逐状态 IC/命中率/样本数 + 分得开判定）与状态 one-hot **单变量**增量 A/B（保守四态，一升一降一律 mixed）；落 `reports/regime/`，`affects_gate=false`，状态缺省**不进**生产链路，`hmmlearn` 未安装时明确报错不降级，是否进门禁/风控属 T18.4 人工检查点
 
 </td>
 </tr>

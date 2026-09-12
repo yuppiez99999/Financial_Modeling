@@ -1,0 +1,139 @@
+{
+  "generated_at": "2026-09-12T02:30:00+00:00",
+  "source": "Issue #29（高质量项目集成）· 本轮遗留人工检查点决策包",
+  "doc": "00_kickoff/manual_checkpoints_round_g_h.md",
+  "policy": {
+    "npc_may_decide": false,
+    "auto_acceptable_must_not_contain": "manual_checkpoint",
+    "statuses_allowed": [
+      "pending"
+    ],
+    "note": "本清单全部条目恒 pending（fail-close）；NPC 不代签、不代选、不代改配置。"
+  },
+  "checkpoints": [
+    {
+      "id": "T15.3",
+      "stage": "S15",
+      "priority": 1,
+      "question": "是否把策略门禁从「全样本命中率」改为「置信度≥thr 子集命中率 + 覆盖率下限」双指标（thr∈[0.2,0.3]）",
+      "current_default": "strategy_gate.confidence_gate.mode=report_only, freeze_structure=true（未改门禁）",
+      "evidence": [
+        "reports/confidence_holdout_verify.json",
+        "reports/confidence_rolling_verify.json",
+        "reports/confidence_gate_decision.json"
+      ],
+      "doc": "00_kickoff/hyperopt_confidence_conclusion.md#十",
+      "blocks": [
+        "10-04 里程碑门禁结论"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "T16.4",
+      "stage": "S16",
+      "priority": 2,
+      "question": "置信分刻度口径取舍：保形区间口径（粒度 {0,0.5}）还是概率距离口径（连续）",
+      "current_default": "model.factors.conformal.enabled=false（不进生产链路）",
+      "evidence": [
+        "reports/calibration/conformal_interval.json",
+        "reports/calibration/conformal_vs_proba.json"
+      ],
+      "doc": "00_kickoff/conformal_interval_conclusion.md#四",
+      "blocks": [
+        "S19/H4 校准层接入方式"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "T17.4",
+      "stage": "S17",
+      "priority": 3,
+      "question": "门禁是否引入「过拟合概率下限」这条腿",
+      "current_default": "未引入；overfit-audit 只产报告",
+      "evidence": [
+        "reports/cpcv_evaluation.json",
+        "reports/overfit_audit.json"
+      ],
+      "doc": "00_kickoff/s17_overfit_audit_conclusion.md#六",
+      "blocks": [
+        "S19/H4 门禁叙事"
+      ],
+      "known_gap": "PBO 需多候选×路径矩阵，本轮未扫多候选 → available=false，不冒充",
+      "status": "pending"
+    },
+    {
+      "id": "T18.4",
+      "stage": "S18",
+      "priority": 4,
+      "question": "市场状态用于特征 / 评估风控分层 / 都不用",
+      "current_default": "model.factors.regime.enabled=false（不进生产链路）",
+      "evidence": [
+        "reports/regime/regime_stratification.json",
+        "reports/regime/regime_feature_ab.json"
+      ],
+      "doc": "00_kickoff/s18_regime_conclusion.md#六",
+      "blocks": [
+        "H3 是否继续投入"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "T12.3",
+      "stage": "S12",
+      "priority": 5,
+      "question": "三重障碍法标签是否进训练主线（替换固定窗口标签）",
+      "current_default": "不进主线（target_{h}d 仍为主线）",
+      "evidence": [
+        "reports/label_ab.json"
+      ],
+      "doc": "00_kickoff/label_ab_conclusion.md",
+      "blocks": [
+        "所有下游读数口径"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "T13.4",
+      "stage": "S13",
+      "priority": 6,
+      "question": "factor_a158_* 是否进生产特征集",
+      "current_default": "model.factors.qlib_alpha158.enabled=false",
+      "evidence": [
+        "reports/qlib_ab.json"
+      ],
+      "doc": "00_kickoff/qlib_alpha158_conclusion.md#四",
+      "blocks": [],
+      "status": "pending"
+    },
+    {
+      "id": "T14.3",
+      "stage": "S14",
+      "priority": 7,
+      "question": "回退链顺序（akshare vs tencent）+ 期货/外汇是否进训练主线",
+      "current_default": "wind→akshare→tencent→simulation；futures/forex enabled=true",
+      "evidence": [
+        "reports/s14_data_source_acceptance.json"
+      ],
+      "doc": "00_kickoff/akshare_data_source_conclusion.md#六",
+      "blocks": [
+        "标的池与训练量"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "T11.2",
+      "stage": "S11",
+      "priority": 8,
+      "question": "成本三档（0.125%/0.075%/0.030% 单边）是否定稿",
+      "current_default": "草案常量，禁止配置覆盖（建议维持）",
+      "evidence": [
+        "reports/factor_metrics.json"
+      ],
+      "doc": "00_kickoff/eval_criteria.md",
+      "blocks": [
+        "所有净收益读数"
+      ],
+      "status": "pending"
+    }
+  ]
+}

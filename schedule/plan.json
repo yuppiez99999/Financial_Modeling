@@ -751,9 +751,9 @@
     {
       "id": "S12",
       "name": "标签重构（G2：三重障碍法 + 无前视测试 + A/B 实验）",
-      "status": "completed",
+      "status": "in_progress",
       "started_at": null,
-      "completed_at": "2026-09-11T07:30:34.522041+00:00",
+      "completed_at": null,
       "scheduled_dates": "2026-09-15 ~ 2026-09-19",
       "tasks": [
         {
@@ -772,10 +772,11 @@
         },
         {
           "id": "T12.3",
-          "name": "同一 LightGBM 配置下新标签 vs 旧标签 IC/命中率 A/B 对比，结论不管好坏如实入库（人工检查点）",
-          "status": "completed",
+          "name": "同一 LightGBM 配置下新标签 vs 旧标签 IC/命中率 A/B 对比，结论不管好坏如实入库（**人工检查点：结论已入库，是否纳入训练主线待人工定稿**）",
+          "status": "pending",
           "auto_run": false,
-          "completed_at": "2026-09-11T07:30:34.522041+00:00"
+          "completed_at": null,
+          "result": null
         }
       ],
       "auto_acceptable": [
@@ -785,7 +786,7 @@
       "manual_checkpoint": [
         "T12.3"
       ],
-      "note": "唯一有望直接改变门禁判定的一步。里程碑 09-19：拿到『标签重构是否有效』的硬结论。",
+      "note": "唯一有望直接改变门禁判定的一步。里程碑 09-19：拿到『标签重构是否有效』的硬结论。 | T12.3 已更正为人工检查点（此前误标 completed）：A/B 结论已如实入库（00_kickoff/label_ab_conclusion.md，10 日 IC +0.061/命中 52.88% 正向、5 日混合），「是否纳入训练主线」恒为人工决策，未获签字前保持 pending（fail-close）。",
       "source": "Issue #29 高质量项目集成 · G2（machine-learning-for-trading 三重障碍法）",
       "depends_on": [
         "S11"
@@ -846,9 +847,9 @@
     {
       "id": "S14",
       "name": "数据源升级（G4：akshare 升 P1 + 期货外汇开启）",
-      "status": "completed",
+      "status": "in_progress",
       "started_at": "2026-09-11T10:00:00+00:00",
-      "completed_at": "2026-09-11T10:20:00+00:00",
+      "completed_at": null,
       "scheduled_dates": "2026-09-27 ~ 2026-09-29",
       "tasks": [
         {
@@ -867,10 +868,11 @@
         },
         {
           "id": "T14.3",
-          "name": "回退链验收（人工检查点）：实测 38/38 标的 + 5/5 宏观 = 100% ≥95%，报告 reports/s14_data_source_acceptance.json；**待人工定稿**：① 回退链顺序 ② 期货/外汇是否纳入训练主线 （见 00_kickoff/akshare_data_source_conclusion.md 第六节）",
-          "status": "completed",
+          "name": "回退链验收（人工检查点）：实测 38/38 标的 + 5/5 宏观 = 100% ≥95%，报告 reports/s14_data_source_acceptance.json；**验收数字已达标，但「① 回退链顺序 ② 期货/外汇是否纳入训练主线」仍待人工定稿**（见 00_kickoff/akshare_data_source_conclusion.md 第六节）",
+          "status": "pending",
           "auto_run": false,
-          "completed_at": "2026-09-11T10:20:00+00:00"
+          "completed_at": null,
+          "result": null
         }
       ],
       "auto_acceptable": [
@@ -880,7 +882,7 @@
       "manual_checkpoint": [
         "T14.3"
       ],
-      "note": "无前置依赖，可与 S12/S13 并行。里程碑 09-29：数据侧不再是瓶颈。实测：标的池 38/38 + 宏观 5/5 = 100%（验收线 95%），期货 10/10、外汇 2/2 全部真实可取；结论见 00_kickoff/akshare_data_source_conclusion.md。不改门禁。",
+      "note": "无前置依赖，可与 S12/S13 并行。里程碑 09-29：数据侧不再是瓶颈。实测：标的池 38/38 + 宏观 5/5 = 100%（验收线 95%），期货 10/10、外汇 2/2 全部真实可取；结论见 00_kickoff/akshare_data_source_conclusion.md。不改门禁。 | T14.3 已更正为人工检查点（此前误标 completed）：验收数字 100% 已达标并入库，但回退链顺序/期货外汇是否进主线仍待人工定稿，未签字前保持 pending（fail-close）。",
       "source": "Issue #29 高质量项目集成 · G4（akfamily/akshare）",
       "depends_on": []
     },
@@ -1043,31 +1045,34 @@
     {
       "id": "S18",
       "name": "市场状态分层（H3：HMM 状态识别 + 状态内分层评估）",
-      "status": "pending",
-      "started_at": null,
+      "status": "in_progress",
+      "started_at": "2026-09-12T02:20:00+00:00",
       "completed_at": null,
       "scheduled_dates": "2026-10-19 ~ 2026-10-25",
       "tasks": [
         {
           "id": "T18.1",
           "name": "接入 hmmlearn 做市场状态识别（牛/熊/震荡），状态标签严格只用当日及之前信息（无前视）",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-12T02:20:00+00:00",
+          "result": "src/eval/regime.py：GaussianHMM(bull/range/bear) 状态识别，expanding 无前视口径（第 t 天只用 [0,t] 观测重训）+ full_sample 有前视对照口径（明确标注）；固定 3 态防选择自由度回流"
         },
         {
           "id": "T18.2",
           "name": "按状态分层评估现行三周期模型命中率，回答「模型是否只在特定状态有效」——这是 README 已知限制「按标的分层」的状态维度补充",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-12T02:20:00+00:00",
+          "result": "按状态分层评估保留期样本：逐状态 IC/命中率/样本数 + summarize_regime_spread（uniform/differentiated/marginal/insufficient）；样本不足不发指标"
         },
         {
           "id": "T18.3",
           "name": "状态作为特征的增量验证（同口径 A/B：仅加一个变量），结论好坏如实入库",
-          "status": "pending",
+          "status": "completed",
           "auto_run": true,
-          "completed_at": null
+          "completed_at": "2026-09-12T02:20:00+00:00",
+          "result": "状态 one-hot 单变量增量 A/B：同数据同折同模型，保守四态判定（一升一降一律 mixed）"
         },
         {
           "id": "T18.4",
@@ -1085,12 +1090,12 @@
       "manual_checkpoint": [
         "T18.4"
       ],
-      "note": "与 S9 分池（资产类别维度）正交：S9 解决「谁的池」，H3 解决「什么时候」。用于解释「IC 为正但命中率卡线」的时间维度成因。",
+      "note": "与 S9 分池（资产类别维度）正交：S9 解决「谁的池」，H3 解决「什么时候」。用于解释「IC 为正但命中率卡线」的时间维度成因。 | T18.1~T18.3 已交付（`python main.py regime`，hmmlearn 0.3.3）：无前视用 expanding 重训口径；单标的冒烟 10d 分层 differentiated（极差 0.38）、状态特征 A/B degraded；T18.4 人工检查点保持 pending。",
       "source": "Issue #40 高质量项目集成2 · H3（hmmlearn 市场状态识别）",
       "depends_on": [
         "S16"
       ],
-      "result": null
+      "result": "s18_h3_t18_1_t18_3_delivered_t18_4_pending"
     },
     {
       "id": "S19",
@@ -1200,9 +1205,9 @@
   ],
   "current_stage_index": 18,
   "current_task_index": 0,
-  "last_run_date": "2026-09-11",
+  "last_run_date": "2026-09-12",
   "next_run_date": "2026-09-12",
   "blockers": [],
   "result": "s15_g5_t15_1_t15_2_supplementary_verified",
-  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。"
+  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。 | S18(H3) 市场状态分层 T18.1~T18.3 已交付（src/eval/regime.py + python main.py regime）：HMM 三态识别走 expanding 无前视口径，状态分层评估 + 状态特征单变量 A/B 全部 report_only；T18.4 状态是否进门禁保持人工 pending。遗留人工检查点累计 8 个（含新增 T18.4）。"
 }

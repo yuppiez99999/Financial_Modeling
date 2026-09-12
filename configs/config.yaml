@@ -120,6 +120,15 @@ model:
       conformity_score: "lac"         # 单周期二分类唯一严格有效的保形分数
       holdout_ratio: 0.3              # 保留期占比（与 T16.3 holdout_split 同段）
       calib_ratio_of_train_pool: 0.166667  # calibration 占训练池比例 → 整体约 60/10/30
+    # 市场状态分层（S18 / H3）：HMM 状态识别（bull/range/bear），`python main.py regime`
+    # 命令内计算；纳入生产特征/门禁须 T18.4 人工检查点（本段 enabled 缺省 false）。
+    regime:
+      enabled: false
+      n_states: 3             # 固定 3 态（写死防「扫 n_states 挑好看的那个」选择自由度回流）
+      window: 20              # 状态观测回看窗口（日收益滚动波动率）
+      refit_every: 20         # expanding 无前视口径的重训步长（交易日，步长内沿用最近模型）
+      holdout_ratio: 0.3      # 分层评估所用保留期占比（与 T16.3/T16.1 同段）
+      lookahead_mode: "expanding"  # expanding(严格无前视) / full_sample(仅对照，有前视)
     # 类级加权组合：最终得分 = Σ w_class × 该类得分
     ensemble:
       classes: [factor, tree, sequence]
