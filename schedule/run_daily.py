@@ -6,13 +6,26 @@ import subprocess
 import sys
 from pathlib import Path
 
+
+def _no_escape(path):
+    """路径收口（fail-close）：拒绝任何 ``..`` 成分，返回解析后的绝对路径。
+
+    本脚本需可独立运行（`python schedule/run_daily.py`），故不复用
+    src.utils.path_guard，就地内联同口径实现。
+    """
+    p = Path(path)
+    if ".." in p.parts:
+        raise ValueError(f"path contains '..': {path}")
+    return p.resolve()
+
+
 def load_plan(path):
-    with open(path, "r", encoding="utf-8") as f:
+    with open(_no_escape(path), "r", encoding="utf-8") as f:
         return json.load(f)
 
 def save_plan(path, plan):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(plan, f, indent=2, ensure_ascii=False)
+    payload = json.dumps(plan, indent=2, ensure_ascii=False)
+    _no_escape(path).write_text(payload, encoding="utf-8")
 
 def today_iso():
     return datetime.date.today().isoformat()
@@ -261,8 +274,12 @@ def run_day(plan_path, log_dir):
         try:
             log_dir_path = Path(log_dir)
             log_dir_path.mkdir(parents=True, exist_ok=True)
-            with open(log_file, "w", encoding="utf-8") as f:
-                json.dump(entry, f, indent=2, ensure_ascii=False)
+            log_file = log_dir_path / f"run_{today_iso()}.json"
+            if log_file.resolve().parent != log_dir_path.resolve():
+                raise ValueError(f"log file escapes log_dir: {log_file}")
+            log_file.write_text(
+                json.dumps(entry, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
         except Exception as e:  # noqa: BLE001
             print(f"[daily] 日志写入失败：{e}")
 

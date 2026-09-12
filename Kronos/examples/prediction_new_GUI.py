@@ -4,6 +4,7 @@ import numpy as np
 import sys
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
 import warnings
 import requests
 import json
@@ -1422,9 +1423,10 @@ def create_comprehensive_market_report(enhancement_info, output_dir, stock_code)
     }
 
     # 保存报告
-    report_file = os.path.join(output_dir, f'{stock_code}_comprehensive_analysis_report.json')
-    with open(report_file, 'w', encoding='utf-8') as f:
-        json.dump(report, f, ensure_ascii=False, indent=2)
+    report_file = Path(output_dir, f'{stock_code}_comprehensive_analysis_report.json')
+    report_file.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8'
+    )
 
     print(f"📋 综合分析报告已保存: {report_file}")
     return report

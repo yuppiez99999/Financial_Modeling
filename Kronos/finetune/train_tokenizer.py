@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import time
+from pathlib import Path
 from time import gmtime, strftime
 import argparse
 import datetime
@@ -263,8 +264,9 @@ def main(config: dict):
     # Finalize and save summary (master process only)
     if rank == 0:
         master_summary['final_result'] = dt_result
-        with open(os.path.join(save_dir, 'summary.json'), 'w') as f:
-            json.dump(master_summary, f, indent=4)
+        Path(save_dir, 'summary.json').write_text(
+            json.dumps(master_summary, indent=4), encoding='utf-8'
+        )
         print('Training finished. Summary file saved.')
         if comet_logger:
             comet_logger.end()

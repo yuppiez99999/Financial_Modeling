@@ -1,5 +1,6 @@
 import os
 import yaml
+from pathlib import Path
 from typing import Dict, Any
 
 
@@ -94,9 +95,10 @@ class ConfigLoader:
 
         if save_path is None:
             save_path = self.config_path
-        
-        with open(save_path, 'w', encoding='utf-8') as f:
-            yaml.dump(self.config, f, default_flow_style=False, allow_unicode=True, indent=2)
+
+        payload = yaml.dump(self.config, default_flow_style=False,
+                            allow_unicode=True, indent=2)
+        Path(save_path).write_text(payload, encoding='utf-8')
     
     def print_config(self):
         print("=" * 50)

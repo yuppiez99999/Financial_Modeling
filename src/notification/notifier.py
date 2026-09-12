@@ -120,9 +120,33 @@ class SignalNotifier:
                 lines.append(f"{icon} {symbol} [{h}]: {direction} (概率={proba:.0%}, 置信度={conf:.0%})")
         return "\n".join(lines)
 
+    def _validate_webhook_url(self) -> bool:
+        """SSRF 收口（fail-close）：仅允许 https，或本机回环上的 http。
+
+        webhook_url 来自配置文件；一旦被污染（如指向云元数据/内网服务），
+        推送会在此被拒绝而不是把预测数据发往任意主机。
+        """
+        try:
+            parsed = urllib.parse.urlparse(self.webhook_url)
+        except ValueError:
+            return False
+        host = (parsed.hostname or "").lower()
+        loopback = host in ("localhost", "127.0.0.1", "::1")
+        if parsed.scheme == "https" and host:
+            return True
+        if parsed.scheme == "http" and loopback:
+            return True
+        logger.error(
+            "webhook_url 未通过 SSRF 校验（仅允许 https，或回环 http）：%r",
+            self.webhook_url,
+        )
+        return False
+
     def _send_webhook(self, predictions: list[dict], summary: str) -> bool:
         """发送 Webhook 通知"""
         try:
+            if not self._validate_webhook_url():
+                return False
             if self.webhook_type == "feishu":
                 payload = {"msg_type": "text", "content": {"text": summary}}
             elif self.webhook_type == "dingtalk":

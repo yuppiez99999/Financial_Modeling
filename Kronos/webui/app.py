@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 import json
+from pathlib import Path
 import plotly.graph_objects as go
 import plotly.utils
 from flask import Flask, render_template, request, jsonify
@@ -196,9 +197,10 @@ def save_prediction_results(file_path, prediction_type, prediction_results, actu
                 }
         
         # Save to file
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(save_data, f, indent=2, ensure_ascii=False)
-        
+        Path(filepath).write_text(
+            json.dumps(save_data, indent=2, ensure_ascii=False), encoding='utf-8'
+        )
+
         print(f"Prediction results saved to: {filepath}")
         return filepath
         

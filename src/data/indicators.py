@@ -19,6 +19,32 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+def compute_atr(df: "pd.DataFrame", window: int = 14) -> "Optional[float]":
+    """平均真实波幅（Wilder 平滑，不含未来函数）。
+
+    可复用实现：风控止损止盈、仓位波动缩放、组合波动监控统一调用本函数，
+    避免各模块各自实现 ATR 造成口径不一致。
+
+    Args:
+        df: 含 ``high`` / ``low`` / ``close`` 列、按时间升序的 DataFrame。
+        window: ATR 平滑窗口（默认 14）。
+    Returns:
+        float 最新 ATR 值；样本不足或缺必要列时返回 ``None``（不猜、不兜底）。
+    """
+    if df is None or len(df) < max(int(window), 2):
+        return None
+    if not all(c in df.columns for c in ("high", "low", "close")):
+        return None
+    prev_close = df["close"].shift(1)
+    hl = df["high"] - df["low"]
+    hc = (df["high"] - prev_close).abs()
+    lc = (df["low"] - prev_close).abs()
+    tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
+    if tr.dropna().empty:
+        return None
+    return float(tr.ewm(alpha=1.0 / window, adjust=False).mean().iloc[-1])
+
+
 class TechnicalIndicators:
     """专业版技术指标库（50+ 指标）"""
 

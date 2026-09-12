@@ -13,6 +13,8 @@ from typing import Any
 
 import pandas as pd
 
+from src.utils.path_guard import ensure_path_under
+
 logger = logging.getLogger(__name__)
 
 
@@ -656,8 +658,7 @@ class DailyReportGenerator:
         """保存报告"""
         filename = f"report_{timestamp.strftime('%Y-%m-%d_%H%M%S')}.md"
         path = self.report_dir / filename
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(report)
+        ensure_path_under(path, self.report_dir).write_text(report, encoding="utf-8")
         logger.info(f"报告已保存到 {path}")
 
 
@@ -700,8 +701,7 @@ class WeeklyReportGenerator(DailyReportGenerator):
         report = "\n".join(report_lines)
         filename = f"weekly_report_{week_start.strftime('%Y-%m-%d')}.md"
         path = self.report_dir / filename
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(report)
+        ensure_path_under(path, self.report_dir).write_text(report, encoding="utf-8")
         logger.info(f"周度报告已保存到 {path}")
         return report
 

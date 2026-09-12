@@ -3,6 +3,7 @@ import sys
 import argparse
 import pickle
 from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -341,12 +342,20 @@ def main():
     model_preds = generate_predictions(run_config, test_data)
 
     # --- 4. Save Predictions ---
-    save_dir = os.path.join(run_config['result_save_path'], run_config['result_name'])
+    # Path hardening: reject any ".." components in the configured save
+    # location (fail-close) so writes cannot escape it.
+    _save_parts = str(run_config['result_save_path']).replace("\\", "/").split("/") \
+        + str(run_config['result_name']).replace("\\", "/").split("/")
+    if ".." in _save_parts:
+        raise ValueError(
+            f"result_save_path/result_name contains '..': "
+            f"{run_config['result_save_path']}/{run_config['result_name']}"
+        )
+    save_dir = os.path.realpath(os.path.join(run_config['result_save_path'], run_config['result_name']))
     os.makedirs(save_dir, exist_ok=True)
     predictions_file = os.path.join(save_dir, "predictions.pkl")
     print(f"Saving prediction signals to {predictions_file}...")
-    with open(predictions_file, 'wb') as f:
-        pickle.dump(model_preds, f)
+    Path(predictions_file).write_bytes(pickle.dumps(model_preds))
 
     # --- 5. Run Backtesting ---
     with open(predictions_file, 'rb') as f:

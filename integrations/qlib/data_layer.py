@@ -82,9 +82,8 @@ def dump_bin(dump_dir: str | Path, df: pd.DataFrame, symbol: str,
     rows = len(df)
     for field in fields:
         values = df[field].to_numpy(dtype=np.float32)
-        with open(feat_dir / f"{field}.day.bin", "wb") as f:
-            for i, v in enumerate(values):
-                f.write(f"{i}\t{float(v)!r}\n".encode())
+        payload = "".join(f"{i}\t{float(v)!r}\n" for i, v in enumerate(values))
+        (feat_dir / f"{field}.day.bin").write_bytes(payload.encode())
     return rows
 
 

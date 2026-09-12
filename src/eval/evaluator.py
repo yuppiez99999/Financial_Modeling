@@ -9,6 +9,8 @@ from typing import Any
 
 import numpy as np
 
+from src.utils.path_guard import ensure_no_escape
+
 logger = logging.getLogger(__name__)
 
 
@@ -251,9 +253,9 @@ class ModelEvaluator:
         report = "\n".join(report_lines)
 
         if output_path:
-            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(report)
+            out = ensure_no_escape(output_path)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(report, encoding="utf-8")
             logger.info(f"评估报告已保存到 {output_path}")
 
         return report

@@ -42,8 +42,8 @@ def get_stock_data_eastmoney(stock_code="002354", start_year=2024, end_year=2025
         market = get_stock_market(stock_code)
         secid = f"{market}.{stock_code}"
 
-        # 使用更简单的东方财富API
-        url = "http://push2his.eastmoney.com/api/qt/stock/kline/get"
+        # 使用更简单的东方财富API（固定常量端点，无用户可控 URL）
+        EASTMONEY_KLINE_URL = "http://push2his.eastmoney.com/api/qt/stock/kline/get"
 
         params = {
             'secid': secid,
@@ -66,7 +66,9 @@ def get_stock_data_eastmoney(stock_code="002354", start_year=2024, end_year=2025
 
         time.sleep(random.uniform(1, 2))
 
-        response = requests.get(url, params=params, headers=headers, timeout=10)
+        response = requests.get(
+            EASTMONEY_KLINE_URL, params=params, headers=headers, timeout=10
+        )
 
         print(f"API响应状态码: {response.status_code}")
 

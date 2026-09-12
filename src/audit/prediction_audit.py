@@ -14,6 +14,8 @@ from typing import Any
 
 import pandas as pd
 
+from src.utils.path_guard import ensure_no_escape, ensure_path_under
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,10 +23,14 @@ class PredictionAudit:
     """预测审计器 - 记录、回溯、统计"""
 
     def __init__(self, audit_dir: str = "logs/audit"):
-        self.audit_dir = Path(audit_dir)
+        self.audit_dir = ensure_no_escape(audit_dir)
         self.audit_dir.mkdir(parents=True, exist_ok=True)
-        self.record_file = self.audit_dir / "predictions.jsonl"
-        self.report_file = self.audit_dir / "audit_report.md"
+        self.record_file = ensure_path_under(
+            self.audit_dir / "predictions.jsonl", self.audit_dir
+        )
+        self.report_file = ensure_path_under(
+            self.audit_dir / "audit_report.md", self.audit_dir
+        )
 
     def record_prediction(self, prediction: dict[str, Any]) -> None:
         """记录一条预测（供 PredictionEngine 调用）"""
@@ -45,7 +51,7 @@ class PredictionAudit:
             "hit": None,
             "actual_return": None,
         }
-        with open(self.record_file, "a", encoding="utf-8") as f:
+        with open(ensure_path_under(self.record_file, self.audit_dir), "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         logger.debug(f"审计记录: {entry['id']}")
 
@@ -58,7 +64,7 @@ class PredictionAudit:
         if not self.record_file.exists():
             return []
         records = []
-        with open(self.record_file, "r", encoding="utf-8") as f:
+        with open(ensure_path_under(self.record_file, self.audit_dir), "r", encoding="utf-8") as f:
             for line in f:
                 try:
                     records.append(json.loads(line.strip()))
@@ -118,10 +124,11 @@ class PredictionAudit:
 
             updated.append(rec)
 
-        # 回写
-        with open(self.record_file, "w", encoding="utf-8") as f:
-            for rec in updated:
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        # 回写（write_text：写入位固定为经 contain 校验的路径，无句柄重用）
+        payload = "".join(json.dumps(rec, ensure_ascii=False) + "\n" for rec in updated)
+        ensure_path_under(self.record_file, self.audit_dir).write_text(
+            payload, encoding="utf-8"
+        )
 
         logger.info(f"审计验证完成: 新验证 {verified_count} 条")
         return verified_count
@@ -155,8 +162,9 @@ class PredictionAudit:
                 "> 暂无已验证的预测记录（预测尚未到期，或缺少可用于回溯的真实行情）。",
             ]
             report = "\n".join(lines)
-            with open(self.report_file, "w", encoding="utf-8") as f:
-                f.write(report)
+            ensure_path_under(self.report_file, self.audit_dir).write_text(
+                report, encoding="utf-8"
+            )
             return report
 
         total = len(verified)
@@ -231,7 +239,8 @@ class PredictionAudit:
         ])
 
         report = "\n".join(lines)
-        with open(self.report_file, "w", encoding="utf-8") as f:
-            f.write(report)
+        ensure_path_under(self.report_file, self.audit_dir).write_text(
+            report, encoding="utf-8"
+        )
         logger.info(f"审计报告已保存到 {self.report_file}")
         return report

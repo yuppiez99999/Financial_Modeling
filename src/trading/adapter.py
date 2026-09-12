@@ -10,6 +10,7 @@ TradingAdapter 是外部量化交易程序接入 TrendCast Pro 的入口：
 from __future__ import annotations
 
 import csv
+import io
 import json
 import logging
 from datetime import datetime
@@ -184,12 +185,14 @@ class TradingAdapter:
                     "score": r.get("signal", {}).get("score"),
                     "confidence": r.get("signal", {}).get("confidence"),
                 })
-        with open(path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()) if rows else
-                                     ["symbol", "side", "order_type", "size", "price",
-                                      "reduce_only", "action", "score", "confidence"])
-            writer.writeheader()
-            writer.writerows(rows)
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=list(rows[0].keys()) if rows else
+                                ["symbol", "side", "order_type", "size", "price",
+                                 "reduce_only", "action", "score", "confidence"])
+        writer.writeheader()
+        writer.writerows(rows)
+        # write_bytes：csv 终止符 \r\n 原样落盘（等价于 open(newline="")）
+        path.write_bytes(buf.getvalue().encode("utf-8"))
         return path
 
     def push_webhook(self, results: list[dict[str, Any]], subject: str = "TrendCast 交易信号") -> dict[str, bool]:

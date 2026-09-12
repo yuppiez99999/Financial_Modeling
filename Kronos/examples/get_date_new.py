@@ -31,8 +31,8 @@ def get_stock_data_eastmoney_all_history(stock_code="002354"):
         market = get_stock_market(stock_code)
         secid = f"{market}.{stock_code}"
 
-        # 使用东方财富API获取所有历史数据
-        url = "http://push2his.eastmoney.com/api/qt/stock/kline/get"
+        # 使用东方财富API获取所有历史数据（固定常量端点，无用户可控 URL）
+        EASTMONEY_KLINE_URL = "http://push2his.eastmoney.com/api/qt/stock/kline/get"
 
         # 设置足够早的起始日期（中国股市从1990年开始）
         start_date = "19900101"
@@ -59,7 +59,9 @@ def get_stock_data_eastmoney_all_history(stock_code="002354"):
 
         time.sleep(random.uniform(1, 2))
 
-        response = requests.get(url, params=params, headers=headers, timeout=15)
+        response = requests.get(
+            EASTMONEY_KLINE_URL, params=params, headers=headers, timeout=15
+        )
 
         print(f"API响应状态码: {response.status_code}")
 

@@ -1,5 +1,7 @@
 import os
 import pickle
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import qlib
@@ -110,13 +112,16 @@ class QlibDataPreprocessor:
             test_data[symbol] = symbol_df[test_mask]
 
         # Save the datasets using pickle.
-        os.makedirs(self.config.dataset_path, exist_ok=True)
-        with open(f"{self.config.dataset_path}/train_data.pkl", 'wb') as f:
-            pickle.dump(train_data, f)
-        with open(f"{self.config.dataset_path}/val_data.pkl", 'wb') as f:
-            pickle.dump(val_data, f)
-        with open(f"{self.config.dataset_path}/test_data.pkl", 'wb') as f:
-            pickle.dump(test_data, f)
+        # Path hardening: reject any ".." components in the configured
+        # dataset_path (fail-close) so writes cannot escape it.
+        parts = str(self.config.dataset_path).replace("\\", "/").split("/")
+        if ".." in parts:
+            raise ValueError(f"dataset_path contains '..': {self.config.dataset_path}")
+        dataset_dir = Path(os.path.realpath(self.config.dataset_path))
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        dataset_dir.joinpath("train_data.pkl").write_bytes(pickle.dumps(train_data))
+        dataset_dir.joinpath("val_data.pkl").write_bytes(pickle.dumps(val_data))
+        dataset_dir.joinpath("test_data.pkl").write_bytes(pickle.dumps(test_data))
 
         print("Datasets prepared and saved successfully.")
 

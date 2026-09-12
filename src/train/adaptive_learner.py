@@ -21,6 +21,8 @@ import joblib
 import numpy as np
 import pandas as pd
 
+from src.utils.path_guard import ensure_path_under
+
 logger = logging.getLogger(__name__)
 
 
@@ -67,8 +69,8 @@ class ModelPerformanceMonitor:
     def _save_history(self):
         """保存性能历史"""
         path = self.monitor_dir / "performance_history.json"
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.performance_history, f, ensure_ascii=False, indent=2)
+        payload = json.dumps(self.performance_history, ensure_ascii=False, indent=2)
+        ensure_path_under(path, self.monitor_dir).write_text(payload, encoding="utf-8")
 
     def _load_history(self):
         """加载性能历史"""
