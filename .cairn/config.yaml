@@ -1,0 +1,24 @@
+version: 0.1
+project:
+  name: "16_金融市场预测模型"
+  summary: "A股多周期预测与门禁风控系统（TrendCast Pro）：三周期概率模型 + 置信度门槛门禁 + ATR 风控建议，排期驱动的 AI 协作开发"
+cairn:
+  knowledge_dir: "cairn"
+  # 初始化时锁定的 skill 规格日期（来自 references/upgrade.md「Current spec date」，
+  # 由 init 自动盖戳，不是用户决策）；实例升级后重盖。审计/升级的漂移检查以它对照
+  # upgrade.md 变更日志。
+  skill_spec_date: "2026-07-16"
+  # git_policy: track | ignore | private_sync
+  git_policy: "track"
+  # reference_git_policy（可选）：仅作用于 cairn/Reference/（项目引入但非自产的外部原始材料）。
+  # 本仓库有公开镜像，外部原始材料一律不入库，故单独收紧为 ignore；其余 cairn/ 内容随 track 入库。
+  reference_git_policy: "ignore"
+  # language: en | zh | ... — 撰写 AGENTS.md/LOG.md/ROADMAP.md/知识专题文档所用语言
+  language: "zh"
+graduation:
+  # (c) Deferred — 尚未对接任何知识库（「先用 Cairn，之后再连接」）。
+  # provider 决策在首次毕业时补收（见 references/graduation.md → Deferred provider）：
+  provider: none
+history:
+  # migration_mode: start_fresh | inventory_only | selective_migrate
+  migration_mode: "start_fresh"
