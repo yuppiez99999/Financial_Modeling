@@ -472,20 +472,35 @@
       "priority": 13,
       "question": "组合加权方式（等权 / ATR 倒数 / 校准置信度）是否进入报表默认口径",
       "current_default": "默认 pending（无人工签字不放行）",
-      "evidence": [],
+      "evidence": [
+        "reports/portfolio/portfolio_backtest.json",
+        "00_kickoff/s21_portfolio_backtest_conclusion.md"
+      ],
       "doc": "00_kickoff/high_value_projects_round3_candidates.md",
       "blocks": [
         "报表默认口径"
       ],
       "known_gap": "规划期检查点：对应阶段尚未启动，无已交付证据",
-      "status": "pending",
+      "status": "confirmed",
       "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/54",
       "round": "I2",
-      "phase": "planning",
+      "phase": "decision",
       "out_of_scope": [
         "签字仅确认「现状默认值」本身，不含门禁/阈值/超参的任何变更",
         "strategy_gate 逐字段零改动，affects_gate 恒为 false",
-        "对应阶段未启动前不得预签：规划期检查点必须保持 pending"
+        "对应阶段未启动前不得预签：规划期检查点必须保持 pending",
+        "本次确认只覆盖「已交付结论 + 现状默认值」本身，不自行新增配置变更"
+      ],
+      "decision": "keep",
+      "decision_basis": "用户指令原文「确认」= 确认决策包给出的现状默认值；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认三臂并排读数为组合回测报表标准输出：等权保持基线锚点，1/ATR 与置信度臂经 --weights all 并排入库；不把任一加权臂设为唯一默认（1/ATR 优势仅 3 标的冒烟验证，全池模型信号复验后再议）",
+      "rationale": "1/ATR 臂三档成本下收益/Sharpe/回撤全面优于等权（base 档 0.6905 vs 0.6116），但样本仅 3 标的 × 机械信号；并排呈现 + 待复验是证据边界内的最诚实做法。",
+      "scope": "确认 keep（现状默认值）；不含门禁/阈值/超参变更，strategy_gate 零改动",
+      "confirmed_by": "yuppiez328",
+      "confirmed_at": "2026-09-13T21:55:00+08:00",
+      "boundary": [
+        "strategy_gate 逐字段零改动",
+        "affects_gate 恒为 false"
       ]
     },
     {
@@ -494,20 +509,35 @@
       "priority": 14,
       "question": "漂移监控是否纳入 health_report 常规输出",
       "current_default": "默认 pending（无人工签字不放行）",
-      "evidence": [],
+      "evidence": [
+        "reports/drift/drift_monitor.json",
+        "00_kickoff/s23_s24_s25_round3_conclusion.md"
+      ],
       "doc": "00_kickoff/high_value_projects_round3_candidates.md",
       "blocks": [
         "健康报表输出范围"
       ],
       "known_gap": "规划期检查点：对应阶段尚未启动，无已交付证据",
-      "status": "pending",
+      "status": "confirmed",
       "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/54",
       "round": "I3",
-      "phase": "planning",
+      "phase": "decision",
       "out_of_scope": [
         "签字仅确认「现状默认值」本身，不含门禁/阈值/超参的任何变更",
         "strategy_gate 逐字段零改动，affects_gate 恒为 false",
-        "对应阶段未启动前不得预签：规划期检查点必须保持 pending"
+        "对应阶段未启动前不得预签：规划期检查点必须保持 pending",
+        "本次确认只覆盖「已交付结论 + 现状默认值」本身，不自行新增配置变更"
+      ],
+      "decision": "keep",
+      "decision_basis": "用户指令原文「确认」= 确认决策包给出的现状默认值；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认漂移监控纳入 health_report 常规输出（报表层只读汇总，零副作用；本确认同时落地 _collect_drift_monitor 接入）",
+      "rationale": "真实读数已捕捉「训练窗 vs 当前窗输入分布显著漂移」（PSI 0.26~0.73）——读数失效的可观测前兆值得进例行监控；只读报表零门禁影响。",
+      "scope": "确认 keep（现状默认值）；不含门禁/阈值/超参变更，strategy_gate 零改动",
+      "confirmed_by": "yuppiez328",
+      "confirmed_at": "2026-09-13T21:55:00+08:00",
+      "boundary": [
+        "strategy_gate 逐字段零改动",
+        "affects_gate 恒为 false"
       ]
     },
     {
@@ -516,20 +546,35 @@
       "priority": 15,
       "question": "TreeSHAP 状态×特征归因是否纳入例行报告",
       "current_default": "默认 pending（无人工签字不放行）",
-      "evidence": [],
+      "evidence": [
+        "00_kickoff/s23_s24_s25_round3_conclusion.md",
+        "00_kickoff/s21_portfolio_backtest_conclusion.md"
+      ],
       "doc": "00_kickoff/high_value_projects_round3_candidates.md",
       "blocks": [
         "例行报告范围"
       ],
       "known_gap": "规划期检查点：对应阶段尚未启动，无已交付证据",
-      "status": "pending",
+      "status": "confirmed",
       "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/54",
       "round": "I4",
-      "phase": "planning",
+      "phase": "decision",
       "out_of_scope": [
         "签字仅确认「现状默认值」本身，不含门禁/阈值/超参的任何变更",
         "strategy_gate 逐字段零改动，affects_gate 恒为 false",
-        "对应阶段未启动前不得预签：规划期检查点必须保持 pending"
+        "对应阶段未启动前不得预签：规划期检查点必须保持 pending",
+        "本次确认只覆盖「已交付结论 + 现状默认值」本身，不自行新增配置变更"
+      ],
+      "decision": "keep",
+      "decision_basis": "用户指令原文「确认」= 确认决策包给出的现状默认值；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认 TreeSHAP 归因纳入例行报告（health_report 只读汇总）；生效以真实 LightGBM 训练为前提 —— models/ 占位符期间该段自动标注 unavailable（fail-close 已内建），不产出假归因",
+      "rationale": "机制经合成 LGBM 测试证明（9 例）；占位模型期间 fail-close 保证不会有假归因流出，纳入例行报告的成本为零、收益随真实训练到位即现。",
+      "scope": "确认 keep（现状默认值）；不含门禁/阈值/超参变更，strategy_gate 零改动",
+      "confirmed_by": "yuppiez328",
+      "confirmed_at": "2026-09-13T21:55:00+08:00",
+      "boundary": [
+        "strategy_gate 逐字段零改动",
+        "affects_gate 恒为 false"
       ]
     },
     {
@@ -538,20 +583,35 @@
       "priority": 16,
       "question": "组合层是否引入过拟合概率下限（DSR 校正后仍为正才采信）",
       "current_default": "默认 pending（无人工签字不放行）",
-      "evidence": [],
+      "evidence": [
+        "00_kickoff/eval_criteria.md",
+        "reports/portfolio/portfolio_backtest.json"
+      ],
       "doc": "00_kickoff/high_value_projects_round3_candidates.md",
       "blocks": [
         "组合回测读数的采信标准"
       ],
       "known_gap": "规划期检查点：对应阶段尚未启动，无已交付证据",
-      "status": "pending",
+      "status": "confirmed",
       "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/54",
       "round": "I5",
-      "phase": "planning",
+      "phase": "decision",
       "out_of_scope": [
         "签字仅确认「现状默认值」本身，不含门禁/阈值/超参的任何变更",
         "strategy_gate 逐字段零改动，affects_gate 恒为 false",
-        "对应阶段未启动前不得预签：规划期检查点必须保持 pending"
+        "对应阶段未启动前不得预签：规划期检查点必须保持 pending",
+        "本次确认只覆盖「已交付结论 + 现状默认值」本身，不自行新增配置变更"
+      ],
+      "decision": "keep",
+      "decision_basis": "用户指令原文「确认」= 确认决策包给出的现状默认值；NPC 不代选、不另行放宽已定纪律",
+      "script_must": "确认引入组合读数采信标准：DSR > 0.5 才可引用为「正收益证据」（verdict 字段自动判定），否则标注 insufficient_evidence；已同步写入 00_kickoff/eval_criteria.md 与 overfit_stats.py",
+      "rationale": "I 轮实测 9 配置 DSR 仅 0.08~0.24、MinTRL 2173~8382 天 ≫ 现有样本 —— 采信标准把「读数为正」与「证据充足」区分开，防止重蹈 S11/S12 「事后补记」覆辙；只约束报表引用纪律。",
+      "scope": "确认 keep（现状默认值）；不含门禁/阈值/超参变更，strategy_gate 零改动",
+      "confirmed_by": "yuppiez328",
+      "confirmed_at": "2026-09-13T21:55:00+08:00",
+      "boundary": [
+        "strategy_gate 逐字段零改动",
+        "affects_gate 恒为 false"
       ]
     }
   ],

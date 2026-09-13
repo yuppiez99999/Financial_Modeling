@@ -307,6 +307,84 @@ class ModelMonitor:
             logger.warning(f"[monitor] 读取风控建议失败: {e}")
             return {"available": False, "error": str(e)}
 
+    def _collect_drift_monitor(self) -> Dict[str, Any]:
+        """漂移监控状态（S23/I3，只读；T23.4 确认纳入常规输出）。
+
+        只读 `reports/drift/drift_monitor.json`（由 `python main.py drift-monitor`
+        落盘），汇总显著漂移特征数 —— 不触网、不重算，零副作用。
+        """
+        path = Path((self.config.get("report", {}) or {}).get("output_dir", "reports")) / \
+            "drift" / "drift_monitor.json"
+        if not path.exists():
+            return {
+                "available": False,
+                "reason": "no_drift_report",
+                "hint": "先运行 `python main.py drift-monitor` 生成漂移报告",
+            }
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            per_symbol = payload.get("per_symbol") or {}
+            drifted = sorted({
+                f for report in per_symbol.values()
+                if isinstance(report, dict)
+                for f in (report.get("drifted_features") or [])
+            })
+            return {
+                "available": True,
+                "source": str(path),
+                "asof": payload.get("asof"),
+                "n_symbols": len(per_symbol),
+                "n_significant_drift_symbols": sum(
+                    1 for r in per_symbol.values()
+                    if isinstance(r, dict) and r.get("n_significant_drift")),
+                "drifted_features": drifted,
+                "note": "漂移读数只进报表、不进决策路径（affects_gate=false）",
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取漂移监控失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    def _collect_feature_attribution(self) -> Dict[str, Any]:
+        """TreeSHAP 归因状态（S24/I4，只读；T24.4 确认纳入例行报告）。
+
+        只读 `reports/attribution/feature_attribution.json`；真实 LightGBM
+        训练完成前该文件缺失或内含 fail-close 错误 —— 如实标注 unavailable，
+        绝不产出假归因。
+        """
+        path = Path((self.config.get("report", {}) or {}).get("output_dir", "reports")) / \
+            "attribution" / "feature_attribution.json"
+        if not path.exists():
+            return {
+                "available": False,
+                "reason": "no_attribution_report",
+                "hint": "真实 LightGBM 训练完成后运行 `python main.py feature-attribution`",
+            }
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if payload.get("error"):
+                return {"available": False,
+                        "reason": "attribution_fail_closed",
+                        "detail": payload.get("error"),
+                        "source": str(path)}
+            per_symbol = payload.get("per_symbol") or {}
+            top = {}
+            for symbol, report in per_symbol.items():
+                if isinstance(report, dict) and report.get("available"):
+                    rows = report.get("importance_top10") or []
+                    if rows:
+                        top[symbol] = rows[0].get("feature")
+            return {
+                "available": True,
+                "source": str(path),
+                "asof": payload.get("asof"),
+                "n_symbols": len(per_symbol),
+                "top_feature_by_symbol": top,
+                "note": "归因只解释「模型在用什么」，不改变训练特征集（affects_gate=false）",
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[monitor] 读取特征归因失败: {e}")
+            return {"available": False, "error": str(e)}
+
     def _collect_gate(self) -> Dict[str, Any]:
         """信号准入闸门状态（只读）。
 
@@ -604,6 +682,8 @@ class ModelMonitor:
         factors = self._collect_factor_model()
         streaming = self._collect_streaming()
         risk_advice = self._collect_risk_advice()
+        drift_monitor = self._collect_drift_monitor()
+        feature_attribution = self._collect_feature_attribution()
         gate_diagnosis = self._collect_gate_diagnosis(gate)
         ic_trend = self._collect_ic_trend()
         pool_gate = self._collect_pool_gate()
@@ -700,6 +780,8 @@ class ModelMonitor:
             "factors": factors,
             "streaming": streaming,
             "risk_advice": risk_advice,
+            "drift_monitor": drift_monitor,
+            "feature_attribution": feature_attribution,
             "ic_trend": ic_trend,
             "pool_gate": pool_gate,
             "pool_train": pool_train,

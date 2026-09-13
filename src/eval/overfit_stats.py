@@ -21,8 +21,8 @@
 
 - 每次审计读数必须声明 N（本次扫描的试验数），与 S17 统一试验预算联动；
 - 样本不足 / 常数序列 / 非正方差 → ``available=False``，不猜；
-- 只读报表，`affects_gate` 恒 false；是否引入「DSR 校正后仍为正才采信」
-  的采信标准属 T25.4 人工检查点。
+- 只读报表，`affects_gate` 恒 false；T25.4 已确认（2026-09-13）：
+  **DSR > 0.5 才可引用为「正收益证据」**（verdict 字段自动判定）。
 """
 from __future__ import annotations
 
@@ -207,7 +207,12 @@ def pbo_cscv(returns_matrix: np.ndarray, n_blocks: int = 16) -> Optional[float]:
 
 def audit_series(returns: Sequence[float], n_trials: int,
                  name: str = "series") -> Dict[str, Any]:
-    """单条净值收益序列的审计读数（PSR/DSR/MinTRL + 矩），供报表消费。"""
+    """单条净值收益序列的审计读数（PSR/DSR/MinTRL + 矩），供报表消费。
+
+    T25.4 确认的采信标准（2026-09-13）：DSR > 0.5（对 N 次试验期望最大 SR
+    校正后，Sharpe 仍显著为正的概率过半）才可引用为「正收益证据」；否则
+    一律标注 ``insufficient_evidence`` —— 只影响报表引用纪律，不影响门禁。
+    """
     m = _sr_moments(returns)
     if m is None:
         return {"name": name, "available": False,
@@ -216,6 +221,7 @@ def audit_series(returns: Sequence[float], n_trials: int,
     p = psr(returns)
     d = dsr(returns, n_trials)
     mtl = min_track_length(returns)
+    admissible = bool(d is not None and d > 0.5)
     return {
         "name": name,
         "available": True,
@@ -228,5 +234,7 @@ def audit_series(returns: Sequence[float], n_trials: int,
         "dsr": round(d, 6) if d is not None else None,
         "min_track_length_days": mtl,
         "n_trials": int(n_trials),
-        "note": "DSR < PSR 恒成立（N>1）；采信标准属 T25.4 人工检查点",
+        "verdict": ("admissible" if admissible else "insufficient_evidence"),
+        "note": ("采信标准（T25.4 确认）：DSR > 0.5 才可引用为正收益证据；"
+                 "MinTRL 超过现有样本时读数仅为方向性参考"),
     }
