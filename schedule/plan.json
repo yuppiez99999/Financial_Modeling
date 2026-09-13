@@ -1461,7 +1461,7 @@
       "id": "S23",
       "round": "I3",
       "name": "漂移监控（I3：evidently 准入评估 + 特征漂移×状态×命中率交叉）",
-      "status": "pending",
+      "status": "in_progress",
       "scheduled_dates": "2026-09-29 ~ 2026-10-05",
       "source": "Issue #54 高质量项目集成3 · 组合闭环验证轮 · I3（漂移监控）",
       "depends_on": [
@@ -1479,20 +1479,26 @@
         {
           "id": "T23.1",
           "name": "evidently 准入评估：依赖重量 / py3.8 兼容 / 离线可跑 / 许可证，产出一页评估",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-13T00:59:16.444176+00:00",
+          "result": "evidently 准入评估 = 不引入运行时：现版（0.7.x）要求 Python >= 3.10，本项目运行时 3.8；按候选矩阵预授权走 PSI/KS 方法论自研（零新依赖）"
         },
         {
           "id": "T23.2",
           "name": "如评估通过：报表层接入特征分布漂移报告（仅报告，不进任何决策路径）；不通过则按 PSI/KS 自研最小实现",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-13T00:59:16.444176+00:00",
+          "result": "src/eval/drift_monitor.py（PSI 分位桶 + 手写 KS，fail-close）；真实数据读数：3 标的收益分布后半窗显著漂移（PSI 0.26~0.73），量能基本稳定（000408 例外 0.517）；python main.py drift-monitor + reports/drift/drift_monitor.json"
         },
         {
           "id": "T23.3",
           "name": "交叉分析：漂移信号与 S18 状态转移、命中率漂移（现有 health_report 告警）的一致性检验，结论如实入库",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-13T00:59:16.444176+00:00",
+          "result": "交叉分析：rolling PSI × 滚动波动率 3 标的均为负相关（-0.84/-0.79/-0.53，口径效应如实入库）；与 S18 状态转移、命中率漂移的真实交叉待跑（hmmlearn 未装、预测审计无工件）"
         },
         {
           "id": "T23.4",
@@ -1502,14 +1508,16 @@
         }
       ],
       "affects_gate": false,
-      "note": "H3 状态分层 differentiated 说明读数依赖市场状态；现有 health_report 只有命中率下降告警，无特征分布视角。本阶段评估 evidently（7.9k★，Apache-2.0，离线 pandas 可跑）接入报表层：特征分布漂移 × HMM 状态 × 命中率漂移交叉，回答「读数失效前有没有可观测前兆」。准入评估（依赖重量、py3.8 兼容）不过则按 PSI/KS 方法论自研，自研成本超预算则整阶段取消（延续 H5 先例）。affects_gate=false。",
-      "result": "规划期：待 I3 启动"
+      "note": "H3 状态分层 differentiated 说明读数依赖市场状态；现有 health_report 只有命中率下降告警，无特征分布视角。本阶段评估 evidently（7.9k★，Apache-2.0，离线 pandas 可跑）接入报表层：特征分布漂移 × HMM 状态 × 命中率漂移交叉，回答「读数失效前有没有可观测前兆」。准入评估（依赖重量、py3.8 兼容）不过则按 PSI/KS 方法论自研，自研成本超预算则整阶段取消（延续 H5 先例）。affects_gate=false。 | 交付记录（2026-09-13）：00_kickoff/s23_s24_s25_round3_conclusion.md",
+      "result": "自动任务已交付（详见 00_kickoff/s23_s24_s25_round3_conclusion.md）；3.4 待人工签字",
+      "started_at": "2026-09-13T00:59:16.444176+00:00",
+      "auto_acceptable_completed_at": "2026-09-13T00:59:16.444176+00:00"
     },
     {
       "id": "S24",
       "round": "I4",
       "name": "TreeSHAP 状态×特征归因（I4：lightgbm pred_contrib，零新依赖）",
-      "status": "pending",
+      "status": "in_progress",
       "scheduled_dates": "2026-10-06 ~ 2026-10-12",
       "source": "Issue #54 高质量项目集成3 · 组合闭环验证轮 · I4（TreeSHAP 状态×特征归因）",
       "depends_on": [
@@ -1527,20 +1535,26 @@
         {
           "id": "T24.1",
           "name": "实现 TreeSHAP 归因管线（lightgbm pred_contrib）：特征贡献按样本/时间聚合，严格只用 T 及更早信息",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-13T00:59:16.444176+00:00",
+          "result": "src/eval/feature_attribution.py：lightgbm pred_contrib（TreeSHAP，零新依赖）——全局重要性/时间窗归因漂移/状态交叉接口；fail-close：非 LightGBM 拒绝假归因；重要发现：models/*.pkl 为 DummyModel 占位符，真实训练待跑"
         },
         {
           "id": "T24.2",
           "name": "状态×特征交叉归因：bull/range/bear 三态下的特征贡献差异分析（与 S18 状态标签对齐，无前视），结论如实入库",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-13T00:59:16.444176+00:00",
+          "result": "状态×特征交叉接口就绪；真实状态标签依赖 hmmlearn（未装）→ 真实交叉待跑（如实登记）；机制正确性由 tests/test_roadmap_s24.py 合成 LGBM 证明（强特征排第一/排名漂移可检/fail-close）"
         },
         {
           "id": "T24.3",
           "name": "归因报告接入报表（report_only）：单标的与池级两个粒度",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-13T00:59:16.444176+00:00",
+          "result": "python main.py feature-attribution 命令接入（真实模型就绪后即用）；当前运行如实报错（占位模型）不产出假归因"
         },
         {
           "id": "T24.4",
@@ -1550,14 +1564,16 @@
         }
       ],
       "affects_gate": false,
-      "note": "S12 判定特征扩充无增量，但「模型到底在用什么」从未归因。lightgbm 内建 TreeSHAP（pred_contrib=True，零新依赖）做状态×特征归因：解释 S18「状态分层 differentiated / 状态特征 A/B degraded」的特征成因。归因是**解释**不是扩充，不新增任何特征进训练。affects_gate=false。",
-      "result": "规划期：待 I4 启动"
+      "note": "S12 判定特征扩充无增量，但「模型到底在用什么」从未归因。lightgbm 内建 TreeSHAP（pred_contrib=True，零新依赖）做状态×特征归因：解释 S18「状态分层 differentiated / 状态特征 A/B degraded」的特征成因。归因是**解释**不是扩充，不新增任何特征进训练。affects_gate=false。 | 交付记录（2026-09-13）：00_kickoff/s23_s24_s25_round3_conclusion.md",
+      "result": "自动任务已交付（详见 00_kickoff/s23_s24_s25_round3_conclusion.md）；4.4 待人工签字",
+      "started_at": "2026-09-13T00:59:16.444176+00:00",
+      "auto_acceptable_completed_at": "2026-09-13T00:59:16.444176+00:00"
     },
     {
       "id": "S25",
       "round": "I5",
       "name": "组合级过拟合审计（I5：PSR/DSR/PBO 方法论自研 + 试验预算延伸）",
-      "status": "pending",
+      "status": "in_progress",
       "scheduled_dates": "2026-10-13 ~ 2026-10-19",
       "source": "Issue #54 高质量项目集成3 · 组合闭环验证轮 · I5（组合级过拟合审计）",
       "depends_on": [
@@ -1576,20 +1592,26 @@
         {
           "id": "T25.1",
           "name": "自研实现 PSR/DSR/PBO 统计（概率统计公式直译，零新依赖；论文参数口径入注释），与 S17 既有 CPCV 路径统计对齐",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-13T00:59:16.444176+00:00",
+          "result": "src/eval/overfit_stats.py（零新依赖）：PSR/DSR（N 次试验期望最大 SR 校正）/MinTRL/PBO（CSCV 按时间块对称切分 + 块级 Σx/Σx² 预聚合）；公式直译 Bailey & López de Prado，pypbo（AGPL）仅公式参考不引入代码"
         },
         {
           "id": "T25.2",
           "name": "对 I1/I2 产出的组合回测路径回算 PSR/DSR/MinTRL，组合参数扫描计入统一试验预算，结论好坏如实入库",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-13T00:59:16.444176+00:00",
+          "result": "9 配置（3 臂 × 3 成本档）回算，N = 9 + 已登记 24 = 33：PBO = 0.011（冠军稳定，配置间无假冠军迹象）；但 DSR 全线偏低（0.08~0.24）且 MinTRL 2173~8382 天 ≫ 现有 1569 天 —— 读数为正但按统一试验预算校正后证据不足，如实入库"
         },
         {
           "id": "T25.3",
           "name": "审计结论写入组合回测报告（自动标注「该读数已扫描 N 次、DSR 校正后是否仍为正」）",
-          "status": "pending",
-          "auto_run": true
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-13T00:59:16.444176+00:00",
+          "result": "portfolio-backtest 输出新增 overfit_audit 段（--no-audit 可关），审计读数与 S17 统一试验预算联动自动标注「已扫描 N 次」"
         },
         {
           "id": "T25.4",
@@ -1599,8 +1621,10 @@
         }
       ],
       "affects_gate": false,
-      "note": "I1/I2 引入新的选择自由度（加权臂×门槛×成本档），不审计则重蹈「事后补记」覆辙。把 S17 的过拟合口径从 IC 层升到组合净值层：PSR/DSR/PBO（Bailey & López de Prado 方法论，自研实现；pypbo 140★ 为 AGPL-3.0 仅作公式参考不引入代码）；组合参数扫描全部计入 S17 统一试验预算。affects_gate=false。",
-      "result": "规划期：待 I5 启动"
+      "note": "I1/I2 引入新的选择自由度（加权臂×门槛×成本档），不审计则重蹈「事后补记」覆辙。把 S17 的过拟合口径从 IC 层升到组合净值层：PSR/DSR/PBO（Bailey & López de Prado 方法论，自研实现；pypbo 140★ 为 AGPL-3.0 仅作公式参考不引入代码）；组合参数扫描全部计入 S17 统一试验预算。affects_gate=false。 | 交付记录（2026-09-13）：00_kickoff/s23_s24_s25_round3_conclusion.md",
+      "result": "自动任务已交付（详见 00_kickoff/s23_s24_s25_round3_conclusion.md）；5.4 待人工签字",
+      "started_at": "2026-09-13T00:59:16.444176+00:00",
+      "auto_acceptable_completed_at": "2026-09-13T00:59:16.444176+00:00"
     }
   ],
   "next_run_date": "2026-09-12",
@@ -1611,6 +1635,6 @@
   "current_task_index": 0,
   "current_stage_index": 19,
   "start_date": "2026-09-10",
-  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。 | S18(H3) 市场状态分层 T18.1~T18.3 已交付（src/eval/regime.py + python main.py regime）：HMM 三态识别走 expanding 无前视口径，状态分层评估 + 状态特征单变量 A/B 全部 report_only；T18.4 状态是否进门禁保持人工 pending。遗留人工检查点累计 8 个（含新增 T18.4）。 | H 轮（S16~S20）收口对齐：自动任务全部交付并补齐阶段收口字段（round / auto_acceptable_completed_at / auto_acceptable_verified / closing，S16~S20 齐备）；H 轮人工检查点 T16.4/T17.4/T18.4/T19.4/T20.1/T20.4 全部进决策包（schedule/manual_checkpoints.json，共 11 条，priority 1..11 连续）；T20.1 由 completed 修正为 pending —— 调研结论已交付 ≠ 已采纳。补齐 H4/H5 结论文档（原先被引用但不存在）；新增守卫钉死阶段收口齐备 + 引用不得悬空。strategy_gate 零改动，全部阶段 affects_gate=false。 | 收官（2026-09-12）：S11~S20 全部阶段在 11 项人工检查点经用户确认（Issue #40）后收官为 completed，completed_at 逐阶段补齐（G 轮 auto_acceptable_completed_at 同批补全）；阶段收官 ≠ 配置变更 —— strategy_gate 零改动、affects_gate 恒 false。 | I 轮（S21~S25 组合闭环验证轮，Issue #54）已写入排期：组合回测闭环 → 组合构建三臂对照 → 漂移监控 → TreeSHAP 归因 → 组合级过拟合审计。主题依据：G/H 轮收官后组合层是唯一未验证层级（S15「IC 与命中率脱节」从未在扣成本组合 PnL 层复验）；选型延续「不加模型族/不加特征/零重型依赖/只读不进门禁」，skfolio（py3.10+cvxpy）、pypbo（AGPL）、PyPortfolioOpt 运行时（cvxpy，仅存可选臂）等进淘汰清单，见 00_kickoff/high_value_projects_round3_candidates.md。strategy_gate 零改动，全部阶段 affects_gate=false，人工检查点 T21.4/T22.4/T23.4/T24.4/T25.4。 | S21(I1) 自动任务已交付（2026-09-13）：引擎+CLI+对照已入库，T21.4 待人工检查点。 | S21(I1) 收官（2026-09-13，用户「1.确认」）：T21.4 = keep，组合口径纳入标准评估集（报表层，affects_gate=false）；阶段 completed。 | S22(I2) 自动任务已交付（2026-09-13）：三臂对照 + 优化臂准入取消，T22.4 待人工检查点。",
+  "note": "S11~S14（口径变更决策收敛轮）已完成：S11 多重比较校正查实换周期不成立；S12 正交对照查实特征扩充无显著增量；S13 历史试验 append-only 登记；S14 发布态健康检查。新追加 S11~S15（G1~G5 高质量项目集成轮，见 Issue #29）：评估量尺 → 标签重构 → qlib 因子 → akshare 数据源 → optuna 调参/概率区间。注意阶段 id 复用：新 S11~S14 与已完成的旧 S11~S14 同名但内容不同，note/source 字段可区分。 | S12(G2) 标签重构完成：三重障碍法 + A/B 结论入库；待人工检查点：T11.2 成本三档口径定稿、T12.3 标签是否纳入主线。 | S15 T15.3 结构重构已交付（代码+决策单），是否真正切换门禁结构仍待人工签字。 | S16~S20（H1~H5 高质量项目集成2 轮，见 Issue #40）已写入排期：概率区间校准(MAPIE/neuralforecast) → CPCV 过拟合加固 → HMM 市场状态分层 → 概率校准层 → LLM 投研只读辅助。本轮选型依据：S11 多重比较校正已否掉周期切换，S12 已否掉纯特征扩充，S13 指向瓶颈不在特征侧，S15 指向「IC 与命中率脱节、调参不是瓶颈、置信度门槛是唯一有效机制」——故 H1~H4 全部围绕「概率语义 + 评估可信度 + 条件有效性」展开，而非再加模型族或再加特征。 | S18(H3) 市场状态分层 T18.1~T18.3 已交付（src/eval/regime.py + python main.py regime）：HMM 三态识别走 expanding 无前视口径，状态分层评估 + 状态特征单变量 A/B 全部 report_only；T18.4 状态是否进门禁保持人工 pending。遗留人工检查点累计 8 个（含新增 T18.4）。 | H 轮（S16~S20）收口对齐：自动任务全部交付并补齐阶段收口字段（round / auto_acceptable_completed_at / auto_acceptable_verified / closing，S16~S20 齐备）；H 轮人工检查点 T16.4/T17.4/T18.4/T19.4/T20.1/T20.4 全部进决策包（schedule/manual_checkpoints.json，共 11 条，priority 1..11 连续）；T20.1 由 completed 修正为 pending —— 调研结论已交付 ≠ 已采纳。补齐 H4/H5 结论文档（原先被引用但不存在）；新增守卫钉死阶段收口齐备 + 引用不得悬空。strategy_gate 零改动，全部阶段 affects_gate=false。 | 收官（2026-09-12）：S11~S20 全部阶段在 11 项人工检查点经用户确认（Issue #40）后收官为 completed，completed_at 逐阶段补齐（G 轮 auto_acceptable_completed_at 同批补全）；阶段收官 ≠ 配置变更 —— strategy_gate 零改动、affects_gate 恒 false。 | I 轮（S21~S25 组合闭环验证轮，Issue #54）已写入排期：组合回测闭环 → 组合构建三臂对照 → 漂移监控 → TreeSHAP 归因 → 组合级过拟合审计。主题依据：G/H 轮收官后组合层是唯一未验证层级（S15「IC 与命中率脱节」从未在扣成本组合 PnL 层复验）；选型延续「不加模型族/不加特征/零重型依赖/只读不进门禁」，skfolio（py3.10+cvxpy）、pypbo（AGPL）、PyPortfolioOpt 运行时（cvxpy，仅存可选臂）等进淘汰清单，见 00_kickoff/high_value_projects_round3_candidates.md。strategy_gate 零改动，全部阶段 affects_gate=false，人工检查点 T21.4/T22.4/T23.4/T24.4/T25.4。 | S21(I1) 自动任务已交付（2026-09-13）：引擎+CLI+对照已入库，T21.4 待人工检查点。 | S21(I1) 收官（2026-09-13，用户「1.确认」）：T21.4 = keep，组合口径纳入标准评估集（报表层，affects_gate=false）；阶段 completed。 | S22(I2) 自动任务已交付（2026-09-13）：三臂对照 + 优化臂准入取消，T22.4 待人工检查点。 | S23/S24/S25 自动任务已交付（2026-09-13）：evidently 不引入（py3.10 门槛）→ PSI/KS 自研；TreeSHAP 机制就绪但 models/ 为占位符（真实训练待跑）；组合级审计 PBO 0.011 / DSR 0.08~0.24 / MinTRL 超现有样本 —— 校正后证据不足如实入库。T23.4/T24.4/T25.4 待人工检查点。",
   "blockers": []
 }

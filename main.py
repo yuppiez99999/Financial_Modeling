@@ -3373,7 +3373,7 @@ def _load_raw_close(symbols: list[str]) -> tuple[dict, list[str]]:
         if "date" not in df.columns or "close" not in df.columns:
             missing.append(symbol)
             continue
-        keep = [c for c in ("date", "open", "high", "low", "close") if c in df.columns]
+        keep = [c for c in ("date", "open", "high", "low", "close", "volume") if c in df.columns]
         df = df[keep].copy()
         df["date"] = pd.to_datetime(df["date"], errors="coerce")
         for c in keep[1:]:
@@ -3392,7 +3392,8 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
                                cost_levels: list[str] | None = None,
                                ma_window: int = 20,
                                contrast: bool = True,
-                               weights: str = "equal") -> dict:
+                               weights: str = "equal",
+                               audit: bool = True) -> dict:
     """组合回测闭环基线（S21 / I1 + S22 / I2 三臂对照，report_only）。
 
     本命令做的事：
@@ -3465,6 +3466,7 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
         signal_frames, min_confidence=float(min_confidence or 0.0))
 
     tiers_report: dict[str, Any] = {}
+    audit_series_map: dict[str, Any] = {}
     for tier in T112_COST_TIERS:
         if tier["name"] not in names:
             continue
@@ -3479,6 +3481,8 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
             "date_range": bt.get("date_range"),
             "n_days": bt.get("n_days"),
         }
+        if bt.get("available"):
+            audit_series_map[f"equal/{tier['name']}"] = bt["daily"]["net"]
 
     contrast_payload: Any = None
     if contrast:
@@ -3525,6 +3529,9 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
                     "reason": bt.get("reason"),
                     "metrics": bt.get("metrics"),
                 }
+                if bt.get("available"):
+                    key = f"{arm}/{tier['name']}"
+                    audit_series_map[key] = bt["daily"]["net"]
             weights_ab["arms"][arm] = {"available": True, "tiers": arm_report}
         weights_ab["verdict_note"] = (
             "三臂同口径 A/B 读数并排；判定（是否进入报表默认口径）属 T22.4 人工检查点，"
@@ -3536,6 +3543,39 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
         budget = count_trials(config)
     except Exception as e:  # noqa: BLE001
         budget = {"available": False, "reason": str(e)}
+
+    # S25/I5 组合级过拟合审计（T25.2/T25.3）：PSR/DSR/MinTRL + PBO(CSCV)
+    overfit_audit: dict[str, Any] | None = None
+    if audit and audit_series_map:
+        from src.eval.overfit_stats import audit_series, pbo_cscv
+
+        prior = {}
+        try:
+            from src.eval.trial_registry import count_trials as _ct
+            prior = _ct(config) or {}
+        except Exception:  # noqa: BLE001
+            pass
+        prior_portfolio = int(prior.get("total") or 0)
+        n_series = len(audit_series_map)
+        # 本次扫描的配置数 = 序列数；加上此前所有已登记试验（S17 统一预算）
+        n_trials = n_series + prior_portfolio
+        per_series = [
+            audit_series(s.to_numpy(), n_trials=n_trials, name=k)
+            for k, s in sorted(audit_series_map.items())]
+        matrix = pd.DataFrame(audit_series_map).dropna()
+        pbo = pbo_cscv(matrix.to_numpy()) if matrix.shape[1] >= 2 else None
+        overfit_audit = {
+            "available": True,
+            "affects_gate": False,
+            "n_series": n_series,
+            "n_trials": n_trials,
+            "prior_trials_total": prior_portfolio,
+            "per_series": per_series,
+            "pbo_cscv": pbo,
+            "note": ("DSR 对「已扫描 N 次」校正（S17 统一预算联动）；"
+                     "PBO = IS 冠军在 OS 掉队的概率；是否引入"
+                     "「DSR 校正后仍为正才采信」属 T25.4 人工检查点"),
+        }
 
     payload: dict[str, Any] = {
         "command": "portfolio-backtest",
@@ -3552,6 +3592,7 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
         "tiers": tiers_report,
         "consistency_contrast": contrast_payload,
         "weights_ab": weights_ab,
+        "overfit_audit": overfit_audit,
         "trial_budget": {"total_trials_before_this": budget.get("total"),
                          "available": budget.get("available", False),
                          "note": "本次读数已计入统一试验预算（S17 口径）"},
@@ -3585,6 +3626,200 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
     print(json.dumps({k: v for k, v in payload.items() if k != "consistency_contrast"
                       or not isinstance(contrast_payload, dict)},
                      ensure_ascii=False, indent=2))
+    return payload
+
+
+def run_drift_monitor_cmd(config: dict, symbols: list[str] | None = None,
+                          split: float = 0.5) -> dict:
+    """漂移监控（S23 / I3：T23.1 准入 + T23.2 PSI/KS 自研 + T23.3 交叉，report_only）。
+
+    T23.1 准入结论：evidently 现版要求 Python ≥ 3.10（本项目 3.8）→ 不引入
+    运行时，走预授权 fallback：PSI/KS 方法论自研（零新依赖）。
+
+    本命令做的事：
+      1. 离线读取 data/raw/ 日K，构造价格衍生特征（1 日收益 / 5 日收益 /
+         对数成交量）；
+      2. 参考窗（前半）vs 当前窗（后半）逐特征 PSI + KS 漂移读数；
+      3. 漂移时间线（rolling PSI）× 波动时间线的交叉读数（T23.3 结构就绪；
+         与 S18 状态转移、命中率漂移的真实交叉待跑 —— hmmlearn 未装、
+         预测审计无工件，如实登记）。
+
+    ⚠️ 只读报表、不进决策路径（affects_gate=false）；是否纳入 health_report
+    常规输出属 T23.4 人工检查点。
+    """
+    from src.eval import drift_monitor as dm
+    from datetime import datetime, timezone
+
+    logger.info("漂移监控（S23/I3，PSI/KS 自研，report_only）")
+    symbols = symbols or _config_symbols(config)
+    price_frames, missing = _load_raw_close(symbols)
+    if not price_frames:
+        payload = {"error": "无可用价格数据", "missing": missing, "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    per_symbol: dict[str, Any] = {}
+    timelines: dict[str, "pd.Series"] = {}
+    for symbol, px in sorted(price_frames.items()):
+        px = px.sort_values("date").reset_index(drop=True)
+        n = len(px)
+        if n < 60:
+            per_symbol[symbol] = {"available": False,
+                                  "reason": f"样本不足（{n} < 60）"}
+            continue
+        cut = int(n * float(split))
+        idx = pd.DatetimeIndex(px["date"])
+        # 全部特征统一挂日期索引（掩码与 rolling 时间线同口径，防索引错位）
+        def _dated(s: "pd.Series") -> "pd.Series":
+            return pd.Series(s.to_numpy(), index=idx)
+
+        feats = {
+            "ret_1d": _dated(px["close"].pct_change()),
+            "ret_5d": _dated(px["close"].pct_change(5)),
+            "log_volume": (_dated(np.log1p(px["volume"]))
+                           if "volume" in px.columns
+                           else pd.Series(np.nan, index=idx)),
+        }
+        ref_mask = pd.Series([i < cut for i in range(n)], index=idx)
+        cur_mask = pd.Series([i >= cut for i in range(n)], index=idx)
+        report = dm.drift_report(feats, ref_mask, cur_mask)
+        report["asof"] = str(idx[-1].date())
+        report["split_dates"] = [str(idx[cut].date()), str(idx[-1].date())]
+        per_symbol[symbol] = report
+        timeline = dm.rolling_psi(
+            _dated(px["close"].pct_change()), window=60, step=20)
+        if len(timeline):
+            timelines[symbol] = timeline
+
+    cross_rows: list[Any] = []
+    for symbol, timeline in timelines.items():
+        px = price_frames[symbol]
+        vol_timeline = pd.Series(
+            px["close"].pct_change().abs().to_numpy(),
+            index=pd.DatetimeIndex(px["date"])).rolling(60).mean().dropna()
+        cross_rows.append(dm.cross_drift_with_timeline(
+            timeline, vol_timeline, name=f"{symbol}:rolling_psi_vs_vol"))
+    cross_rows.append({
+        "available": False,
+        "name": "状态转移密度 / 命中率漂移交叉",
+        "reason": "S18 状态标签（hmmlearn 未装）与预测审计工件缺失，真实交叉待跑",
+        "affects_gate": False,
+    })
+
+    payload = {
+        "command": "drift-monitor",
+        "stage": "S23/I3",
+        "asof": datetime.now(timezone.utc).isoformat(),
+        "report_only": True,
+        "affects_gate": False,
+        "engine": "PSI/KS 自研（evidently 准入不过：现版要求 py>=3.10）",
+        "symbols_missing_or_skipped": sorted(set(missing)),
+        "per_symbol": per_symbol,
+        "cross_analysis": cross_rows,
+        "manual_checkpoint": "T23.4（漂移监控是否纳入 health_report 常规输出）",
+    }
+    _record_trial(config, "drift-monitor", {
+        "available": any((v or {}).get("available") for v in per_symbol.values()),
+        "symbols": len(price_frames),
+    })
+    out_dir = Path("reports/drift")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_path = out_dir / "drift_monitor.json"
+    report_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    payload["report_path"] = str(report_path)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return payload
+
+
+def run_feature_attribution_cmd(config: dict, symbols: list[str] | None = None,
+                                model_path: str | None = None,
+                                horizon: str = "short_term") -> dict:
+    """TreeSHAP 状态×特征归因（S24 / I4：T24.1 + T24.2 + T24.3，report_only）。
+
+    fail-close：models/*.pkl 当前为 DummyModel 占位符（真实训练待跑）→
+    本命令现在会明确报错，不产出假归因；真实 LightGBM 训练完成后同一命令
+    直接可用（机制已由 tests/test_roadmap_s24.py 合成数据证明）。
+    """
+    import joblib
+    from src.eval import feature_attribution as fa
+    from datetime import datetime, timezone
+
+    logger.info("TreeSHAP 特征归因（S24/I4，report_only）")
+    horizon_days = {"short_term": 5, "mid_term": 10, "long_term": 20}.get(horizon, 5)
+    model_file = Path(model_path or f"models/lightgbm_{horizon}_{horizon_days}d.pkl")
+    if not model_file.exists():
+        payload = {"error": f"模型文件不存在: {model_file}", "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+    bundle = joblib.load(model_file)
+    inner = bundle.get("model") if isinstance(bundle, dict) else bundle
+    if type(inner).__module__.startswith("lightgbm"):
+        pass
+    else:
+        payload = {
+            "error": f"模型为 {type(inner).__name__}（占位/非 LightGBM），"
+                     "TreeSHAP 归因需要真实训练模型（python main.py train）——"
+                     "拒绝产出假归因",
+            "model_file": str(model_file),
+            "affects_gate": False,
+            "note": "机制已就绪：tests/test_roadmap_s24.py 用合成 LGBM 证明 "
+                    "tree_shap_contrib/aggregate/window_drift/state_cross 正确",
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    # 真实模型路径：特征管线与训练保持一致（FeatureEngineer.transform）
+    try:
+        import scripts.evaluate_models as ev
+        from src.data.preprocessor import FeatureEngineer
+
+        symbols = symbols or _config_symbols(config)
+        data = ev.load_market_data(config, symbols)
+        if not data:
+            payload = {"error": "无可用行情数据", "affects_gate": False}
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return payload
+        per_symbol: dict[str, Any] = {}
+        for symbol, df in sorted(data.items()):
+            fe = FeatureEngineer(config)
+            feats = fe.transform(df, horizon_days=horizon_days)
+            feature_names = list(getattr(inner, "feature_name_", []) or
+                                 feats.columns)
+            X = feats[feature_names]
+            contrib = fa.tree_shap_contrib(inner, X)
+            cdf = fa.contribution_frame(
+                contrib, feature_names, index=feats.index)
+            imp = fa.aggregate_importance(cdf)
+            drift = fa.window_drift(cdf)
+            per_symbol[symbol] = {
+                "available": True,
+                "n_samples": int(len(cdf)),
+                "importance_top10": imp.head(10).to_dict(orient="records"),
+                "window_drift": drift,
+                "state_cross": {"available": False,
+                                "reason": "S18 状态标签缺失（hmmlearn 未装），待跑",
+                                "affects_gate": False},
+            }
+        payload = {
+            "command": "feature-attribution",
+            "stage": "S24/I4",
+            "asof": datetime.now(timezone.utc).isoformat(),
+            "report_only": True,
+            "affects_gate": False,
+            "model_file": str(model_file),
+            "per_symbol": per_symbol,
+            "manual_checkpoint": "T24.4（归因是否纳入例行报告）",
+        }
+    except Exception as e:  # noqa: BLE001 — 特征管线接入问题必须显式暴露
+        payload = {"error": f"归因管线执行失败: {e}", "affects_gate": False}
+    out_dir = Path("reports/attribution")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_path = out_dir / "feature_attribution.json"
+    report_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    payload["report_path"] = str(report_path)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
     return payload
 
 
@@ -3668,7 +3903,7 @@ def build_parser() -> argparse.ArgumentParser:
         "tune", "confidence", "confidence-gate", "confidence-holdout",
         "conformal", "conformal-interval", "overfit-audit", "regime",
         "calibration", "calibration-ablation", "research-assist",
-        "portfolio-backtest",
+        "portfolio-backtest", "drift-monitor", "feature-attribution",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -3758,6 +3993,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--weights", dest="weights", default="equal",
                         choices=["equal", "all"],
                         help="portfolio-backtest 命令：equal=等权基线（S21）；all=三臂对照 等权/1-ATR/置信度（S22，T22.1/T22.2）")
+    parser.add_argument("--no-audit", dest="no_audit", action="store_true",
+                        help="portfolio-backtest 命令：跳过 S25 组合级过拟合审计段（PSR/DSR/PBO）")
+    parser.add_argument("--split", dest="split", type=float, default=0.5,
+                        help="drift-monitor 命令：参考窗/当前窗切分比例（缺省 0.5）")
+    parser.add_argument("--model-path", dest="model_path", default=None,
+                        help="feature-attribution 命令：模型文件路径（缺省 models/lightgbm_<horizon>.pkl）")
     parser.add_argument("--n-blocks", dest="n_blocks", type=int, default=6,
                         help="overfit-audit 命令：CPCV 时间组数（缺省 6）")
     parser.add_argument("--k-test", dest="k_test", type=int, default=2,
@@ -4018,7 +4259,16 @@ def main():
             cost_levels=_lv,
             ma_window=int(getattr(args, "ma_window", 20) or 20),
             contrast=not bool(getattr(args, "no_contrast", False)),
-            weights=str(getattr(args, "weights", "equal") or "equal"))
+            weights=str(getattr(args, "weights", "equal") or "equal"),
+            audit=not bool(getattr(args, "no_audit", False)))
+    elif args.command == "drift-monitor":
+        run_drift_monitor_cmd(config, symbols=_cli_symbols(args),
+                              split=float(getattr(args, "split", 0.5) or 0.5))
+    elif args.command == "feature-attribution":
+        run_feature_attribution_cmd(
+            config, symbols=_cli_symbols(args),
+            model_path=getattr(args, "model_path", None),
+            horizon=str(getattr(args, "horizon", "short_term") or "short_term"))
     elif args.command == "calibration":
         _h = None
         _raw_h = getattr(args, "trials_horizons", None)
