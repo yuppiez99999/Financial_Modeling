@@ -253,6 +253,7 @@ curl "http://localhost:8800/api/v1/decision/feed?symbols=600519.SH,300308.SZ"
 | `decision-feed` | **决策源契约导出**（净方向概率 / 综合分 / 采纳建议 / 审计摘要；`--symbols-file` / `--stdout`） |
 | `pool-collinearity` | **池共线性诊断**（有效独立维度 / 市场 beta 占比 / 剥 beta 残差；`--high-corr`） |
 | `model-improve` | **模型优化对照**（标签口径 A/B：固定 h vs 三重障碍法；周期权重重排建议；`--horizons` / `--folds`） |
+| `regime-signal` | **波动分层置信度有效性**（置信度语义诊断 / 高置信×高波动分层读数 / 子池稳健性分级；`--confidence-thr` / `--stability-subsets` / `--folds`） |
 | `notify <symbol>` | 预测并推送信号（Webhook / 邮件） |
 | `daily-report` / `weekly-report` | 生成日/周报 |
 | `adaptive` | 运行自适应学习引擎 |

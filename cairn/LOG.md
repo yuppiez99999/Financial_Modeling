@@ -2,6 +2,25 @@
 
 本文件按倒序记录项目的实质性进展——最新条目紧贴本行下方。每条保持简短——只写摘要与指针；结论沉淀到 `cairn/<topic>.md` 知识专题文档。
 
+## 2026-09-16 · 波动分层与置信度语义修正（Issue #55）
+
+- **修正前一轮口径混淆**：`cairn/decision-source-contract` 的「高置信 ⇒ 收益为负」
+  只在**低波动**状态成立。把高波/低波混在一个阈值分档里会得到自相矛盾结论。
+- **置信度不是 edge 信号**：`IC(置信度, 未来收益) ≈ 0 ~ −0.09`（三周期一致），
+  它度量的是「模型确定性」而非「这笔交易赚钱概率」。
+- **波动分层是唯一正向读数**：高置信 × 高波动 → IC +0.23~+0.36、平均收益
+  +1.5%~+3.8%、命中 0.65~0.67（三周期一致）；高置信 × 低波动 → 收益为负。
+- **稳健性只到 suggestive**：随机 18 只子池 × 12 次，完整分歧仅 7/12 成立
+  （`verdict=suggestive`）⇒ 够格作下一步实验方向，**不够格**改下游采纳口径。
+- **周期权重重排被证伪**：单周期 IC 排序 ≠ 组合收益排序
+  （纯 20d IC 最高而组合收益最差）⇒ 不按单周期 IC 重排权重。
+- 新增 `src/eval/regime_conditioned_signal.py` + `python main.py regime-signal`；
+  新增 `regime_stability_check`（池层面抽样，不重采样样本）。
+- 顺带修一个复现性缺陷：同池打乱输入标的顺序会改变读数（date 同日 tie-break），
+  改为 `sort_values(["date","_symbol"], kind="mergesort")`。
+- 测试 `tests/test_regime_conditioned_signal.py` 27 条；只读 `affects_gate=false`。
+- 详情见 `cairn/regime-conditioned-signal.md`。
+
 ## 2026-09-16 · 模型优化排查（Issue #55 步骤①②③）
 
 - 按既定点定的优先级推进：**① 池共线性 → ② 标签口径 → ③ 周期选择**，全部落地为可复算命令
