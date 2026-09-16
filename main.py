@@ -1742,7 +1742,6 @@ def run_confidence_gate(config: dict, decided_by: str = "",
     return record
 
 
-
 def run_conformal_interval(config: dict, symbols: list[str] | None = None,
                            horizons: list[int] | None = None,
                            confidence_levels: list[float] | None = None,
@@ -2610,7 +2609,6 @@ def run_calibration(config: dict, symbols: list[str] | None = None,
     print("\n校准报告已保存: reports/probability_calibration_<h>d.json")
     print(f"校准参数已固化到: {model_dir}/probability_calibration_<horizon>.json")
     return reports
-
 
 
 def run_calibration_ablation(config: dict, symbols: list[str] | None = None,
@@ -4104,6 +4102,8 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py model-improve             # 模型优化对照（标签口径 A/B + 周期权重重排建议）
   python main.py regime-signal             # 波动分层下的置信度有效性（高置信=波动探测器？）
   python main.py tv-export                 # TradingView 一次交付：图片信号卡 + Pine 数据层（只读）
+  python main.py edge-check                # 基准相对决策增量：信号组合 vs 全池等权（扣成本 + 随机子集对照）
+  python main.py ablation                  # 特征集 × 模型族联合消融（唯一记分板 = 净超额 + 臂间配对 t）
         """,
     )
     parser.add_argument("command", choices=[
@@ -4117,8 +4117,8 @@ def build_parser() -> argparse.ArgumentParser:
         "conformal", "conformal-interval", "overfit-audit", "regime",
         "calibration", "calibration-ablation", "research-assist",
         "portfolio-backtest", "drift-monitor", "feature-attribution",
-        "decision-feed", "tv-export",
-        "pool-collinearity", "model-improve", "regime-signal",
+        "decision-feed", "tv-export", "pool-collinearity", "model-improve",
+        "regime-signal", "edge-check", "ablation",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -4137,6 +4137,23 @@ def build_parser() -> argparse.ArgumentParser:
                         help="regime-signal：子池稳健性检验每次抽多少标的（默认 18）")
     parser.add_argument("--folds", type=int, default=3,
                         help="model-improve：walk-forward 折数（默认 3）")
+    parser.add_argument("--holding-horizon", type=int, default=5, dest="holding_horizon",
+                        help="edge-check：非重叠持有期 / 调仓间隔（默认 5 日）")
+    parser.add_argument("--cost-level", default="base", dest="cost_level",
+                        choices=["conservative", "base", "aggressive"],
+                        help="edge-check：T11.2 定稿成本档（默认 base）")
+    parser.add_argument("--random-controls", type=int, default=40, dest="random_controls",
+                        help="edge-check：随机子集对照次数（默认 40）")
+    parser.add_argument("--edge-thr", type=float, default=0.5, dest="edge_thr",
+                        help="edge-check：综合分选中阈值（默认 0.5 = 中性）")
+    parser.add_argument("--abl-recipes", default=None, dest="abl_recipes",
+                        help="ablation：逗号分隔的特征子集配方（缺省 = 全部；full=全量基线）")
+    parser.add_argument("--abl-models", default=None, dest="abl_models",
+                        help="ablation：逗号分隔的模型族（缺省 = 全部；lightgbm=现行基线族）")
+    parser.add_argument("--abl-model", default="lightgbm", dest="abl_model",
+                        help="ablation：基线模型族（默认 lightgbm）")
+    parser.add_argument("--abl-recipe", default="full", dest="abl_recipe",
+                        help="ablation：基线特征配方（默认 full）")
     parser.add_argument("--model-type", default=None,
                         choices=["lightgbm", "pytorch_lstm", "timesfm", "ensemble",
                                  "factor_model", "multifactor"],
@@ -4351,6 +4368,161 @@ def run_regime_signal_cmd(config: dict, symbols: list[str] | None = None,
     })
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return report
+
+
+def run_edge_check_cmd(config: dict, symbols: list[str] | None = None,
+                       horizons: list[int] | None = None,
+                       folds: int = 3,
+                       holding_horizon: int = 5,
+                       confidence_thr: float = 0.5,
+                       cost_level: str = "base",
+                       random_controls: int = 40) -> dict:
+    """基准相对决策增量评估（Issue #55：信号组合到底有没有跑赢"什么都不做"）。
+
+    只产出证据，`affects_gate=False`：不改门禁 / 权重 / 池 / 配置。
+    落盘 `reports/benchmark_relative.json`。
+    """
+    from src.eval.benchmark_relative import build_report
+    from src.eval.regime_conditioned_signal import _build_supervised, _feature_columns, _walk_forward_proba
+
+    logger.info("执行基准相对决策增量评估（含成本 + 随机子集对照）")
+    symbols = symbols or _config_symbols(config)
+    hs = horizons or [int(v) for v in
+                      (config.get("data", {}).get("prediction_horizons", {}) or {}).values()]
+    hs = sorted(set(int(h) for h in hs)) or [5, 10, 20]
+    data = _load_price_frames(config, symbols)
+
+    # 逐周期样本外概率（与 regime-signal 同源口径：walk-forward、无前视）
+    probabilities: dict[int, object] = {}
+    for h in hs:
+        sup = _build_supervised(data, config, h)
+        if sup is None or sup.empty:
+            continue
+        feats = _feature_columns(sup, config, h)
+        proba = _walk_forward_proba(sup, feats, h, config, int(folds))
+        sup = sup.assign(_p=proba)
+        probabilities[h] = sup[["date", "_symbol", "_p"]].dropna(subset=["_p"])
+
+    report = build_report(data, probabilities, config, horizons=hs,
+                          holding_horizon=int(holding_horizon),
+                          confidence_thr=float(confidence_thr),
+                          cost_level=str(cost_level),
+                          n_random_controls=int(random_controls))
+    report["command"] = "edge-check"
+    report["folds"] = int(folds)
+    out_dir = Path("reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "benchmark_relative.json"
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str),
+                    encoding="utf-8")
+    report["report_path"] = str(path)
+    _record_trial(config, "edge-check", {
+        "available": bool(report.get("available")),
+        "n_symbols": report.get("benchmark", {}).get("n_periods", 0) and len(data),
+        "verdict": (report.get("verdict") or {}).get("level"),
+    })
+    print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+    return report
+
+
+def _ablation_horizons(args) -> list[int] | None:
+    """解析 `--horizons 5,10`（ablation：缺省对 5/10/20 逐个跑，成本是 3× 臂数）。"""
+    raw = getattr(args, "horizons", None)
+    if not raw:
+        return None
+    try:
+        return [int(x.strip()) for x in str(raw).split(",") if x.strip()]
+    except ValueError:
+        return None
+
+
+def run_ablation_cmd(config: dict, symbols: list[str] | None = None,
+                     horizons: list[int] | None = None,
+                     folds: int = 3,
+                     hold_horizon: int = 5,
+                     confidence_thr: float = 0.5,
+                     cost_level: str = "base",
+                     feature_recipes: list[str] | None = None,
+                     model_families: list[str] | None = None,
+                     base_model: str = "lightgbm",
+                     base_recipe: str = "full") -> dict:
+    """特征集 × 模型族联合消融（Issue #55 最后一条未量化嫌疑）。
+
+    只产出证据，`affects_gate=False`：不改特征集 / 模型配置 / 权重 / 池 / 门禁。
+    唯一记分板 = 相对全池等权的净超额（与 `edge-check` 同源）；增量需净超额转正
+    且相对基线臂**配对 t ≥ 2**。落盘 `reports/feature_model_ablation.json`。
+    """
+    from src.eval.feature_model_ablation import build_report
+
+    logger.info("执行特征集 × 模型族联合消融（唯一记分板：基准相对净超额）")
+    symbols = symbols or _config_symbols(config)
+    hs = horizons or sorted(set(int(h) for h in
+                               (config.get("data", {}).get("prediction_horizons", {}) or {}).values()
+                               )) or [5]
+    data = _load_price_frames(config, symbols)
+    if len(data) < 2:
+        payload = {"error": f"可用行情数据不足（{len(data)} < 2）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    report = build_report(data, config, horizons=hs, folds=int(folds),
+                          hold_horizon=int(hold_horizon),
+                          confidence_thr=float(confidence_thr),
+                          cost_level=str(cost_level),
+                          feature_recipes=feature_recipes,
+                          model_families=model_families,
+                          base_model=str(base_model),
+                          base_recipe=str(base_recipe))
+    report["command"] = "ablation"
+    report["data"] = {"n_symbols": len(data), "symbols": sorted(data.keys())[:8]}
+    out_dir = Path("reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "feature_model_ablation.json"
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str),
+                    encoding="utf-8")
+    report["report_path"] = str(path)
+    _record_trial(config, "ablation", {
+        "available": bool(report.get("available")),
+        "n_symbols": len(data),
+        "n_arms": sum(len((v.get("feature_arms") or {})) + len((v.get("model_arms") or {}))
+                      for v in (report.get("per_horizon") or {}).values()),
+        "feature_verdict": report.get("feature_verdict_level"),
+        "model_verdict": report.get("model_verdict_level"),
+    })
+    print(json.dumps(_ablation_summary(report), ensure_ascii=False, indent=2, default=str))
+    return report
+
+
+def _ablation_summary(report: dict) -> dict:
+    """终端摘要：只印判定相关字段（完整读数在报告文件里）。"""
+    keep = ("kind", "available", "reason", "horizons", "folds", "holding_horizon",
+            "confidence_threshold", "cost_level", "baseline", "scoring_rule",
+            "feature_verdict_level", "model_verdict_level", "feature_ablation",
+            "model_ablation", "report_path", "affects_gate", "readonly",
+            "conclusion_note")
+    out = {k: report.get(k) for k in keep if k in report}
+    out["per_horizon"] = {}
+    for h, v in (report.get("per_horizon") or {}).items():
+        out["per_horizon"][h] = {
+            "available": v.get("available"), "reason": v.get("reason"),
+            "n_samples": v.get("n_samples"), "n_features_full": v.get("n_features_full"),
+            "n_rebalance_dates": v.get("n_rebalance_dates"),
+            "uncovered_columns": v.get("uncovered_columns"),
+            "elapsed_seconds": v.get("elapsed_seconds"),
+            "baseline_arm": {k: v.get("baseline_arm", {}).get(k) for k in
+                             ("model", "n_features", "verdict", "vs_benchmark",
+                              "avg_n_selected", "mean_probability")},
+            "feature_arms": {k: {kk: a.get(kk) for kk in
+                                 ("n_features", "verdict", "vs_benchmark",
+                                  "vs_baseline_arm", "available", "reason")}
+                             for k, a in (v.get("feature_arms") or {}).items()},
+            "model_arms": {k: {kk: a.get(kk) for kk in
+                               ("n_features", "verdict", "vs_benchmark",
+                                "vs_baseline_arm", "available", "reason")}
+                           for k, a in (v.get("model_arms") or {}).items()},
+        }
+    return out
 
 
 def _load_price_frames(config: dict, symbols: list[str]) -> dict:
@@ -4641,6 +4813,41 @@ def main():
             confidence_thr=float(getattr(args, "confidence_thr", 0.6) or 0.6),
             stability_subsets=int(getattr(args, "stability_subsets", 12) or 0),
             stability_size=int(getattr(args, "stability_size", 18) or 18))
+    elif args.command == "edge-check":
+        _eh = None
+        _raw_eh = getattr(args, "horizons", None)
+        if _raw_eh:
+            try:
+                _eh = [int(x.strip()) for x in str(_raw_eh).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--horizons 解析失败，改用配置 prediction_horizons: {_raw_eh}")
+        run_edge_check_cmd(
+            config, symbols=_cli_symbols(args), horizons=_eh,
+            folds=int(getattr(args, "folds", 3) or 3),
+            holding_horizon=int(getattr(args, "holding_horizon", 5) or 5),
+            confidence_thr=float(getattr(args, "edge_thr", 0.5) or 0.5),
+            cost_level=str(getattr(args, "cost_level", "base") or "base"),
+            random_controls=int(getattr(args, "random_controls", 40) or 0))
+    elif args.command == "ablation":
+        def _ablation_list(raw):
+            if not raw:
+                return None
+            raw = str(raw).strip()
+            if raw.lower() in ("all", "none", ""):
+                return None
+            return [x.strip() for x in raw.split(",") if x.strip()]
+
+        run_ablation_cmd(
+            config, symbols=_cli_symbols(args),
+            horizons=_ablation_horizons(args),
+            folds=int(getattr(args, "folds", 3) or 3),
+            hold_horizon=int(getattr(args, "holding_horizon", 5) or 5),
+            confidence_thr=float(getattr(args, "edge_thr", 0.5) or 0.5),
+            cost_level=str(getattr(args, "cost_level", "base") or "base"),
+            feature_recipes=_ablation_list(getattr(args, "abl_recipes", None)),
+            model_families=_ablation_list(getattr(args, "abl_models", None)),
+            base_model=str(getattr(args, "abl_model", "lightgbm") or "lightgbm"),
+            base_recipe=str(getattr(args, "abl_recipe", "full") or "full"))
     elif args.command == "decision-feed":
         run_decision_feed_cmd(
             config, symbols=_cli_symbols(args),
