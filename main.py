@@ -3629,6 +3629,86 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
     return payload
 
 
+def run_decision_feed_cmd(config: dict, symbols: list[str] | None = None,
+                          symbols_file: str | None = None, stdout: bool = False,
+                          audit_hours: int = 24) -> dict:
+    """**决策源契约导出**（`python main.py decision-feed`）。
+
+    为什么要有这条命令（而不是只在 API 里做）：
+      下游 tradingview / 28 的集成是靠**离线管道**跑的（`scripts/` 下逐行读
+      标的清单 → 写 JSON → 消费），不一定常驻 HTTP 服务。把契约构建做成
+      CLI，可以让「同一份契约」在服务态与离线管道态**逐字段一致**，
+      避免又出现两套换算。
+
+    产出 `reports/decision_feed.json`：每标的净看涨概率（逐周期 + 综合）、
+    校准概率与不确定性、置信度采纳建议、已回溯命中率摘要。
+
+    ⚠️ 只读决策源：不产出仓位/下单建议（`position_role=observer`），
+    不改变门禁（`affects_gate=false`）。
+
+    用法：
+      python main.py decision-feed
+      python main.py decision-feed --symbols-file ~/positions.txt --stdout
+    """
+    from src.export.decision_feed import build_decision_feed
+    from src.inference.predictor import PredictionEngine
+
+    logger.info("决策源契约导出（decision-feed）")
+    logger.info("[decision-feed] 只读决策源：输出方向/概率/采纳建议，不产出仓位（position_role=observer）")
+
+    if symbols_file:
+        try:
+            lines = Path(symbols_file).read_text(encoding="utf-8").splitlines()
+            symbols = [ln.strip().split(",")[0].split()[0]
+                       for ln in lines
+                       if ln.strip() and not ln.strip().startswith("#")]
+            logger.info(f"[decision-feed] 从 {symbols_file} 读到 {len(symbols)} 个标的")
+        except Exception as e:  # noqa: BLE001
+            payload = {"error": f"标的清单读取失败: {e}", "affects_gate": False}
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return payload
+
+    symbol_list = symbols or _config_symbols(config)
+    if not symbol_list:
+        payload = {"error": "未指定标的且配置无启用标的", "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    engine = PredictionEngine(config)
+    engine.load_models(config.get("model", {}).get("type", "lightgbm"))
+
+    from src.api.server import build_portfolio_summary
+
+    base = build_portfolio_summary(engine, config, list(dict.fromkeys(symbol_list)))
+    feed = build_decision_feed(base, config, audit_hours=audit_hours)
+
+    out_dir = Path("reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_path = out_dir / "decision_feed.json"
+    report_path.write_text(json.dumps(feed, ensure_ascii=False, indent=2),
+                           encoding="utf-8")
+    feed["report_path"] = str(report_path)
+
+    summary = {
+        "contract_version": feed.get("contract_version"),
+        "symbol_count": (feed.get("meta") or {}).get("symbol_count"),
+        "scored_count": (feed.get("meta") or {}).get("scored_count"),
+        "advisory_consumable_count": (feed.get("meta") or {}).get("advisory_consumable_count"),
+        "affects_gate": False,
+        "position_role": feed.get("position_role"),
+        "analytics_available": (feed.get("analytics") or {}).get("available"),
+        "analytics_verdict": ((feed.get("analytics") or {}).get("overall") or {}).get(
+            "verdict", {}).get("status"),
+        "report_path": str(report_path),
+    }
+    if stdout:
+        print(json.dumps(feed, ensure_ascii=False, indent=2))
+    else:
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+    logger.info(f"决策源契约已落盘: {report_path}")
+    return feed
+
+
 def run_drift_monitor_cmd(config: dict, symbols: list[str] | None = None,
                           split: float = 0.5) -> dict:
     """漂移监控（S23 / I3：T23.1 准入 + T23.2 PSI/KS 自研 + T23.3 交叉，report_only）。
@@ -3891,6 +3971,8 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py calibration-ablation     # 校准层消融对照：base/platt/isotonic 决策读数并排（T19.4 证据）
   python main.py research-assist          # 投研辅助只读接入评估：候选调研 + 离线对照 + 决策单（S20/H5）
   python main.py portfolio-backtest      # 组合回测闭环：信号×门槛×成本三档→净值/回撤/换手/夏普（S21/I1，report_only）
+  python main.py decision-feed            # 决策源契约导出：净方向概率/综合分/采纳建议 → reports/decision_feed.json
+  python main.py decision-feed --stdout    # 同上，直接打印 JSON（供下游管道消费）
         """,
     )
     parser.add_argument("command", choices=[
@@ -3904,6 +3986,7 @@ def build_parser() -> argparse.ArgumentParser:
         "conformal", "conformal-interval", "overfit-audit", "regime",
         "calibration", "calibration-ablation", "research-assist",
         "portfolio-backtest", "drift-monitor", "feature-attribution",
+        "decision-feed",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -3995,6 +4078,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="portfolio-backtest 命令：equal=等权基线（S21）；all=三臂对照 等权/1-ATR/置信度（S22，T22.1/T22.2）")
     parser.add_argument("--no-audit", dest="no_audit", action="store_true",
                         help="portfolio-backtest 命令：跳过 S25 组合级过拟合审计段（PSR/DSR/PBO）")
+    parser.add_argument("--symbols-file", dest="symbols_file", default=None,
+                        help="decision-feed 命令：逐行标的清单文件（下游 tradingview 集成方案推荐用法）")
+    parser.add_argument("--stdout", dest="stdout", action="store_true",
+                        help="decision-feed 命令：同时把契约 JSON 打到 stdout（供管道消费）")
+    parser.add_argument("--audit-hours", dest="audit_hours", type=int, default=24,
+                        help="decision-feed 命令：审计摘要窗口小时数（缺省 24）")
     parser.add_argument("--split", dest="split", type=float, default=0.5,
                         help="drift-monitor 命令：参考窗/当前窗切分比例（缺省 0.5）")
     parser.add_argument("--model-path", dest="model_path", default=None,
@@ -4261,6 +4350,12 @@ def main():
             contrast=not bool(getattr(args, "no_contrast", False)),
             weights=str(getattr(args, "weights", "equal") or "equal"),
             audit=not bool(getattr(args, "no_audit", False)))
+    elif args.command == "decision-feed":
+        run_decision_feed_cmd(
+            config, symbols=_cli_symbols(args),
+            symbols_file=getattr(args, "symbols_file", None),
+            stdout=bool(getattr(args, "stdout", False)),
+            audit_hours=int(getattr(args, "audit_hours", 24) or 24))
     elif args.command == "drift-monitor":
         run_drift_monitor_cmd(config, symbols=_cli_symbols(args),
                               split=float(getattr(args, "split", 0.5) or 0.5))

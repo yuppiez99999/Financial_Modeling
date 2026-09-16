@@ -414,6 +414,25 @@ model_factors:
 
 # 策略门禁（src/trading/gate.py）
 # 判定信号能否从「只读观测」升级为「调仓打分因子」；未达标一律 fail-close 保持只读
+# ==================== 决策源契约（Issue #55） ====================
+# 16_ 对下游决策源（tradingview / 28）出口的只读契约：
+#   GET /api/v1/decision/feed     或     python main.py decision-feed
+# 只出方向/概率/校准值/采纳建议，**不产出仓位**（position_role=observer），
+# **不改门禁**（affects_gate=false）。
+decision_feed:
+  # 多周期聚合权重（缺省与 SignalEngine.DEFAULT_HORIZON_WEIGHTS 同源：
+  # 短期噪音大、长期置信更高）。改这里即改综合分口径，下游无需再自算。
+  horizon_weights:
+    short_term: 0.30
+    mid_term: 0.35
+    long_term: 0.35
+  # 采纳建议门槛（置信度 = |score-0.5|*2）。缺省取 S15/G5 置信度子集口径
+  # 的下界（T15.3 = defer：口径已定、未切换门禁）——**不是**本层择优结果。
+  # ⚠️ 实测（cairn/decision-source-contract.md）：置信度越高命中率越高但
+  #    平均已实现收益越低，三周期判定均 ineffective。调低此值不等于提升效果，
+  #    任何门槛变更须有 analytics 证据支撑并人工确认。
+  advisory_threshold: 0.20
+
 strategy_gate:
   enabled: true
   # 门禁未放行时交易适配层不发订单（默认关闭，避免历史判定静默改变下单行为）
