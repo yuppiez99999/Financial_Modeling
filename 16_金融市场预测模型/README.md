@@ -106,6 +106,7 @@
 - **决策源契约** `/api/v1/decision/feed`（Issue #55）：净看涨概率 / 多周期综合分 / 校准概率 / 采纳建议 / 审计摘要；服务态与离线 `main.py decision-feed` 逐字段一致
 - **TradingView 交付** `main.py tv-export`（Issue #55）：把契约投影成 TradingView **可直接读入**的
   图片信号卡（真 PNG，`tEXt` 内嵌机器可读契约 + 全精度锚点）与 Pine 数据层（`tv-pine/1`，`request.seed` 可读）
+- **模型优化排查**（Issue #55 步骤①②③，2026-09-16）：① 池共线性（38 只 → 有效维度 7.9，缩池无效）→ ② 三重障碍法标签**证伪** → ③ 现行周期权重与证据方向相反；顺带修掉 `label_*` 列静默泄漏进特征集的真缺陷（详见 `cairn/model-optimization-findings.md`）
 - 与 28 系统双向闭环：28 侧审计用本地真实行情回溯命中，命中率与漂移告警进入每日报告
 
 ### 📊 最新训练评估（2026-09-09，腾讯财经真实行情 · 目标泄漏已修复）
@@ -299,6 +300,9 @@ if m.size() > 0
 | `risk-advice` | 智能风控建议（止损 / 止盈，门禁未放行则 fail-close） |
 | `decision-feed` | **决策源契约导出**（净方向概率 / 综合分 / 采纳建议 / 审计摘要；`--symbols-file` / `--stdout`） |
 | `tv-export` | **TradingView 交付**（图片信号卡 PNG + Pine 数据层 `tv-pine/1` + 无前视锚点回填；`--out-dir` / `--no-anchors` / `--anchor-step` / `--card-limit`） |
+| `pool-collinearity` | **池共线性诊断**（有效独立维度 / 市场 beta 占比 / 剥 beta 残差；`--high-corr`） |
+| `model-improve` | **模型优化对照**（标签口径 A/B：固定 h vs 三重障碍法；周期权重重排建议；`--horizons` / `--folds`） |
+| `regime-signal` | **波动分层置信度有效性**（置信度语义诊断 / 高置信×高波动分层读数 / 子池稳健性分级；`--confidence-thr` / `--stability-subsets` / `--folds`） |
 | `notify <symbol>` | 预测并推送信号（Webhook / 邮件） |
 | `daily-report` / `weekly-report` | 生成日/周报 |
 | `adaptive` | 运行自适应学习引擎 |
