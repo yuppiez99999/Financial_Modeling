@@ -55,6 +55,45 @@ class PredictionAudit:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         logger.debug(f"审计记录: {entry['id']}")
 
+    def record_prediction_v2(self, prediction: dict[str, Any]) -> None:
+        """记录一条带**来源标记**的预测（新版共享记账接口）。
+
+        为什么需要它（真缺陷，不是风格问题）：
+          外部决策源（tradingview / 28 的 `daily_runner` 步骤 2.5）把预测送进来
+          时用的是**逐条 dict**，与 `record_prediction` 的字段口径不同，且无法
+          标注来源；一旦上游改用 positional / 关键字传参，就会被静默写进
+          ``symbol=None`` 的坏记录（既不报错、也无法在统计里分辨）。
+          本方法显式接收 ``symbol/horizon/...`` 关键字，缺失关键字段时
+          **直接报错**（fail-loud），并把 ``source`` 写进记录，便于统计时
+          按来源切分命中率。
+        """
+        if not prediction.get("symbol"):
+            raise ValueError("record_prediction_v2 需要非空 symbol（拒绝写入坏记录）")
+        if not prediction.get("horizon"):
+            raise ValueError("record_prediction_v2 需要非空 horizon（拒绝写入坏记录）")
+        entry = {
+            "id": (f"{prediction.get('symbol')}_{prediction.get('horizon')}_"
+                   f"{datetime.now().strftime('%Y%m%d%H%M%S')}"),
+            "timestamp": datetime.now().isoformat(),
+            "symbol": prediction.get("symbol"),
+            "horizon": prediction.get("horizon"),
+            "horizon_days": prediction.get("horizon_days"),
+            "prediction": prediction.get("prediction"),
+            "direction": prediction.get("direction"),
+            "probability": prediction.get("probability"),
+            "confidence": prediction.get("confidence"),
+            "latest_date": prediction.get("latest_date"),
+            "latest_close": prediction.get("latest_close"),
+            "source": prediction.get("source") or "internal",
+            "verified": False,
+            "actual_direction": None,
+            "hit": None,
+            "actual_return": None,
+        }
+        with open(ensure_path_under(self.record_file, self.audit_dir), "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        logger.debug(f"审计记录(v2): {entry['id']} source={entry['source']}")
+
     def load_records(self) -> list[dict]:
         """加载所有预测记录（公开接口）"""
         return self._load_records()

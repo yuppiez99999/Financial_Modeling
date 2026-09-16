@@ -216,6 +216,13 @@ python main.py audit            # 预测审计（真实行情回溯命中率）
 python main.py schedule         # 自动重训练调度（常驻）
 ```
 
+> 🔌 **决策源契约**（供 tradingview / 28 消费）：
+> `GET /api/v1/decision/feed` 或 `python main.py decision-feed --symbols-file ~/positions.txt --stdout`
+> —— 出口每周期**净看涨概率**（下游不必判断方向字符串）、多周期综合分、校准概率、
+> 置信度采纳建议与已回溯命中率摘要。**只读**：不产出仓位、不改门禁。
+> ⚠️ 实测：置信度↑ ⇒ 命中率↑（54%→98%）但**平均已实现收益↓（+1.92%→−0.78%）**，
+> 高置信 ≠ 可采信，详见 [决策源契约专题](cairn/decision-source-contract.md)。
+
 > 📌 完整命令与配置请参见 → [**16_金融市场预测模型/README.md**](16_金融市场预测模型/README.md)
 
 ---
@@ -239,6 +246,7 @@ python main.py schedule         # 自动重训练调度（常驻）
 | `GET` | `/api/v1/predict/{symbol}` | 单只预测（`?horizon=`） |
 | `POST` | `/api/v1/predict/batch` | 批量预测 |
 | `GET` | **`/api/v1/portfolio/summary`** | **组合级契约端点（主系统每日消费）** |
+| `GET` | **`/api/v1/decision/feed`** | **决策源契约（净方向概率 / 综合分 / 采纳建议 / 审计摘要）** |
 | `GET` | `/api/v1/signal/{symbol}` | 交易信号 |
 | `GET` | `/api/v1/trade/{symbol}` | 交易适配输出 |
 | `GET` | `/api/v1/audit/report` | 审计报告 |
@@ -274,6 +282,12 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=300308.SZ,601088.SH
 本仓库作为 **只读信号源**，与外部独立仓库 **28-终极量化交易系统8.4**（不在本仓库内，故不作链接）通过 REST 对接。
 
 > **设计原则：本系统只出方向与概率，主系统独享决策权。**（一期只读注入，不改变主系统任何下单 / 调仓行为）
+
+> **Issue #55 更新**：下游无需再自算口径 —— 契约层已出口 `net_up_probability`（净看涨概率，
+> 免除 `direction == "看涨" ? p : 1−p` 这类条件分支）、显式权重的多周期综合分、
+> 校准概率与**采纳建议**。服务态与离线管道态（`main.py decision-feed`）逐字段一致。
+> 实测结论：高置信子集命中率↑但平均已实现收益↓ ⇒ 信号宜作**只读观测 / 风险预警**，
+> 不宜按"高置信"放大仓位。
 
 | 组件 | 职责 |
 |:---|:---|

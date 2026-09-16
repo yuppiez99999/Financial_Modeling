@@ -40,9 +40,50 @@ def _align_features(latest: "np.ndarray", model: Any) -> "np.ndarray":
             f"模型={expected})，已截取前 {expected} 个特征"
         )
         return latest[:, :expected]
-    pad = np.zeros((1, expected - latest.shape[1]))
+    pad = np.zeros((latest.shape[0], expected - latest.shape[1]))
     logger.warning(f"特征数不足，已用0填充至 {expected}")
     return np.hstack([latest, pad])
+
+
+def _align_by_feature_names(feature_names: list, expected_names: list,
+                            values: "np.ndarray") -> "np.ndarray | None":
+    """**按特征名**重排 / 筛选特征列，返回与模型训练时**同序**的单行矩阵。
+
+    为什么必须按名对齐（而不是按位置截断）：
+      `_align_features` 的位置截断在「特征列数与训练时相同但**列序或列集合
+      不同**」时**不报警也不报错** —— 它会安静地把 A 列的值喂给期望 B 列的
+      模型，输出一个看起来完全正常的概率。这是真缺陷：离线评估看不到，
+      只有线上信号悄悄失准。`scripts/evaluate_models.build_supervised` 产出
+      的列集合（含 ``_symbol`` / ``_fwd_ret`` 等内部列）与推理期
+      `FeatureEngineer.get_feature_columns` 给的列集合并不逐字相同，
+      正是触发该场景的现实路径。
+
+    fail-loud，不猜：
+      - 模型记录了 ``feature_name_`` 时：按名取列、**按模型顺序**排列；
+      - 缺列 → 记 WARNING 并**按该列在训练数据上的均值之外唯一安全的选择**
+        即 0 填充（保持列数，不改动其它列语义），缺失列名写进日志；
+      - 无模型特征名 → 返回 None，由调用方回落到既有位置对齐逻辑。
+    """
+    if not expected_names:
+        return None
+    cols = list(feature_names or [])
+    if values.shape[0] != 1:
+        return None
+    row = values[0]
+    index = {name: i for i, name in enumerate(cols)}
+    missing = [n for n in expected_names if n not in index]
+    if missing:
+        logger.warning(
+            f"推理特征缺列 {len(missing)} 个（{missing[:5]}"
+            f"{'...' if len(missing) > 5 else ''}），按 0 填充；"
+            "其余列按名对齐，不改动任何列语义"
+        )
+    mat = np.zeros((1, len(expected_names)), dtype=float)
+    for j, name in enumerate(expected_names):
+        i = index.get(name)
+        if i is not None and i < row.shape[0]:
+            mat[0, j] = float(row[i])
+    return mat
 
 
 class PredictionEngine:
@@ -316,8 +357,16 @@ class PredictionEngine:
             model = model_data["model"]
             scaler = model_data["scaler"]
 
-            # 特征数对齐：训练时和推理时可能因目标列不同导致特征数不一致
-            latest = _align_features(latest, model)
+            # 特征对齐（**先按名、再按位置**）：
+            # 按名对齐是正确性修复 —— 位置截断在「列数相同但列序/列集合不同」时
+            # 不会报警，会把 A 列值喂给期望 B 列的模型，产出看似正常的错概率。
+            by_name = _align_by_feature_names(
+                feature_cols, list(getattr(model, "feature_name_", []) or []), latest)
+            if by_name is not None:
+                latest = by_name
+            else:
+                # 特征数对齐：训练时和推理时可能因目标列不同导致特征数不一致
+                latest = _align_features(latest, model)
 
             X_scaled = scaler.transform(latest) if scaler is not None else latest
             pred = int(model.predict(X_scaled)[0])

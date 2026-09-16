@@ -103,6 +103,7 @@
 - 双维评估：机器学习指标（Accuracy / F1 / AUC）+ 金融指标（胜率 / 夏普 / 盈亏比 / 最大回撤）
 - **推理数据每日自动刷新**：缓存过期经真实源刷新一次，绝不落 simulation 假数据（防随机游走数据伪装"今天"骗过新鲜度检查）
 - FastAPI 预测服务（默认端口 8800），支持单只/批量/组合级预测（`/api/v1/portfolio/summary` 对齐 28 持仓池）
+- **决策源契约** `/api/v1/decision/feed`（Issue #55）：净看涨概率 / 多周期综合分 / 校准概率 / 采纳建议 / 审计摘要；服务态与离线 `main.py decision-feed` 逐字段一致
 - 与 28 系统双向闭环：28 侧审计用本地真实行情回溯命中，命中率与漂移告警进入每日报告
 
 ### 📊 最新训练评估（2026-09-09，腾讯财经真实行情 · 目标泄漏已修复）
@@ -193,7 +194,35 @@ curl -X POST http://localhost:8800/api/v1/predict/batch \
 
 # 组合级摘要（28 系统每日消费的契约端点；缺省用 config 启用标的）
 curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ"
+
+# 决策源契约（tradingview / 28 消费；在 summary 之上**只增不减**地追加决策字段）
+curl "http://localhost:8800/api/v1/decision/feed?symbols=600519.SH,300308.SZ"
 ```
+
+### 决策源契约（`decision-feed/1`）🔌
+
+下游（tradingview / 28）此前需要自己换算口径：判断 `direction == "看涨"`、
+自定多周期权重（那边是 `0.2/0.5/0.3`）、自定动作阈值（`0.6/0.4`）、
+自算置信度。**同一份预测在不同消费方被翻译成不同口径**，是集成期最难排查的一类问题。
+
+契约层把这些换算收到生产方一侧：
+
+| 字段 | 含义 | 对下游的价值 |
+|:---|:---|:---|
+| `horizons.<h>.net_up_probability` | 每周期**净看涨概率** | **不必再判断方向字符串**；方向与概率不可能被读成相反结论 |
+| `horizons.<h>.calibrated_probability` / `uncertainty` | S19 校准层 | 概率是否标定，一眼可见（缺失时如实 `calibration_applied=false`） |
+| `aggregate.composite_score` / `composite_signed` | 多周期综合分（显式权重） | 权重口径统一；`missing_horizons` / `coverage` 如实披露 |
+| `advisory.advisory_consumable` / `recommended_threshold` | 置信度采纳建议 | 门槛不再由消费方各拍一个数 |
+| `audit` / `analytics` | 已回溯命中率 / 分档×已实现收益 | 是否采信有实证依据 |
+
+结构性纪律：`position_role = observer`、`affects_gate = false`、`advisory_only = true`
+—— **不产出仓位、不改门禁**。缺失周期**不补 0.5**，非有限值一律 `None`。
+
+> ⚠️ **实测边界**（真实日K + 本地真实训练 LightGBM，15584 锚点）：
+> 置信度越高 ⇒ 命中率越高（54% → 98%）**但平均已实现收益越低（+1.92% → −0.78%）**，
+> 三周期保守判定均为 `ineffective`。高置信区是「趋势加速段」（波动近乎翻倍而方向仍对），
+> 已过均值回复临界点。**高置信 ≠ 可采信**，信号宜作只读观测 / 风险预警。
+> 详见 [决策源契约专题](../cairn/decision-source-contract.md)。
 
 ---
 
@@ -220,6 +249,7 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 | `factors` / `factor-model` | 多因子加权组合预测；多因子模型权重与 IC 诊断 |
 | `stream` / `intraday` / `consistency` | 盘中实时流；单只盘中信号；跨周期/跨模型一致性校验 |
 | `risk-advice` | 智能风控建议（止损 / 止盈，门禁未放行则 fail-close） |
+| `decision-feed` | **决策源契约导出**（净方向概率 / 综合分 / 采纳建议 / 审计摘要；`--symbols-file` / `--stdout`） |
 | `notify <symbol>` | 预测并推送信号（Webhook / 邮件） |
 | `daily-report` / `weekly-report` | 生成日/周报 |
 | `adaptive` | 运行自适应学习引擎 |

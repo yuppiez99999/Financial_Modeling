@@ -861,7 +861,67 @@ async def get_portfolio_summary(
                 symbol_list.extend(cfg.get("symbols", []))
     symbol_list = list(dict.fromkeys(symbol_list))  # 去重保序
 
-    return build_portfolio_summary(_engine, _config, symbol_list)
+    base = build_portfolio_summary(_engine, _config, symbol_list)
+    try:
+        from src.export.decision_feed import build_decision_feed
+
+        return build_decision_feed(base, _config)
+    except Exception as e:  # noqa: BLE001 - 契约层失败不得拖垮已发布端点
+        logger.exception("[portfolio/summary] 决策字段追加失败: %s", e)
+        base["decision_feed_error"] = str(e)
+        return base
+
+
+def _resolve_symbols(symbols: str | None) -> list[str]:
+    """解析 symbols 查询参数；缺省用 config 启用的 markets 标的（去重保序）。"""
+    if symbols:
+        return list(dict.fromkeys(s.strip() for s in symbols.split(",") if s.strip()))
+    markets = _config.get("data", {}).get("markets", {})
+    out: list[str] = []
+    for _name, cfg in markets.items():
+        if cfg.get("enabled"):
+            out.extend(cfg.get("symbols", []))
+    return list(dict.fromkeys(out))
+
+
+@app.get("/api/v1/decision/feed")
+async def get_decision_feed(
+    symbols: str = Query(None, description="逗号分隔的标的列表，缺省用 config 启用的 markets 标的"),
+):
+    """**决策源契约**（供 tradingview / 28 等下游消费者直接落库、打分、回测）。
+
+    在原始预测之上**只增不减**地追加下游真正需要的决策字段：
+
+    - ``net_up_probability``：每周期净看涨概率 —— 下游**不必再判断 direction
+      字符串**（口径分裂的主要来源），「方向」与「概率」不再可能被读成相反结论；
+    - ``aggregate``：多周期加权综合分（显式权重；缺失周期如实披露，不补 0.5）；
+    - ``calibrated_probability`` / ``uncertainty``：S19 校准层（参数缺失时不猜）；
+    - ``advisory``：置信度采纳建议（``advisory_consumable`` +
+      ``recommended_threshold``），结构性声明 ``advisory_only=true`` /
+      ``affects_gate=false``；
+    - ``audit``：已回溯命中率随 feed 下发，下游可自行判断是否采信。
+
+    ⚠️ 只读决策源：**不产出仓位 / 下单建议**，不改变 16_ 侧任何门禁判定。
+    """
+    _init_engine()
+    if not _engine or not _engine.models:
+        raise HTTPException(503, "模型未加载，请先训练模型")
+    symbol_list = _resolve_symbols(symbols)
+    return build_decision_feed_for(_engine, _config, symbol_list)
+
+
+def build_decision_feed_for(engine: Any, config: dict,
+                            symbol_list: list[str]) -> dict[str, Any]:
+    """组合摘要 + 决策字段（纯逻辑，可单测；不触网）。"""
+    base = build_portfolio_summary(engine, config, symbol_list)
+    try:
+        from src.export.decision_feed import build_decision_feed
+
+        return build_decision_feed(base, config)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("[decision/feed] 契约构建失败: %s", e)
+        base["decision_feed_error"] = str(e)
+        return base
 
 
 def run_server(host: str = "0.0.0.0", port: int = 8800):
