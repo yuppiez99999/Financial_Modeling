@@ -132,18 +132,42 @@ class FeatureEngineer:
         return out
 
     # ------------------------------------------------------------------
+    # 目标/标签列前缀：任何以这些前缀开头的列都**绝不允许**进入特征集。
+    # 历史坑（2026-09-16 实测暴露）：排除规则此前只认 `target_`，
+    # 而三重障碍法标签列名为 `label_tb_{h}d[_bin]` —— 一旦监督集里带了该列
+    # （`label_ab` / `model_improvement` 都会带），`get_feature_columns` 会把它
+    # **当特征返回**，模型直接学到标签本身，产出 AUC=1.0、IC=0.44 的假读数。
+    # 这不是"指标虚高"，是**标签泄漏**：任何依赖列名列表的调用方都会中招。
+    # 因此这里改为前缀族排除 + fail-loud 自检，新增标签列名必须挂在族里。
+    LABEL_COLUMN_PREFIXES = ("target_", "label_")
+
     def get_feature_columns(self, df_features: pd.DataFrame, horizon_days: int = 5) -> list[str]:
         """返回特征列集合。
 
-        排除原始行情列与 target_* 目标列：目标列一旦混入特征集即构成
-        目标泄漏（训练/评估指标虚高），因此无论在哪个阶段调用都强制排除。
+        排除原始行情列与**目标/标签列族**（`target_*` / `label_*`）：
+        目标列一旦混入特征集即构成目标泄漏（训练/评估指标虚高），
+        因此无论在哪个阶段调用都强制排除 —— 排除按**前缀族**做，
+        避免"新增了一种标签列名就静默泄漏"（历史坑见类常量注释）。
         """
         exclude = {"date", "open", "high", "low", "close", "volume"}
         cols = [
             c
             for c in df_features.columns
-            if c not in exclude and not str(c).startswith("target_")
+            if c not in exclude
+            and not any(str(c).startswith(p) for p in self.LABEL_COLUMN_PREFIXES)
         ]
+        # fail-loud 自检：排除后若仍有疑似标签列（含 label/target 语义但前缀不匹配），
+        # 明确告警而不是静默把它当特征 —— 宁可让调用方看见，也不要产出假读数。
+        suspicious = [
+            c for c in cols
+            if any(tok in str(c).lower() for tok in ("label", "target", "fwd_ret", "future"))
+        ]
+        if suspicious:
+            logger.warning(
+                f"[features] 特征集中出现疑似标签列 {suspicious}，"
+                f"已按前缀族 {self.LABEL_COLUMN_PREFIXES} 排除；"
+                "若这是真实特征请改名以避免与标签族混淆"
+            )
         return cols
 
     def create_target(self, df: pd.DataFrame, horizon_days: int = 5) -> pd.DataFrame:
