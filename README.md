@@ -223,6 +223,14 @@ python main.py schedule         # 自动重训练调度（常驻）
 > ⚠️ 实测：置信度↑ ⇒ 命中率↑（54%→98%）但**平均已实现收益↓（+1.92%→−0.78%）**，
 > 高置信 ≠ 可采信，详见 [决策源契约专题](cairn/decision-source-contract.md)。
 
+> 🔬 **模型优化排查**（Issue #55 步骤①②③）：
+> `python main.py pool-collinearity` / `python main.py model-improve`（只读，`affects_gate=false`）
+> —— ① 全池 38 只 → 有效独立维度 **7.9**（ETF 池 14→2.8），但**缩池无效**（去冗余后 IC 反降）；
+> ② 三重障碍法标签**证伪**（三周期全无增量）；③ 现行权重 `0.30/0.35/0.35` 把最高权重
+> 给了**唯一不显著**的 10d，而 5d 是唯一强 IC 且显著的周期（不自动重排，须人工签字）。
+> 顺带修掉 `label_*` 列**静默泄漏进特征集**的真缺陷（曾产出 AUC=1.0 的假读数）。
+> 详见 [模型优化排查专题](cairn/model-optimization-findings.md)。
+
 > 📌 完整命令与配置请参见 → [**16_金融市场预测模型/README.md**](16_金融市场预测模型/README.md)
 
 ---

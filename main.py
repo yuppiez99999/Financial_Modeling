@@ -3973,6 +3973,8 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py portfolio-backtest      # 组合回测闭环：信号×门槛×成本三档→净值/回撤/换手/夏普（S21/I1，report_only）
   python main.py decision-feed            # 决策源契约导出：净方向概率/综合分/采纳建议 → reports/decision_feed.json
   python main.py decision-feed --stdout    # 同上，直接打印 JSON（供下游管道消费）
+  python main.py pool-collinearity         # 池共线性诊断（有效独立维度 / 市场 beta 占比）
+  python main.py model-improve             # 模型优化对照（标签口径 A/B + 周期权重重排建议）
         """,
     )
     parser.add_argument("command", choices=[
@@ -3986,7 +3988,7 @@ def build_parser() -> argparse.ArgumentParser:
         "conformal", "conformal-interval", "overfit-audit", "regime",
         "calibration", "calibration-ablation", "research-assist",
         "portfolio-backtest", "drift-monitor", "feature-attribution",
-        "decision-feed",
+        "decision-feed", "pool-collinearity", "model-improve",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -3995,6 +3997,10 @@ def build_parser() -> argparse.ArgumentParser:
                         choices=["short_term", "mid_term", "long_term", "all"],
                         help="预测周期")
     parser.add_argument("--config", default=None, help="配置文件路径")
+    parser.add_argument("--high-corr", type=float, default=0.7, dest="high_corr",
+                        help="pool-collinearity：高相关对阈值（默认 0.7）")
+    parser.add_argument("--folds", type=int, default=3,
+                        help="model-improve：walk-forward 折数（默认 3）")
     parser.add_argument("--model-type", default=None,
                         choices=["lightgbm", "pytorch_lstm", "timesfm", "ensemble",
                                  "factor_model", "multifactor"],
@@ -4099,6 +4105,75 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default=None, help="API 服务地址")
     parser.add_argument("--port", type=int, default=None, help="API 服务端口")
     return parser
+
+
+def run_pool_collinearity_cmd(config: dict, symbols: list[str] | None = None,
+                             high_corr: float = 0.7) -> dict:
+    """池共线性诊断（Issue #55 步骤①）：有效独立维度 / 市场 beta 强度 / 剥 beta 残余。
+
+    只产出证据，`affects_gate=False`：不改池、不改门禁；缩池属产品口径变更须人工签字。
+    落盘 `reports/pool_collinearity.json`。
+    """
+    from src.eval.pool_collinearity import build_report
+
+    logger.info("执行池共线性诊断")
+    symbols = symbols or _config_symbols(config)
+    data = _load_price_frames(config, symbols)
+    report = build_report(data, high_corr_threshold=float(high_corr))
+    report["command"] = "pool-collinearity"
+    out_dir = Path("reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "pool_collinearity.json"
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    report["report_path"] = str(path)
+    _record_trial(config, "pool-collinearity", {
+        "available": bool(report.get("available")),
+        "n_symbols": report.get("n_symbols_with_returns", 0),
+    })
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return report
+
+
+def run_model_improve_cmd(config: dict, symbols: list[str] | None = None,
+                          horizons: list[int] | None = None,
+                          folds: int = 3) -> dict:
+    """模型优化对照（Issue #55 步骤②③）：标签口径 A/B + 周期权重重排建议。
+
+    只产出证据，`affects_gate=False`：标签口径切换与聚合权重重排均属产品口径变更，
+    须人工签字并重做泄漏/偏差审查后才可生效。落盘 `reports/model_improvement.json`。
+    """
+    from src.eval.model_improvement import build_report
+
+    logger.info("执行模型优化对照实验（标签口径 + 周期权重）")
+    symbols = symbols or _config_symbols(config)
+    hs = horizons or [int(v) for v in
+                      (config.get("data", {}).get("prediction_horizons", {}) or {}).values()]
+    hs = sorted(set(int(h) for h in hs)) or [5, 10, 20]
+    data = _load_price_frames(config, symbols)
+    report = build_report(data, config, horizons=hs, folds=int(folds))
+    report["command"] = "model-improve"
+    out_dir = Path("reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "model_improvement.json"
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    report["report_path"] = str(path)
+    _record_trial(config, "model-improve", {
+        "available": bool(report.get("available")),
+        "n_symbols": report.get("n_symbols", 0),
+        "horizons": hs,
+    })
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return report
+
+
+def _load_price_frames(config: dict, symbols: list[str]) -> dict:
+    """加载行情表（本地缓存优先，缺失且未指定 offline 时联网拉取）。"""
+    try:
+        import scripts.evaluate_models as ev
+        return ev.load_market_data(config, symbols)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[pool/model-improve] 行情加载失败: {e}")
+        return {}
 
 
 def main():
@@ -4350,6 +4425,21 @@ def main():
             contrast=not bool(getattr(args, "no_contrast", False)),
             weights=str(getattr(args, "weights", "equal") or "equal"),
             audit=not bool(getattr(args, "no_audit", False)))
+    elif args.command == "pool-collinearity":
+        run_pool_collinearity_cmd(
+            config, symbols=_cli_symbols(args),
+            high_corr=float(getattr(args, "high_corr", 0.7) or 0.7))
+    elif args.command == "model-improve":
+        _mh = None
+        _raw_mh = getattr(args, "horizons", None)
+        if _raw_mh:
+            try:
+                _mh = [int(x.strip()) for x in str(_raw_mh).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--horizons 解析失败，改用配置 prediction_horizons: {_raw_mh}")
+        run_model_improve_cmd(
+            config, symbols=_cli_symbols(args), horizons=_mh,
+            folds=int(getattr(args, "folds", 3) or 3))
     elif args.command == "decision-feed":
         run_decision_feed_cmd(
             config, symbols=_cli_symbols(args),
