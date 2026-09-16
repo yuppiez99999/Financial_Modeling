@@ -433,6 +433,25 @@ decision_feed:
   #    任何门槛变更须有 analytics 证据支撑并人工确认。
   advisory_threshold: 0.20
 
+  # ── TradingView 交付（tv-export）────────────────────────────────────
+  # 只读投影：图片信号卡（PNG + tEXt 机器可读契约）+ Pine 外挂数据层（tv-pine/1）。
+  # 与 decision_feed 共用同一份契约产出，**不做二次换算**；
+  # 卡片与 JSON 均带 affects_gate=false / position_role=observer。
+  tv:
+    out_dir: "outputs/tv/exports"   # 交付产物根目录（gitignored，与 reports/ 同性质）
+    banner: ("NOT VALIDATED - READ-ONLY OBSERVER OUTPUT / "
+             "ADVISORY ONLY / NO POSITION SIZING")
+    # 锚点回填（分数 × 命中 × 已实现收益）：本地真实日K + 已训练模型离线回填
+    anchors:
+      enabled: true
+      horizon: "short_term"   # 用哪个周期的模型出分（回填不重训）
+      step: 5                 # 锚点间隔（交易日）；< 周期天数即视窗重叠（读数标注 overlap）
+      max_anchors: 90         # 单标的锚点上限（取最近一段，避免长历史放大水平读数）
+    # 契约里「三周期全缺」的标的是否也出卡：默认出**如实标注缺失**的卡
+    # （下游看到"这条没数据"比整条消失更难被误读）；置 false 则只出有读数的卡。
+    cards_for_unavailable: true
+    card_limit: 0             # >0 = 只出前 N 张卡（0 = 全出）
+
 strategy_gate:
   enabled: true
   # 门禁未放行时交易适配层不发订单（默认关闭，避免历史判定静默改变下单行为）

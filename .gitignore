@@ -83,3 +83,6 @@ schedule/_*.py
 # 数据缓存目录
 data/cache/
 
+
+# TradingView 交付产物（tv-export）：与 reports/ 同性质，运行产物不入库
+outputs/

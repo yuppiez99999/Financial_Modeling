@@ -104,6 +104,8 @@
 - **推理数据每日自动刷新**：缓存过期经真实源刷新一次，绝不落 simulation 假数据（防随机游走数据伪装"今天"骗过新鲜度检查）
 - FastAPI 预测服务（默认端口 8800），支持单只/批量/组合级预测（`/api/v1/portfolio/summary` 对齐 28 持仓池）
 - **决策源契约** `/api/v1/decision/feed`（Issue #55）：净看涨概率 / 多周期综合分 / 校准概率 / 采纳建议 / 审计摘要；服务态与离线 `main.py decision-feed` 逐字段一致
+- **TradingView 交付** `main.py tv-export`（Issue #55）：把契约投影成 TradingView **可直接读入**的
+  图片信号卡（真 PNG，`tEXt` 内嵌机器可读契约 + 全精度锚点）与 Pine 数据层（`tv-pine/1`，`request.seed` 可读）
 - **模型优化排查**（Issue #55 步骤①②③，2026-09-16）：① 池共线性（38 只 → 有效维度 7.9，缩池无效）→ ② 三重障碍法标签**证伪** → ③ 现行周期权重与证据方向相反；顺带修掉 `label_*` 列静默泄漏进特征集的真缺陷（详见 `cairn/model-optimization-findings.md`）
 - 与 28 系统双向闭环：28 侧审计用本地真实行情回溯命中，命中率与漂移告警进入每日报告
 
@@ -225,6 +227,52 @@ curl "http://localhost:8800/api/v1/decision/feed?symbols=600519.SH,300308.SZ"
 > 已过均值回复临界点。**高置信 ≠ 可采信**，信号宜作只读观测 / 风险预警。
 > 详见 [决策源契约专题](../cairn/decision-source-contract.md)。
 
+### TradingView 交付（`tv-export`）🖼️
+
+下游要的是**能被读进去的东西**，不是又一份接口文档。TradingView 侧只有两条近原生入口，
+平台**不做二次渲染**：
+
+| 入口 | TradingView 侧怎么用 | 交付物 |
+|:---|:---|:---|
+| 图片导入 | 客户端读**一张静态 PNG** | `signals/<symbol>.png` —— 单图承载三周期净看涨概率 / 综合分 / 置信度 / 门禁结论 / 采纳权重 / 锚点收益条 |
+| `request.seed` | Pine 读**变量 × 时序** JSON 表 | `pine/trendcast/<symbol>.json` —— `ret_*` 列 + 列字典 |
+
+```bash
+python main.py tv-export                            # 全池，一次产出三件套
+python main.py tv-export --symbols 510300.SH        # 单标的
+python main.py tv-export --no-anchors --card-limit 8  # 只出卡片，只出前 8 张
+```
+
+**像素即契约**：卡片上的每个数值与同一份契约**逐字段相等**（守卫 `tests/test_tv_export.py`）。
+同一张 PNG 的 `tEXt` 块带机器可读内容（UTF-8）：
+
+`signal_contract`（契约摘要）/ `anchors_json`（全精度锚点）/ `Title` / `Description` /
+`Source` / `Boundary`（`position_role=observer; affects_gate=false; ...`）/
+`AnchorEvidence`（`validated=false; ...`）。
+
+**Pine 侧**：
+
+```pine
+//@version=6
+var matrix<float> m = request.seed("TRENDCAST_510300_SH", "trendcast/510300.SH.json")
+if m.size() > 0
+    float comp = m.get(1, m.rows() - 1)     // ret_composite
+    plot(comp * 100, "composite %", color.blue)
+```
+
+**不出口可交易字段**（`is_trade` / 仓位 / 权重一律不在列里）——本层用于同图对照，
+不做下单依据；纪律写在 `meta` 里而不是文档里。
+
+**锚点回填**（`src/eval/anchor_backfill.py`）：本地真实日K + 已训练模型**离线回填**
+「分数 × 命中 × 已实现收益」。**无前视**：特征行只取到 `t`，结果只在 `t+h` 已收线时回填，
+未到期标 `pending` 且不参与统计。模型是当下这一个（不逐锚点重训）→ 全部读数标 `validated=false`。
+
+> ⚠️ **本轮实测（38 标的池，2023-01 ~ 2026-09，3420 锚点）**：
+> 锚点命中 52.9% / 平均已实现收益 +0.32%，三周期置信度几乎全部贴地（`|composite-0.5|` ≤0.02），
+> `advisory_consumable` **0/38**，模型 AUC ≈ 0.50~0.54。
+> **交付形态已通，模型本身还没跑出可用区分度** —— 信号宜作只读观测 / 风险预警。
+> 详见 [TradingView 交付专题](../cairn/tradingview-handoff.md)。
+
 ---
 
 ## 三、命令行接口 🧰
@@ -251,6 +299,7 @@ curl "http://localhost:8800/api/v1/decision/feed?symbols=600519.SH,300308.SZ"
 | `stream` / `intraday` / `consistency` | 盘中实时流；单只盘中信号；跨周期/跨模型一致性校验 |
 | `risk-advice` | 智能风控建议（止损 / 止盈，门禁未放行则 fail-close） |
 | `decision-feed` | **决策源契约导出**（净方向概率 / 综合分 / 采纳建议 / 审计摘要；`--symbols-file` / `--stdout`） |
+| `tv-export` | **TradingView 交付**（图片信号卡 PNG + Pine 数据层 `tv-pine/1` + 无前视锚点回填；`--out-dir` / `--no-anchors` / `--anchor-step` / `--card-limit`） |
 | `pool-collinearity` | **池共线性诊断**（有效独立维度 / 市场 beta 占比 / 剥 beta 残差；`--high-corr`） |
 | `model-improve` | **模型优化对照**（标签口径 A/B：固定 h vs 三重障碍法；周期权重重排建议；`--horizons` / `--folds`） |
 | `regime-signal` | **波动分层置信度有效性**（置信度语义诊断 / 高置信×高波动分层读数 / 子池稳健性分级；`--confidence-thr` / `--stability-subsets` / `--folds`） |

@@ -45,9 +45,9 @@ def _align_features(latest: "np.ndarray", model: Any) -> "np.ndarray":
     return np.hstack([latest, pad])
 
 
-def _align_by_feature_names(feature_names: list, expected_names: list,
-                            values: "np.ndarray") -> "np.ndarray | None":
-    """**按特征名**重排 / 筛选特征列，返回与模型训练时**同序**的单行矩阵。
+def _align_by_feature_names(feature_names: "list | None", expected_names: list,
+                            row: "np.ndarray") -> "np.ndarray | None":
+    """**按特征名**重排 / 筛选特征，返回与模型训练时**同序**的单行矩阵。
 
     为什么必须按名对齐（而不是按位置截断）：
       `_align_features` 的位置截断在「特征列数与训练时相同但**列序或列集合
@@ -58,20 +58,44 @@ def _align_by_feature_names(feature_names: list, expected_names: list,
       `FeatureEngineer.get_feature_columns` 给的列集合并不逐字相同，
       正是触发该场景的现实路径。
 
+    ⚠️ 调用契约（2026-09-16 修正，此前调用方踩过）：
+      ``feature_names`` 必须是**推理期的列名列表**（字符串），
+      ``row`` 是与之**逐位置对应**的一行值向量。早期调用方把值矩阵
+      （``latest``）当 ``feature_names`` 传进来，于是函数内部做的是
+      「用小数当列名去匹配模型特征名」——全部判成缺失、整体 0 填充，
+      **不报错地**产出一条与任何标的/日期无关的常数概率
+      （回填链路上表现为 3409 个锚点置信度恒定 0.0303756）。
+      因此本函数现在对 ``feature_names`` 做类型校验：不是字符串序列
+      直接返回 None（调用方回落位置对齐），不再对值字符串做模糊解释。
+
     fail-loud，不猜：
       - 模型记录了 ``feature_name_`` 时：按名取列、**按模型顺序**排列；
-      - 缺列 → 记 WARNING 并**按该列在训练数据上的均值之外唯一安全的选择**
-        即 0 填充（保持列数，不改动其它列语义），缺失列名写进日志；
-      - 无模型特征名 → 返回 None，由调用方回落到既有位置对齐逻辑。
+      - 缺列 → 记 WARNING 并按 0 填充（保持列数，不改动其它列语义），
+        缺失列名写进日志；
+      - 无模型特征名 / 无法确定列名 → 返回 None，由调用方回落既有逻辑。
     """
     if not expected_names:
         return None
     cols = list(feature_names or [])
-    if values.shape[0] != 1:
+    if not cols or not all(isinstance(c, str) for c in cols):
         return None
-    row = values[0]
+    row = np.asarray(row).reshape(-1)
+    if row.shape[0] == 0:
+        return None
     index = {name: i for i, name in enumerate(cols)}
     missing = [n for n in expected_names if n not in index]
+    if len(missing) == len(expected_names):
+        # **全列缺失 = 列名根本没对上**（例如模型只记了 Column_0..N 占位名）。
+        # 此时 0 填充会产出一条与标的/日期无关的常数概率 —— 不报错、看不出，
+        # 只有回填锚点序列恒定才暴露得出来。这里直接放弃按名对齐，
+        # 交由调用方回落位置对齐（位置对齐在这个场景下才是正确语义）。
+        logger.warning(
+            "推理特征与模型特征名**完全对不上**（%d/%d 列缺失，样例 %s）——"
+            "放弃按名对齐，回落位置对齐；若模型特征名形如 Column_N，"
+            "请重训以写入训练期列名",
+            len(missing), len(expected_names), missing[:3],
+        )
+        return None
     if missing:
         logger.warning(
             f"推理特征缺列 {len(missing)} 个（{missing[:5]}"
@@ -84,6 +108,97 @@ def _align_by_feature_names(feature_names: list, expected_names: list,
         if i is not None and i < row.shape[0]:
             mat[0, j] = float(row[i])
     return mat
+
+
+class _BoosterFeatureNames:
+    """可 pickle 的 booster 特征名代理。
+
+    为什么要一个类而不是 lambda：`booster_.feature_name` 会被写进模型对象，
+    而模型要经过 joblib **落盘**。lambda 不可 pickle
+    （`Can't pickle <lambda>`，`tests/test_trainer.py` 实测炸过），
+    模块级类则可以。
+    """
+
+    __slots__ = ("names",)
+
+    def __init__(self, names: Sequence[str]):
+        self.names = list(names)
+
+    def __call__(self) -> list:
+        return list(self.names)
+
+    def __eq__(self, other: Any) -> bool:
+        return self.names == list(other() if callable(other) else other or [])
+
+    def __repr__(self) -> str:  # pragma: no cover - 排障用
+        return f"_BoosterFeatureNames({self.names[:3]}...)" if len(self.names) > 3 \
+            else f"_BoosterFeatureNames({self.names})"
+
+
+def _sync_model_feature_names(model: Any, expected_names: "list | None") -> bool:
+    """把产物里的 `feature_cols` 写回模型原生特征名；成功返回 True。
+
+    为什么要在**加载侧**也做一次（而不是只在训练侧）：
+      先于本次修复训练的产物，模型内只有 ``Column_N`` 占位名，但 joblib 里
+      **已经存了** ``feature_cols``（语义列名）。模型不必重训即可恢复按名对齐。
+      不做这一步的话，按名对齐会判「全列缺失」并回落位置对齐 —— 位置对齐在
+      「训练/推理列集合逐字相同」时是对的，但一旦上游特征集增删（如新增宏观列、
+      扩展指标），就会**静默错位**：把 A 列喂给期望 B 列的模型。
+
+    两条实测约束（漏掉任一条都等于没写）：
+      1. `LGBMClassifier.feature_name_` 只读（无 setter），必须经
+         ``booster_.feature_name`` 写；
+      2. sklearn 包装的 booster 会缓存 ``feature_name()``，必须清掉
+         ``__boosters`` 缓存，否则改动不生效。
+    """
+    cols = [str(c) for c in (expected_names or [])]
+    if not cols or model is None:
+        return False
+    if list(getattr(model, "feature_name_", []) or []) == cols:
+        return True    # 已经一致：不动 booster，避免无谓改写
+    booster = getattr(model, "booster_", None)
+    if booster is None:
+        return False
+    try:
+        booster.feature_name = _BoosterFeatureNames(cols)   # 可 pickle，见类注释
+        for attr in ("_Booster__boosters", "_LGBMClassifier__boosters"):
+            if hasattr(model, attr):
+                setattr(model, attr, None)
+        return list(getattr(model, "feature_name_", []) or []) == cols
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[align] 同步模型特征名失败（回落位置对齐）: %s", e)
+        return False
+
+
+def _select_by_names(feats: Any, row_index: int, order: "list | None") -> "np.ndarray | None":
+    """按模型特征名从**推理期特征表**取一行（缺列 0 填充），顺序跟随模型。
+
+    与 `_align_by_feature_names` 的分工：后者在**已知列名 + 单行值**时对齐；
+    本函数在**只有特征表**时按行取列 —— 两者共用同一套「按名不看位置」纪律，
+    但分别服务推理链路（已算好最新一行）与回填链路（要取历史任意一行）。
+    """
+    if order is None or feats is None:
+        return None
+    cols = list(order)
+    if not cols or not all(isinstance(c, str) for c in cols):
+        return None
+    present = set(map(str, getattr(feats, "columns", [])))
+    missing = [c for c in cols if c not in present]
+    if len(missing) == len(cols):
+        # 全列缺失 → 列名体系不同（如 Column_N 占位名）。0 填充会产常数读数，
+        # 交由调用方回落位置对齐，而不是静默造一条假序列。
+        logger.warning(
+            "[align] 回填特征与模型特征名完全对不上（%d 列缺失）——"
+            "回落位置对齐", len(missing),
+        )
+        return None
+    if missing:
+        logger.debug("[align] 回填特征缺列 %d 个，按 0 填充", len(missing))
+    row = np.zeros((1, len(cols)), dtype=float)
+    for j, name in enumerate(cols):
+        if name in present:
+            row[0, j] = float(feats[name].iloc[row_index])
+    return row
 
 
 class PredictionEngine:
@@ -167,6 +282,12 @@ class PredictionEngine:
                 # 单因子模型：直接按其自身概率输出
                 self.models[model_key] = {"factor": artifact}
             else:
+                # 产物里存了 feature_cols → 写回模型特征名，让按名对齐真正生效
+                # （老产物模型内只有 Column_N 占位名，见 _sync_model_feature_names）
+                if _sync_model_feature_names(artifact.model, artifact.feature_cols):
+                    logger.info(
+                        f"[align] {model_key} 已按产物 feature_cols 同步特征名"
+                        f"（{len(artifact.feature_cols)} 列）")
                 self.models[model_key] = {
                     "model": artifact.model,
                     "scaler": artifact.scaler,
@@ -360,8 +481,19 @@ class PredictionEngine:
             # 特征对齐（**先按名、再按位置**）：
             # 按名对齐是正确性修复 —— 位置截断在「列数相同但列序/列集合不同」时
             # 不会报警，会把 A 列值喂给期望 B 列的模型，产出看似正常的错概率。
-            by_name = _align_by_feature_names(
-                feature_cols, list(getattr(model, "feature_name_", []) or []), latest)
+            # 按名对齐（正确性修复，见 `_align_by_feature_names` 注释）：
+            # 传**推理期列名 + 与之逐位置对应的一行值**，由函数内部按名取列；
+            # 列名列表不可用（None / 非字符串）时函数返回 None，回落位置对齐。
+            model_feats = list(getattr(model, "feature_name_", []) or [])
+            if model_feats:
+                by_name = _align_by_feature_names(
+                    feature_cols, model_feats, np.asarray(latest).reshape(-1))
+                if by_name is not None:
+                    latest = by_name
+                else:
+                    latest = _align_features(latest, model)
+            else:
+                latest = _align_features(latest, model)
             if by_name is not None:
                 latest = by_name
             else:

@@ -243,6 +243,13 @@ python main.py schedule         # 自动重训练调度（常驻）
 > 同时检验周期权重重排：单周期 IC 排序 ≠ 组合收益排序，**证伪**。
 > 详见 [波动分层专题](cairn/regime-conditioned-signal.md)。
 
+> 🖼️ **TradingView 交付**：`python main.py tv-export` —— 把契约投影成 TradingView **可直接读入**的
+> 图片信号卡（真 PNG，`tEXt` 内嵌机器可读契约 + 全精度锚点）与 Pine 数据层
+> （`tv-pine/1`，`request.seed` 可读）。**像素即契约**：卡片数值与同一份契约逐字段相等。
+> ⚠️ 本轮实测（38 标的池，3420 锚点）：命中 52.9% / 平均收益 +0.32%、置信度普遍贴地、
+> `advisory_consumable` 0/38 —— **交付形态已通，模型本身还没跑出可用区分度**。
+> 详见 [TradingView 交付专题](cairn/tradingview-handoff.md)。
+
 > 📌 完整命令与配置请参见 → [**16_金融市场预测模型/README.md**](16_金融市场预测模型/README.md)
 
 ---
