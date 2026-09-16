@@ -89,3 +89,28 @@ python main.py decision-feed --symbols-file ~/positions.txt --stdout
 ```
 
 原 `/api/v1/portfolio/summary` 亦已自动追加决策字段（向后兼容，旧消费方零改动）。
+
+## 六、交付形态投影（2026-09-16 追加）
+
+本节结论**不改**上面任何内容，只补「下游怎么把它读进去」。TradingView 侧两条近原生入口：
+
+| 入口 | 本项目交付物 | 生成 |
+|---|---|---|
+| 客户端图片导入（读一张静态 PNG） | `signals/<symbol>.png`（`tEXt` 内嵌 `signal_contract` + `anchors_json`） | `python main.py tv-export` |
+| Pine `request.seed`（读变量×时序表） | `pine/trendcast/<symbol>.json`（`tv-pine/1`） | 同上 |
+
+两个硬约束（不是风格选择，是消费方限制）：TradingView **不做二次渲染** → 图片必须是真 PNG；
+Pine 只能读表结构 → JSON 必须带**列字典**（`columns[].id` 与列名逐字一致）。
+
+**新增读数（38 标的池，3420 锚点，真实日K + 真实训练 LightGBM）**：
+锚点命中 52.9% / 平均已实现收益 +0.32%；三周期置信度几乎全部贴地（`|composite-0.5|` ≤0.02），
+`advisory_consumable` **0/38**，AUC ≈ 0.50~0.54。
+即：第五节「高置信 ≠ 可采信」这条结论**依然成立，而且当前连"高置信"样本都还产不出来** ——
+门槛如实挡住全部信号，不是缺陷。
+
+**新增踩坑（与第五节同一条纪律的又一次翻车）**：
+`_align_by_feature_names` 的调用方把**值矩阵**当列名传入 → 全列判缺失 → 整体 0 填充 →
+产出与标的/日期无关的**常数概率**（全池锚点置信度恒 0.0303756，**不报错**）。
+修法：全列缺失时**放弃按名对齐**（回落位置对齐）而不是 0 填充；训练侧把 `feature_cols`
+写进产物并同步为模型原生特征名（`feature_name_` 只读 + booster 缓存两条实测约束）。
+详见 `cairn/tradingview-handoff.md`。

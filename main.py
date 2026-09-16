@@ -3709,6 +3709,133 @@ def run_decision_feed_cmd(config: dict, symbols: list[str] | None = None,
     return feed
 
 
+def run_tv_export_cmd(config: dict, symbols: list[str] | None = None,
+                       symbols_file: str | None = None,
+                       out_dir: str = "outputs/tv/exports",
+                       backfill_anchors: bool = True,
+                       anchor_step: int = 5,
+                       anchor_horizon: str = "short_term",
+                       max_anchors: int = 90,
+                       card_limit: int | None = None) -> dict:
+    """**TradingView 一次交付**（`python main.py tv-export`）。
+
+    下游要的是「能直接读进去的东西」，而不是又一份 JSON 说明。本命令把
+    `decision-feed` 的只读契约投影成 TradingView 侧的两种原生载体：
+
+    1. **图片信号卡**（`signals/<symbol>.png`）—— 单张 PNG 承载三周期净看涨
+       概率 / 综合分 / 置信度 / 门禁结论 / 采纳权重 + 锚点收益条；同一张图的
+       ``tEXt`` 块里带机器可读契约（``signal_contract``）与全精度锚点
+       （``anchors_json``，UTF-8）。TradingView 图片导入读的就是这张图。
+    2. **Pine 外挂数据层**（`pine/trendcast/<symbol>.json`）—— ``tv-pine/1``
+       列结构，``request.seed`` 直接读；列名以 ``ret_`` 前缀，Pine 侧可按前缀
+       批量绑定。**刻意不出口 is_trade / 仓位**：本层用于同图对照，不做下单依据。
+
+    锚点（分数 × 命中 × 已实现收益）来自 `src.eval.anchor_backfill`：
+    本地真实日K + 已训练模型离线回填，**无前视**（结果只在 t+h 收线后回填），
+    同一批读数同时写进卡片图与小图，避免「图看着对、数看着不对」。
+
+    ⚠️ 只读：`affects_gate=false`、`position_role=observer`，不产出仓位/门禁结论。
+    锚点为「同模型回看历史」，标 `validated=false`。
+
+    用法：
+      python main.py tv-export
+      python main.py tv-export --symbols 510300.SH --out-dir outputs/tv/day
+      python main.py tv-export --no-anchors --card-limit 4
+    """
+    from src.export.decision_feed import build_decision_feed
+    from src.export.tv.handoff import build_handoff
+    from src.inference.predictor import PredictionEngine
+
+    logger.info("TradingView 一次交付（tv-export）")
+    logger.info("[tv-export] 只读决策源投影：图片信号卡 + Pine 数据层，"
+                "affects_gate=false，不产出仓位")
+
+    if symbols_file:
+        try:
+            lines = Path(symbols_file).read_text(encoding="utf-8").splitlines()
+            symbols = [ln.strip().split(",")[0].split()[0]
+                       for ln in lines if ln.strip() and not ln.strip().startswith("#")]
+            logger.info(f"[tv-export] 从 {symbols_file} 读到 {len(symbols)} 个标的")
+        except Exception as e:  # noqa: BLE001
+            payload = {"error": f"标的清单读取失败: {e}", "affects_gate": False}
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return payload
+
+    symbol_list = symbols or _config_symbols(config)
+    if not symbol_list:
+        payload = {"error": "未指定标的且配置无启用标的", "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+    symbol_list = list(dict.fromkeys(symbol_list))
+
+    engine = PredictionEngine(config)
+    engine.load_models(config.get("model", {}).get("type", "lightgbm"))
+
+    from src.api.server import build_portfolio_summary
+
+    base = build_portfolio_summary(engine, config, symbol_list)
+    feed = build_decision_feed(base, config)
+
+    anchors_by_symbol: dict = {}
+    backfill_report: dict | None = None
+    if backfill_anchors:
+        try:
+            from src.eval.anchor_backfill import backfill
+
+            backfill_report = backfill(engine, symbol_list, horizon=anchor_horizon,
+                                       step=int(anchor_step),
+                                       max_anchors=int(max_anchors))
+            anchors_by_symbol = {
+                sym: r.get("anchors", [])
+                for sym, r in (backfill_report.get("by_symbol") or {}).items()
+                if isinstance(r, dict) and r.get("available")
+            }
+            logger.info(f"[tv-export] 锚点回填 {len(anchors_by_symbol)} 标的 "
+                        f"（step={anchor_step}, horizon={anchor_horizon}）")
+        except Exception as e:  # noqa: BLE001 - 回填失败不得阻断卡片交付
+            logger.warning(f"[tv-export] 锚点回填失败（卡片按无锚点出）: {e}")
+            backfill_report = {"available": False, "reason": str(e)}
+
+    tv_cfg = (config.get("decision_feed", {}) or {}).get("tv", {}) or {}
+    report = build_handoff(
+        feed, anchors_by_symbol=anchors_by_symbol, out_dir=out_dir,
+        symbols=symbol_list, card_limit=card_limit,
+        cards_for_unavailable=bool(tv_cfg.get("cards_for_unavailable", True)))
+    out_base = Path(out_dir)
+    out_base.mkdir(parents=True, exist_ok=True)
+    feed_path = out_base / "decision_feed.json"
+    feed_path.write_text(json.dumps(feed, ensure_ascii=False, indent=2),
+                         encoding="utf-8")
+    if backfill_report is not None:
+        (out_base / "anchor_backfill.json").write_text(
+            json.dumps(backfill_report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 同时落一份到 16_ 常规报表目录，便于既有链路引用
+    reports_dir = Path("reports")
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    (reports_dir / "decision_feed.json").write_text(
+        json.dumps(feed, ensure_ascii=False, indent=2), encoding="utf-8")
+    (reports_dir / "tv_handoff_report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    summary = {
+        "out_dir": report["out_dir"],
+        "card_count": report["card_count"],
+        "pine_files": len(report["pine_files"]),
+        "symbols_skipped": report["skipped"],
+        "anchors": (backfill_report or {}).get("pooled"),
+        "feed_summary": report["feed_summary"],
+        "affects_gate": False,
+        "position_role": "observer",
+        "signals_index": str(out_base / "signals" / "index.json"),
+        "pine_index": str(out_base / "pine" / "index.json"),
+        "handoff_report": str(out_base / "handoff_report.json"),
+        "decision_feed": str(feed_path),
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return report
+
+
 def run_drift_monitor_cmd(config: dict, symbols: list[str] | None = None,
                           split: float = 0.5) -> dict:
     """漂移监控（S23 / I3：T23.1 准入 + T23.2 PSI/KS 自研 + T23.3 交叉，report_only）。
@@ -3973,6 +4100,7 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py portfolio-backtest      # 组合回测闭环：信号×门槛×成本三档→净值/回撤/换手/夏普（S21/I1，report_only）
   python main.py decision-feed            # 决策源契约导出：净方向概率/综合分/采纳建议 → reports/decision_feed.json
   python main.py decision-feed --stdout    # 同上，直接打印 JSON（供下游管道消费）
+  python main.py tv-export                 # TradingView 一次交付：图片信号卡 + Pine 数据层（只读）
         """,
     )
     parser.add_argument("command", choices=[
@@ -3986,7 +4114,7 @@ def build_parser() -> argparse.ArgumentParser:
         "conformal", "conformal-interval", "overfit-audit", "regime",
         "calibration", "calibration-ablation", "research-assist",
         "portfolio-backtest", "drift-monitor", "feature-attribution",
-        "decision-feed",
+        "decision-feed", "tv-export",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -4084,6 +4212,19 @@ def build_parser() -> argparse.ArgumentParser:
                         help="decision-feed 命令：同时把契约 JSON 打到 stdout（供管道消费）")
     parser.add_argument("--audit-hours", dest="audit_hours", type=int, default=24,
                         help="decision-feed 命令：审计摘要窗口小时数（缺省 24）")
+    parser.add_argument("--out-dir", dest="out_dir", default="outputs/tv/exports",
+                        help="tv-export 命令：交付输出根目录（缺省 outputs/tv/exports）")
+    parser.add_argument("--no-anchors", dest="no_anchors", action="store_true",
+                        help="tv-export 命令：跳过锚点回填（只出卡片与 Pine 数据层）")
+    parser.add_argument("--anchor-step", dest="anchor_step", type=int, default=5,
+                        help="tv-export 命令：锚点间隔（交易日，缺省 5；小于周期天数即视窗重叠）")
+    parser.add_argument("--anchor-horizon", dest="anchor_horizon", default="short_term",
+                        choices=["short_term", "mid_term", "long_term"],
+                        help="tv-export 命令：回填所用周期模型（缺省 short_term）")
+    parser.add_argument("--max-anchors", dest="max_anchors", type=int, default=90,
+                        help="tv-export 命令：单标的锚点上限（缺省 90，取最近一段）")
+    parser.add_argument("--card-limit", dest="card_limit", type=int, default=None,
+                        help="tv-export 命令：只出前 N 张信号卡（缺省全部）")
     parser.add_argument("--split", dest="split", type=float, default=0.5,
                         help="drift-monitor 命令：参考窗/当前窗切分比例（缺省 0.5）")
     parser.add_argument("--model-path", dest="model_path", default=None,
@@ -4356,6 +4497,18 @@ def main():
             symbols_file=getattr(args, "symbols_file", None),
             stdout=bool(getattr(args, "stdout", False)),
             audit_hours=int(getattr(args, "audit_hours", 24) or 24))
+    elif args.command == "tv-export":
+        run_tv_export_cmd(
+            config, symbols=_cli_symbols(args),
+            symbols_file=getattr(args, "symbols_file", None),
+            out_dir=str(getattr(args, "out_dir", "outputs/tv/exports")
+                        or "outputs/tv/exports"),
+            backfill_anchors=not bool(getattr(args, "no_anchors", False)),
+            anchor_step=int(getattr(args, "anchor_step", 5) or 5),
+            anchor_horizon=str(getattr(args, "anchor_horizon", "short_term")),
+            max_anchors=int(getattr(args, "max_anchors", 90) or 90),
+            card_limit=(int(args.card_limit)
+                        if getattr(args, "card_limit", None) is not None else None))
     elif args.command == "drift-monitor":
         run_drift_monitor_cmd(config, symbols=_cli_symbols(args),
                               split=float(getattr(args, "split", 0.5) or 0.5))
