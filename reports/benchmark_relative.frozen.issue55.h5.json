@@ -1,0 +1,310 @@
+{
+  "kind": "benchmark_relative",
+  "available": true,
+  "reason": "",
+  "affects_gate": false,
+  "readonly": true,
+  "holding_horizon": 5,
+  "confidence_threshold": 0.5,
+  "cost_level": "conservative",
+  "current_weights": {
+    "5": 0.3,
+    "10": 0.35,
+    "20": 0.35
+  },
+  "benchmark": {
+    "available": true,
+    "reason": "",
+    "n_periods": 254,
+    "mean_per_period": 0.00385781,
+    "period_hit_rate": 0.531496,
+    "total_return": 1.34646531,
+    "annualized_return": 0.184403,
+    "annualized_vol": 0.22470735,
+    "sharpe": 0.865275,
+    "note": "全池等权 buy&hold（26 标的，无换手成本）"
+  },
+  "horizon_candidates": {
+    "current": {
+      "available": true,
+      "reason": "",
+      "n_periods": 254,
+      "mean_per_period": 0.00495643,
+      "period_hit_rate": 0.543307,
+      "total_return": 2.05742999,
+      "annualized_return": 0.24826549,
+      "annualized_vol": 0.23733501,
+      "sharpe": 1.052538,
+      "weights": {
+        "5": 0.3,
+        "10": 0.35,
+        "20": 0.35
+      },
+      "avg_n_selected": 12.61,
+      "vs_benchmark": {
+        "available": true,
+        "reason": "",
+        "n_periods": 254,
+        "excess_mean_per_period": -0.00140138,
+        "excess_t_stat": -1.4233,
+        "excess_annualized": -0.06823917,
+        "one_side_cost": 0.00125
+      }
+    },
+    "equal": {
+      "available": true,
+      "reason": "",
+      "n_periods": 254,
+      "mean_per_period": 0.00486407,
+      "period_hit_rate": 0.535433,
+      "total_return": 1.99863806,
+      "annualized_return": 0.24346552,
+      "annualized_vol": 0.2337163,
+      "sharpe": 1.048918,
+      "weights": {
+        "5": 0.333333,
+        "10": 0.333333,
+        "20": 0.333333
+      },
+      "avg_n_selected": 12.606,
+      "vs_benchmark": {
+        "available": true,
+        "reason": "",
+        "n_periods": 254,
+        "excess_mean_per_period": -0.00149374,
+        "excess_t_stat": -1.5853,
+        "excess_annualized": -0.0725726,
+        "one_side_cost": 0.00125
+      }
+    },
+    "only_5d": {
+      "available": true,
+      "reason": "",
+      "n_periods": 254,
+      "mean_per_period": 0.00337304,
+      "period_hit_rate": 0.535433,
+      "total_return": 1.06983409,
+      "annualized_return": 0.15528616,
+      "annualized_vol": 0.226896,
+      "sharpe": 0.749248,
+      "weights": {
+        "5": 1.0,
+        "10": 0.0,
+        "20": 0.0
+      },
+      "avg_n_selected": 11.866,
+      "vs_benchmark": {
+        "available": true,
+        "reason": "",
+        "n_periods": 254,
+        "excess_mean_per_period": -0.00298477,
+        "excess_t_stat": -2.7568,
+        "excess_annualized": -0.13985756,
+        "one_side_cost": 0.00125
+      }
+    },
+    "only_10d": {
+      "available": true,
+      "reason": "",
+      "n_periods": 254,
+      "mean_per_period": 0.00448383,
+      "period_hit_rate": 0.519685,
+      "total_return": 1.70363799,
+      "annualized_return": 0.21817442,
+      "annualized_vol": 0.23931831,
+      "sharpe": 0.944287,
+      "weights": {
+        "5": 0.0,
+        "10": 1.0,
+        "20": 0.0
+      },
+      "avg_n_selected": 11.618,
+      "vs_benchmark": {
+        "available": true,
+        "reason": "",
+        "n_periods": 254,
+        "excess_mean_per_period": -0.00187398,
+        "excess_t_stat": -1.5388,
+        "excess_annualized": -0.0902059,
+        "one_side_cost": 0.00125
+      }
+    },
+    "only_20d": {
+      "available": true,
+      "reason": "",
+      "n_periods": 254,
+      "mean_per_period": 0.00438467,
+      "period_hit_rate": 0.511811,
+      "total_return": 1.63125163,
+      "annualized_return": 0.21163219,
+      "annualized_vol": 0.24232423,
+      "sharpe": 0.911949,
+      "weights": {
+        "5": 0.0,
+        "10": 0.0,
+        "20": 1.0
+      },
+      "avg_n_selected": 14.181,
+      "vs_benchmark": {
+        "available": true,
+        "reason": "",
+        "n_periods": 254,
+        "excess_mean_per_period": -0.00197314,
+        "excess_t_stat": -2.1103,
+        "excess_annualized": -0.09475027,
+        "one_side_cost": 0.00125
+      }
+    }
+  },
+  "benchmark_relative": {
+    "signal": true,
+    "signal_mean_per_period": 0.00495643,
+    "benchmark_mean_per_period": 0.00385781,
+    "vs_benchmark": {
+      "available": true,
+      "reason": "",
+      "n_periods": 254,
+      "excess_mean_per_period": -0.00140138,
+      "excess_t_stat": -1.4233,
+      "excess_annualized": -0.06823917,
+      "one_side_cost": 0.00125
+    }
+  },
+  "random_subset_control": {
+    "available": true,
+    "n_draws": 40,
+    "subset_size": 13,
+    "random_excess_mean": -0.00261416,
+    "random_excess_sd": 0.00067396,
+    "signal_excess_mean": -0.00140138,
+    "fraction_random_ge_signal": 0.05,
+    "note": "信号子集落在随机子集分布内 ⇒ 选中这些标的没有信息含量"
+  },
+  "regime_breakdown_enabled": true,
+  "regime_breakdown": {
+    "available": true,
+    "n_periods_total": 254,
+    "n_periods_unlabeled": 0,
+    "by_regime": {
+      "bull": {
+        "name": "bull",
+        "n_periods": 80,
+        "available": true,
+        "excess_mean_per_period": -0.00071301,
+        "excess_t_stat": -0.3449,
+        "positive": false,
+        "share": 0.314961
+      },
+      "range": {
+        "name": "range",
+        "n_periods": 169,
+        "available": true,
+        "excess_mean_per_period": -0.00181108,
+        "excess_t_stat": -1.6304,
+        "positive": false,
+        "share": 0.665354
+      },
+      "bear": {
+        "name": "bear",
+        "n_periods": 5,
+        "available": false,
+        "reason": "该状态调仓期数不足（5 < 8）"
+      }
+    },
+    "min_periods": 8,
+    "regime_order": [
+      "bull",
+      "range",
+      "bear"
+    ],
+    "spread": {
+      "best": "bull",
+      "best_excess": -0.00071301,
+      "worst": "range",
+      "worst_excess": -0.00181108,
+      "best_minus_worst": 0.00109807
+    },
+    "regimes_with_positive_edge": [],
+    "conditional_edge_hint": false,
+    "conclusion": "no_conditional_edge",
+    "labels": {
+      "n_symbols": 26,
+      "refit_every": 20,
+      "window": 20,
+      "hmm_meta": {
+        "mode": "expanding",
+        "available": true,
+        "n_states": 3,
+        "refit_every": 20,
+        "refits": 121,
+        "fit_failures": 0,
+        "stalled": false,
+        "lookahead_prefixed": false,
+        "mapping": "state_mean_return_ascending",
+        "seed": 42
+      },
+      "available": true,
+      "mode": "hmm_expanding",
+      "n_days": 2463,
+      "n_labeled": 2385,
+      "lookahead_prefixed": false
+    },
+    "binary": {
+      "available": true,
+      "n_periods_total": 254,
+      "n_periods_unlabeled": 0,
+      "by_regime": {
+        "trending": {
+          "name": "trending",
+          "n_periods": 85,
+          "available": true,
+          "excess_mean_per_period": -0.00058679,
+          "excess_t_stat": -0.3008,
+          "positive": false,
+          "share": 0.334646
+        },
+        "choppy": {
+          "name": "choppy",
+          "n_periods": 169,
+          "available": true,
+          "excess_mean_per_period": -0.00181108,
+          "excess_t_stat": -1.6304,
+          "positive": false,
+          "share": 0.665354
+        }
+      },
+      "min_periods": 8,
+      "regime_order": [
+        "trending",
+        "choppy"
+      ],
+      "mapping": {
+        "trending": [
+          "bull",
+          "bear"
+        ],
+        "choppy": [
+          "range"
+        ]
+      },
+      "kind": "binary_trend_choppy",
+      "spread": {
+        "best": "trending",
+        "best_excess": -0.00058679,
+        "worst": "choppy",
+        "worst_excess": -0.00181108,
+        "best_minus_worst": 0.00122429
+      },
+      "regimes_with_positive_edge": [],
+      "conditional_edge_hint": false,
+      "conclusion": "no_conditional_edge"
+    }
+  },
+  "verdict": {
+    "level": "no_edge",
+    "reason": "净超额（相对全池等权、扣成本后）非正 ⇒ 不如直接等权持有",
+    "excess_mean_per_period": -0.00140138
+  },
+  "command": "edge-check",
+  "folds": 3
+}
