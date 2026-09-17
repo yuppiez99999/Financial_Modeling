@@ -4104,6 +4104,7 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py tv-export                 # TradingView 一次交付：图片信号卡 + Pine 数据层（只读）
   python main.py edge-check                # 基准相对决策增量：信号组合 vs 全池等权（扣成本 + 随机子集 + 状态分层）
   python main.py edge-check --no-regime-breakdown  # 同上，不出状态分层净超额
+                                                   # 状态分层含三分 + 趋势/盘整二分（binary）
   python main.py ablation                  # 特征集 × 模型族联合消融（唯一记分板 = 净超额 + 臂间配对 t）
         """,
     )
