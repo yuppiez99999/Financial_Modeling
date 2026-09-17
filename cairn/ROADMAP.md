@@ -1,6 +1,13 @@
 # 16_金融市场预测模型 路线图（ROADMAP）
 
-**当前焦点**：Issue #55「决策源契约与优化 / 交付形态」——16_ 作为 tradingview 数据源/决策源之一，
+**当前焦点**：Issue #55「决策源契约与优化」——**第七轮（状态分层净超额）已完成**：
+把「增量是不是只在某个市场状态下」拆开独立检验（`edge-check` 的 `regime_breakdown`），
+结论 **各状态净超额均为负**（range −0.299% t −1.91 / bear −0.013% t −0.07），
+`conditional_edge_hint=False` ⇒ 「信号只在某状态有用」的残留假设**不被支持**。
+至此 Issue #55 六条嫌疑 + 状态分层全部有读数，方向预测这条线**到顶**；
+下一步（另立"波动/回撤预警"项目 / 别的新方向）属人工决策。
+
+**前序**：Issue #55「决策源契约与优化 / 交付形态」——16_ 作为 tradingview 数据源/决策源之一，
 已交付只读决策源契约 `decision-feed/1`，并把它投影成 TradingView 可直接读入的
 **图片信号卡（真 PNG + tEXt 内嵌契约）** 与 **Pine 数据层（`tv-pine/1`）**（`python main.py tv-export`）。
 
@@ -44,6 +51,10 @@
 - [x] **T 轮（TradingView 交付形态）**：图片信号卡（真 PNG + tEXt 契约）+ Pine 数据层
       （`tv-pine/1`）+ 无前视锚点回填，`python main.py tv-export` 一次产出
       （2026-09-16；详见 `cairn/tradingview-handoff.md`）
+- [x] **Issue #55 排查轮（①~⑦）**：池共线性 / 标签口径 / 周期权重 / 置信度语义 /
+      基准相对净超额 / 特征集×模型族消融 / **状态分层净超额**
+      （2026-09-17；详见 `cairn/model-optimization-findings.md`、
+      `cairn/benchmark-relative-edge.md`、`cairn/feature-model-ablation.md`）
 
 ## 开放问题
 

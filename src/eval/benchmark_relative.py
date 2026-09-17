@@ -50,6 +50,8 @@ from src.eval.portfolio_backtest import cost_one_side
 logger = logging.getLogger(__name__)
 
 CURRENT_WEIGHTS = {"5": 0.30, "10": 0.35, "20": 0.35}
+REGIME_ORDER = ("bull", "range", "bear")   # 可读化排序（与 regime.py 同集合）
+MIN_REGIME_PERIODS = 8                     # 单状态调仓期数下限（不足不发读数）
 TRADING_DAYS_PER_YEAR = 252
 
 
@@ -158,6 +160,159 @@ def _excess_stats(signal: np.ndarray, benchmark: np.ndarray,
 
 
 # ----------------------------------------------------------------------
+# 状态分层的净超额（"信号是不是只在某种市场状态下才有增量"）
+# ----------------------------------------------------------------------
+def _date_regime_labels(price_frames: Dict[str, pd.DataFrame],
+                        refit_every: int = 20,
+                        window: int = 20) -> Dict[str, Any]:
+    """由**全池等权市场层价格**拟合出逐交易日状态标签（无前视）。
+
+    观测源与 `main.py::_build_market_series` 同口径：逐标的日收益 → 按日期
+    对齐等权平均 → 累乘回价格。状态严格只用当日及之前信息：
+
+      - 首选 `regime.regime_labels`（HMM expanding 口径，无前视）；
+      - hmmlearn 缺失 / 拟合退化 → 回落 `regime._rules_states`（同样无前视），
+        并在 `mode` 里**如实标注** `rules_fallback`，不冒充 HMM。
+
+    返回 ``{"labels_by_date": {date: 状态|None}, "meta": {...}}``。
+    拟合不可用时 `labels_by_date` 为空 dict（调用方如实报不可用，不猜）。
+    """
+    from src.eval import regime as rg
+
+    frames = []
+    for symbol, px in (price_frames or {}).items():
+        if px is None or len(px) < 2 or "date" not in px.columns or "close" not in px.columns:
+            continue
+        d = pd.to_datetime(px["date"], errors="coerce")
+        c = pd.to_numeric(px["close"], errors="coerce")
+        s = pd.DataFrame({"date": d, "close": c}).dropna().sort_values("date")
+        if len(s) < 2:
+            continue
+        s["ret"] = s["close"].astype(float).pct_change()
+        frames.append(s[["date", "ret"]].rename(columns={"ret": symbol}))
+    meta: Dict[str, Any] = {"n_symbols": len(frames), "refit_every": int(refit_every),
+                            "window": int(window)}
+    if not frames:
+        meta.update({"available": False, "reason": "no_price_frames", "mode": "none"})
+        return {"labels_by_date": {}, "meta": meta}
+
+    mkt = frames[0]
+    for f in frames[1:]:
+        mkt = mkt.merge(f, on="date", how="outer")
+    mkt = mkt.sort_values("date").reset_index(drop=True)
+    ret_cols = [c for c in mkt.columns if c != "date"]
+    mean_ret = (mkt[ret_cols].mean(axis=1, skipna=True).fillna(0.0)
+                .to_numpy(dtype=float))
+    close = np.cumprod(1.0 + mean_ret)
+    dates = list(mkt["date"])
+
+    obs = rg.build_observations(close, window=int(window))
+    if obs.get("reason"):
+        meta["observation_reason"] = obs["reason"]
+    mode = "hmm_expanding"
+    res = rg.regime_labels(obs["X"], obs["valid"], refit_every=int(refit_every))
+    labels = list(res.get("labels") or [])
+    if not (res.get("meta") or {}).get("available"):
+        # 如实降级：规则口径（同样无前视），并标注真实口径
+        mode = "rules_fallback"
+        labels = list(rg._rules_states(np.diff(np.log(np.maximum(close, 1e-12)),
+                                               prepend=0.0), window=int(window)))
+        meta["fallback_reason"] = (res.get("meta") or {}).get("reason") or "hmm_unavailable"
+    labels_by_date = {d: lab for d, lab in zip(dates, labels)}
+    avail = any(v is not None for v in labels_by_date.values())
+    meta.update({"available": bool(avail), "mode": mode,
+                 "n_days": int(len(labels_by_date)),
+                 "n_labeled": int(sum(1 for v in labels_by_date.values() if v)),
+                 "lookahead_prefixed": False})
+    if not avail:
+        meta.setdefault("reason", "no_regime_labels")
+        return {"labels_by_date": {}, "meta": meta}
+    return {"labels_by_date": labels_by_date, "meta": meta}
+
+
+def _regime_breakdown(grid: Sequence[pd.Timestamp],
+                      labels_by_date: Dict[Any, Optional[str]],
+                      signal: np.ndarray, benchmark: np.ndarray,
+                      one_side_cost: float, horizon_days: int) -> Dict[str, Any]:
+    """把**逐期净超额**按调仓日的市场状态分层，逐状态给读数。
+
+    判据与全局完全同源：逐期 ``(signal − benchmark) − 2×单边成本``。
+    调仓日状态取**当日**标签（无前视 —— 标签只由 ≤ 当日的观测拟合）。
+
+    分隔组按 `REGIME_ORDER` 排序；单状态可比期数 < `MIN_REGIME_PERIODS`
+    如实标 `available=False` + reason，**不外推该状态结论**。
+
+    关键读数 `spread`：状态间净超额之差（最大 − 最小），用于回答
+    「增量是不是只集中在某个状态」——若极差落在噪声内（无状态显著
+    高于 0、且状态间 t 不显著），不得声称"条件 edge"。
+    """
+    n = min(len(signal), len(benchmark), len(grid))
+    norm_labels = {pd.Timestamp(k): v for k, v in (labels_by_date or {}).items()}
+    groups: Dict[str, List[float]] = {name: [] for name in REGIME_ORDER}
+    unlabeled = 0
+    for i in range(n):
+        lab = norm_labels.get(pd.Timestamp(grid[i]))
+        if lab not in groups:
+            unlabeled += 1
+            continue
+        d = float(signal[i]) - float(benchmark[i]) - 2.0 * float(one_side_cost)
+        if np.isfinite(d):
+            groups[lab].append(d)
+
+    per: Dict[str, Any] = {}
+    usable: List[str] = []
+    for name in REGIME_ORDER:
+        arr = np.asarray(groups[name], dtype=float)
+        st: Dict[str, Any] = {"name": name, "n_periods": int(arr.size)}
+        if arr.size < MIN_REGIME_PERIODS:
+            st.update({"available": False,
+                       "reason": f"该状态调仓期数不足（{arr.size} < {MIN_REGIME_PERIODS}）"})
+            per[name] = st
+            continue
+        sd = float(arr.std(ddof=1))
+        t = float(arr.mean() / sd * np.sqrt(arr.size)) if sd > 1e-12 else None
+        st.update({
+            "available": True,
+            "excess_mean_per_period": _round(float(arr.mean()), 8),
+            "excess_t_stat": _round(t, 4) if t is not None else None,
+            "positive": bool(arr.mean() > 0),
+            "share": _round(float(arr.size) / max(1, n), 6),
+        })
+        per[name] = st
+        usable.append(name)
+
+    out: Dict[str, Any] = {
+        "available": bool(len(usable) >= 2),
+        "n_periods_total": int(n),
+        "n_periods_unlabeled": int(unlabeled),
+        "by_regime": per,
+        "min_periods": int(MIN_REGIME_PERIODS),
+    }
+    if len(usable) >= 2:
+        means = {k: per[k]["excess_mean_per_period"] for k in usable}
+        best = max(means, key=lambda k: means[k])
+        worst = min(means, key=lambda k: means[k])
+        out["spread"] = {
+            "best": best, "best_excess": means[best],
+            "worst": worst, "worst_excess": means[worst],
+            "best_minus_worst": _round(float(means[best] - means[worst]), 8),
+        }
+        # 只在某状态净超额显著为正（t≥2）时才允许说"条件 edge"的**迹象**
+        sig_pos = [k for k in usable
+                   if (per[k].get("excess_t_stat") or 0) >= 2.0
+                   and (per[k].get("excess_mean_per_period") or 0) > 0]
+        out["regimes_with_positive_edge"] = sorted(sig_pos)
+        out["conditional_edge_hint"] = bool(sig_pos)
+        out["conclusion"] = (
+            "conditional_hint" if sig_pos else "no_conditional_edge")
+    else:
+        out["reason"] = "可比状态不足（可用状态 < 2），拒绝给出状态分层结论"
+        out["conditional_edge_hint"] = False
+        out["conclusion"] = "unavailable"
+    return out
+
+
+# ----------------------------------------------------------------------
 # 主入口
 # ----------------------------------------------------------------------
 def build_report(data: Dict[str, pd.DataFrame],
@@ -169,7 +324,10 @@ def build_report(data: Dict[str, pd.DataFrame],
                  confidence_thr: float = 0.5,
                  cost_level: str = "base",
                  n_random_controls: int = 40,
-                 seed: int = 7) -> Dict[str, Any]:
+                 seed: int = 7,
+                 regime_breakdown: bool = True,
+                 regime_refit_every: int = 20,
+                 regime_window: int = 20) -> Dict[str, Any]:
     """基准相对决策增量评估（只读）。
 
     Args:
@@ -179,6 +337,9 @@ def build_report(data: Dict[str, pd.DataFrame],
         confidence_thr: 选中阈值，作用在**综合分**上（默认 0.5 = 中性）。
         cost_level: T11.2 定稿三档之一（conservative / base / aggressive）。
         n_random_controls: 随机子集对照次数。
+        regime_breakdown: 是否附**状态分层净超额**（默认开；回答"增量是否只在
+            某种市场状态下存在"，与全局判据同源，只读数不生效）。
+        regime_refit_every / regime_window: 状态拟合口径（透传 `regime` 模块）。
 
     Returns:
         dict，含 `benchmark_relative`（信号 vs 基准）、`horizon_candidates`
@@ -255,6 +416,8 @@ def build_report(data: Dict[str, pd.DataFrame],
         return merged[[f"p{h}" for h in hs]].to_numpy(dtype=float) @ w
 
     cand_out: Dict[str, Any] = {}
+    primary_signal: Optional[np.ndarray] = None
+    selmap_current: Dict[pd.Timestamp, List[str]] = {}
     for name, w in cands.items():
         comp = _comp(w)
         selmap: Dict[pd.Timestamp, List[str]] = {}
@@ -268,6 +431,9 @@ def build_report(data: Dict[str, pd.DataFrame],
             float(np.mean([len(v) for v in selmap.values()])), 3)
         st["vs_benchmark"] = _excess_stats(sig, benchmark, one_side, holding_horizon)
         cand_out[name] = st
+        if name == "current":
+            primary_signal = sig
+            selmap_current = selmap
     out["horizon_candidates"] = cand_out
 
     # ---- 主读数：现行权重 ----
@@ -313,6 +479,33 @@ def build_report(data: Dict[str, pd.DataFrame],
             "available": False,
             "reason": f"可用随机对照次数不足（{len(draws)} < 8）",
         }
+
+    # ---- 状态分层的净超额（"增量是不是只在某个状态"） ----
+    out["regime_breakdown_enabled"] = bool(regime_breakdown)
+    if regime_breakdown:
+        rb: Dict[str, Any] = {"available": False, "reason": "未计算"}
+        try:
+            lab = _date_regime_labels(price_frames,
+                                      refit_every=int(regime_refit_every),
+                                      window=int(regime_window))
+            if not primary.get("available") or primary_signal is None:
+                rb = {"available": False, "reason": "主读数不可用，状态分层跳过",
+                      "labels": lab.get("meta", {})}
+            elif not (lab.get("meta") or {}).get("available"):
+                rb = {"available": False,
+                      "reason": "状态标签不可用（缺 hmmlearn 且规则口径也退化）",
+                      "labels": lab.get("meta", {})}
+            else:
+                rb = _regime_breakdown(grid, lab.get("labels_by_date") or {},
+                                       primary_signal, benchmark, one_side,
+                                       holding_horizon)
+                rb["labels"] = lab.get("meta", {})
+        except Exception as e:  # noqa: BLE001 - 状态分层失败不拖垮主读数
+            logger.warning("状态分层读数失败，主读数不受影响: %s", e)
+            rb = {"available": False, "reason": f"状态分层计算失败: {e}"}
+        out["regime_breakdown"] = rb
+    else:
+        out["regime_breakdown"] = {"available": False, "reason": "已关闭（regime_breakdown=False）"}
 
     out["available"] = bool(primary.get("available"))
     out["verdict"] = _verdict(out)

@@ -4102,7 +4102,8 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py model-improve             # 模型优化对照（标签口径 A/B + 周期权重重排建议）
   python main.py regime-signal             # 波动分层下的置信度有效性（高置信=波动探测器？）
   python main.py tv-export                 # TradingView 一次交付：图片信号卡 + Pine 数据层（只读）
-  python main.py edge-check                # 基准相对决策增量：信号组合 vs 全池等权（扣成本 + 随机子集对照）
+  python main.py edge-check                # 基准相对决策增量：信号组合 vs 全池等权（扣成本 + 随机子集 + 状态分层）
+  python main.py edge-check --no-regime-breakdown  # 同上，不出状态分层净超额
   python main.py ablation                  # 特征集 × 模型族联合消融（唯一记分板 = 净超额 + 臂间配对 t）
         """,
     )
@@ -4146,6 +4147,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="edge-check：随机子集对照次数（默认 40）")
     parser.add_argument("--edge-thr", type=float, default=0.5, dest="edge_thr",
                         help="edge-check：综合分选中阈值（默认 0.5 = 中性）")
+    parser.add_argument("--no-regime-breakdown", action="store_true", dest="no_regime_breakdown",
+                        help="edge-check：关闭状态分层净超额（默认开启）")
+    parser.add_argument("--regime-refit-every", type=int, default=20, dest="regime_refit_every",
+                        help="edge-check：状态拟合重训步长（交易日，默认 20）")
+    parser.add_argument("--regime-window", type=int, default=20, dest="regime_window",
+                        help="edge-check：状态观测回看窗口（默认 20）")
     parser.add_argument("--abl-recipes", default=None, dest="abl_recipes",
                         help="ablation：逗号分隔的特征子集配方（缺省 = 全部；full=全量基线）")
     parser.add_argument("--abl-models", default=None, dest="abl_models",
@@ -4376,7 +4383,10 @@ def run_edge_check_cmd(config: dict, symbols: list[str] | None = None,
                        holding_horizon: int = 5,
                        confidence_thr: float = 0.5,
                        cost_level: str = "base",
-                       random_controls: int = 40) -> dict:
+                       random_controls: int = 40,
+                       regime_breakdown: bool = True,
+                       regime_refit_every: int = 20,
+                       regime_window: int = 20) -> dict:
     """基准相对决策增量评估（Issue #55：信号组合到底有没有跑赢"什么都不做"）。
 
     只产出证据，`affects_gate=False`：不改门禁 / 权重 / 池 / 配置。
@@ -4407,7 +4417,10 @@ def run_edge_check_cmd(config: dict, symbols: list[str] | None = None,
                           holding_horizon=int(holding_horizon),
                           confidence_thr=float(confidence_thr),
                           cost_level=str(cost_level),
-                          n_random_controls=int(random_controls))
+                          n_random_controls=int(random_controls),
+                          regime_breakdown=bool(regime_breakdown),
+                          regime_refit_every=int(regime_refit_every),
+                          regime_window=int(regime_window))
     report["command"] = "edge-check"
     report["folds"] = int(folds)
     out_dir = Path("reports")
@@ -4420,6 +4433,7 @@ def run_edge_check_cmd(config: dict, symbols: list[str] | None = None,
         "available": bool(report.get("available")),
         "n_symbols": report.get("benchmark", {}).get("n_periods", 0) and len(data),
         "verdict": (report.get("verdict") or {}).get("level"),
+        "regime_conclusion": (report.get("regime_breakdown") or {}).get("conclusion"),
     })
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
     return report
@@ -4827,7 +4841,10 @@ def main():
             holding_horizon=int(getattr(args, "holding_horizon", 5) or 5),
             confidence_thr=float(getattr(args, "edge_thr", 0.5) or 0.5),
             cost_level=str(getattr(args, "cost_level", "base") or "base"),
-            random_controls=int(getattr(args, "random_controls", 40) or 0))
+            random_controls=int(getattr(args, "random_controls", 40) or 0),
+            regime_breakdown=not bool(getattr(args, "no_regime_breakdown", False)),
+            regime_refit_every=int(getattr(args, "regime_refit_every", 20) or 20),
+            regime_window=int(getattr(args, "regime_window", 20) or 20))
     elif args.command == "ablation":
         def _ablation_list(raw):
             if not raw:
