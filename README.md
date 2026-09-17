@@ -237,6 +237,20 @@ python main.py schedule         # 自动重训练调度（常驻）
 > 采纳口径调整（信号本身无 edge）。**这是"绝对收益为正 ≠ 有 edge"的直接读数。**
 > 详见 [基准相对增量专题](cairn/benchmark-relative-edge.md)。
 
+> 🪧 **状态分层的净超额**（Issue #55 第七轮，"增量是不是只在某个市场状态下"）：
+> `python main.py edge-check`（默认附 `regime_breakdown` 段；`--no-regime-breakdown` 关闭）
+> —— 把前六轮的**全样本平均**读数拆开：信号会不会"大部分时间没用、
+> 只在某种市场状态才有增量"被平均掉。状态由**全池等权市场层**拟合（HMM `expanding`
+> 无前视；缺 hmmlearn 时**如实降级**规则口径并标 `mode=rules_fallback`），
+> 调仓日取**当日**标签（有截断回归守卫证明无前视），逐期净超额与全局判据**逐式同源**。
+> 主读数（8 标的真实日K，walk-forward，base 档）：全局净超额 −0.214%（`no_edge`）；
+> 分状态 **range −0.299%（t −1.91）/ bear −0.013%（t −0.07）** —— **没有一个状态为正**；
+> bull 当期无有效样本，**如实标不可用、不外推**。`conditional_edge_hint=False`。
+> ⇒ "增量只藏在某状态"**不被支持**：不是"平均没用"，而是**各状态下都没用**。
+> 边界：8 标的冒烟、单窗、分状态每格期数偏少（28~66），`spread` 极差只记为待观察量，
+> **不构成口径变更依据**；全池 38 标的分状态读数待跑。
+> 详见 [基准相对增量专题](cairn/benchmark-relative-edge.md) 第八节。
+
 > 🧪 **特征集 × 模型族联合消融**（Issue #55 第六轮，最后一条未量化嫌疑）：
 > `python main.py ablation`（只读，`affects_gate=false`）
 > —— 以**唯一记分板**（相对全池等权的净超额）判两条从未量化的假设。

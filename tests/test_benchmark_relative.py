@@ -218,3 +218,113 @@ class TestBuildReport:
         # grid 太短 → 如实不可用，不外推
         if not rep["available"]:
             assert "不足" in rep["reason"]
+
+
+# ----------------------------------------------------------------------
+# 状态分层净超额（"增量是不是只在某个市场状态下"）
+# ----------------------------------------------------------------------
+from src.eval.benchmark_relative import (  # noqa: E402
+    MIN_REGIME_PERIODS,
+    _date_regime_labels,
+    _regime_breakdown,
+)
+
+
+class TestRegimeBreakdown:
+    def _grid(self, n=40):
+        return list(pd.date_range("2021-06-01", periods=n, freq="5B"))
+
+    def test_too_few_regimes_is_unavailable_not_faked(self):
+        """只有 1 个状态可用 → 拒绝给结论，不硬凑。"""
+        g = self._grid()
+        rb = _regime_breakdown(g, {d: "bull" for d in g},
+                               np.zeros(len(g)), np.zeros(len(g)), 0.0, 5)
+        assert rb["available"] is False
+        assert rb["conclusion"] == "unavailable"
+        assert rb["conditional_edge_hint"] is False
+
+    def test_single_regime_short_sample_is_flagged(self):
+        """某状态期数 < MIN_REGIME_PERIODS → 该状态 available=False + reason。"""
+        g = self._grid(30)
+        labels = {d: ("bull" if i < 2 else "range") for i, d in enumerate(g)}
+        rb = _regime_breakdown(g, labels, np.zeros(len(g)), np.zeros(len(g)), 0.0, 5)
+        assert rb["by_regime"]["bull"]["available"] is False
+        assert "不足" in rb["by_regime"]["bull"]["reason"]
+        assert rb["by_regime"]["range"]["n_periods"] == 28
+
+    def test_excess_charges_cost_like_global_judgement(self):
+        """状态内净超额与全局同源：逐期 (sig−ben)−2×成本。"""
+        g = self._grid(30)
+        sig = np.full(30, 0.01)
+        ben = np.zeros(30)
+        cost = 0.001
+        rb = _regime_breakdown(g, {d: "range" for d in g}, sig, ben, cost, 5)
+        exp = 0.01 - 2 * cost
+        assert rb["by_regime"]["range"]["excess_mean_per_period"] == pytest.approx(exp, abs=1e-9)
+
+    def test_spread_and_positive_hint(self):
+        """某状态净超额显著为正（t≥2）→ conditional_edge_hint=True。"""
+        g = self._grid(40)
+        labels = {d: ("bull" if i % 2 == 0 else "range") for i, d in enumerate(g)}
+        rng = np.random.default_rng(0)
+        # bull 组稳定正超额，range 组稳定负超额
+        sig = np.array([0.02 if i % 2 == 0 else -0.02 for i in range(40)], dtype=float)
+        sig = sig + rng.normal(0, 1e-4, 40)
+        rb = _regime_breakdown(g, labels, sig, np.zeros(40), 0.0, 5)
+        assert rb["available"] is True
+        assert rb["conditional_edge_hint"] is True
+        assert rb["conclusion"] == "conditional_hint"
+        assert "bull" in rb["regimes_with_positive_edge"]
+        assert rb["spread"]["best"] == "bull"
+        assert rb["spread"]["best_minus_worst"] > 0
+
+    def test_unlabeled_periods_counted_not_filled(self):
+        """未标状态的调仓日如实计入 n_periods_unlabeled，不填默认状态。"""
+        g = self._grid(30)
+        labels = {d: "range" for d in g[:20]}   # 后 10 期无标签
+        rb = _regime_breakdown(g, labels, np.zeros(30), np.zeros(30), 0.0, 5)
+        assert rb["n_periods_unlabeled"] == 10
+        assert rb["by_regime"]["range"]["n_periods"] == 20
+
+    def test_breakdown_is_causal_under_future_truncation(self):
+        """篡改/截断 t 之后的观测 → t 及更早的状态标签必须不变（无前视）。"""
+        n = 600
+        data = {f"S{i}.SH": _prices(n, seed=10 + i) for i in range(4)}
+        lab_full = _date_regime_labels(data)
+        assert lab_full["meta"]["available"] is True
+        assert lab_full["meta"]["lookahead_prefixed"] is False
+        trunc = {k: v.iloc[:-100].reset_index(drop=True) for k, v in data.items()}
+        lab_trunc = _date_regime_labels(trunc)
+        common = sorted(set(lab_full["labels_by_date"]) & set(lab_trunc["labels_by_date"]))
+        assert len(common) > 300
+        for d in common:
+            assert lab_full["labels_by_date"][d] == lab_trunc["labels_by_date"][d]
+
+    def test_mode_is_honestly_labelled(self):
+        """状态口径如实标注：hmm_expanding 或 rules_fallback，不冒充。"""
+        data = {f"S{i}.SH": _prices(400, seed=10 + i) for i in range(4)}
+        lab = _date_regime_labels(data)
+        assert lab["meta"]["mode"] in ("hmm_expanding", "rules_fallback")
+
+
+class TestRegimeBreakdownInReport:
+    def test_report_carries_regime_breakdown_readonly(self):
+        data = _dataset(n_symbols=5, n=600)
+        probs = _probs(data)
+        rep = build_report(data, probs, _config(), horizons=(5, 10, 20),
+                           holding_horizon=5, n_random_controls=8)
+        rb = rep["regime_breakdown"]
+        assert rep["regime_breakdown_enabled"] is True
+        assert "labels" in rb
+        # 只读纪律不受状态分层影响
+        assert rep["affects_gate"] is False
+        assert rep["readonly"] is True
+
+    def test_breakdown_can_be_disabled(self):
+        data = _dataset(n_symbols=5, n=600)
+        probs = _probs(data)
+        rep = build_report(data, probs, _config(), horizons=(5, 10, 20),
+                           holding_horizon=5, n_random_controls=8,
+                           regime_breakdown=False)
+        assert rep["regime_breakdown_enabled"] is False
+        assert rep["regime_breakdown"]["available"] is False
