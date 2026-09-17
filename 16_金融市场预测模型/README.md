@@ -305,6 +305,7 @@ if m.size() > 0
 | `edge-check` | **基准相对决策增量**（信号组合 vs 全池等权的净超额 + 扣成本 + 随机子集对照 + **状态分层净超额**；`--holding-horizon` / `--cost-level` / `--random-controls` / `--edge-thr` / `--no-regime-breakdown` / `--regime-refit-every` / `--regime-window`） |
 | `regime-signal` | **波动分层置信度有效性**（置信度语义诊断 / 高置信×高波动分层读数 / 子池稳健性分级；`--confidence-thr` / `--stability-subsets` / `--folds`） |
 | `ablation` | **特征集 × 模型族联合消融**（唯一记分板 = 相对全池等权的净超额；增量需净超额转正且相对基线臂配对 t ≥ 2 并过 Holm 校正；`--abl-recipes` / `--abl-models` / `--abl-model` / `--abl-recipe` / `--horizons` / `--holding-horizon` / `--cost-level` / `--random-controls`） |
+| `risk-signal` | **风险预测力检验**（模型输出 vs 朴素 trailing-vol 基线的**增量**偏秩相关；效应量 ≥ 0.10 且重叠校正后 \|t\| ≥ 2；子池稳健性分级；只回答"风险预警是否值得立项"；`--horizons` / `--folds` / `--stability-subsets` / `--stability-size`） |
 | `notify <symbol>` | 预测并推送信号（Webhook / 邮件） |
 | `daily-report` / `weekly-report` | 生成日/周报 |
 | `adaptive` | 运行自适应学习引擎 |
