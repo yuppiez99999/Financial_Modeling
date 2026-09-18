@@ -3783,13 +3783,27 @@ def run_feature_attribution_cmd(config: dict, symbols: list[str] | None = None,
         per_symbol: dict[str, Any] = {}
         for symbol, df in sorted(data.items()):
             fe = FeatureEngineer(config)
+            # 与训练同款管线：transform → create_target → get_feature_columns
+            # （训练时 X = combined[feature_cols].values，列序由 get_feature_columns
+            # 决定；模型 feature_name_ 是 Column_N 占位，必须按位对齐而非按名对齐）
             feats = fe.transform(df, horizon_days=horizon_days)
-            feature_names = list(getattr(inner, "feature_name_", []) or
-                                 feats.columns)
-            X = feats[feature_names]
-            contrib = fa.tree_shap_contrib(inner, X)
+            feats = fe.create_target(feats, horizon_days)
+            if "date" in feats.columns:
+                feats = feats.sort_values("date")
+            feature_cols = fe.get_feature_columns(feats, horizon_days)
+            if len(feature_cols) != int(getattr(inner, "n_features_", len(feature_cols))):
+                raise ValueError(
+                    f"{symbol} 特征列数 {len(feature_cols)} 与模型 "
+                    f"{int(getattr(inner, 'n_features_', -1))} 不一致（训练/归因管线漂移）")
+            X_df = feats[feature_cols].dropna()
+            Xv = X_df.to_numpy()
+            scaler = bundle.get("scaler") if isinstance(bundle, dict) else None
+            if scaler is not None:
+                Xv = scaler.transform(Xv)   # 与推理同口径（predictor.py scaler.transform）
+            Xs = pd.DataFrame(Xv, columns=feature_cols, index=X_df.index)
+            contrib = fa.tree_shap_contrib(inner, Xs)
             cdf = fa.contribution_frame(
-                contrib, feature_names, index=feats.index)
+                contrib, feature_cols, index=X_df.index)
             imp = fa.aggregate_importance(cdf)
             drift = fa.window_drift(cdf)
             per_symbol[symbol] = {

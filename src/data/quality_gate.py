@@ -22,7 +22,9 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 # Token 数据默认路径（小样本优先，全量太大）
-TOKEN_DATA_DIR = Path(__file__).parent.parent.parent.parent / "01_数据源与数据处理" / "20260619Token A级数据"
+# 必须 .resolve() 归一化：__file__ 可能为相对路径，而 Path(".").parent == Path(".")，
+# 不归一化会导致上溯级数不足、把路径解析到项目根下而非上级数据目录（2026-09-15 修复）。
+TOKEN_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "01_数据源与数据处理" / "20260619Token A级数据"
 
 
 class TokenQualityClassifier:
@@ -136,13 +138,22 @@ class TokenQualityClassifier:
         """加载已训练的质量模型"""
         model_path = self.model_dir / "quality_model.pkl"
         if not model_path.exists():
+            logger.warning(f"质量模型文件不存在，质量门控将降级: {model_path}")
             return False
-        data = joblib.load(model_path)
-        self.classifier = data["classifier"]
-        self.regressor = data["regressor"]
-        self._loaded = True
-        logger.info("已加载质量模型")
-        return True
+        try:
+            data = joblib.load(model_path)
+            self.classifier = data["classifier"]
+            self.regressor = data["regressor"]
+            self._loaded = True
+            logger.info("已加载质量模型")
+            return True
+        except Exception as e:  # noqa: BLE001
+            # 加载失败必须留痕（典型场景：pkl 由其他 numpy 大版本 dump，反序列化时
+            # 引用 numpy._core 等私有模块而失败）。此前异常直接穿透，被上层 except
+            # 静默吞掉，导致门控「看似开启、实则全程未生效」（2026-09-15 修复）。
+            logger.error(f"质量模型加载失败，质量门控降级: {e}")
+            self._loaded = False
+            return False
 
     def score_data(self, completeness: float, accuracy: float,
                    timeliness: float, compliance: float = 100.0) -> dict[str, Any]:
@@ -195,11 +206,17 @@ class TokenQualityClassifier:
             df["a_probability"] = self.classifier.predict_proba(X)[:, 1]
             df["token_level_pred"] = np.where(df["a_probability"] > 0.5, "A", "B")
             df["trust_weight"] = df["quality_score"] / 100.0
+            df["quality_degraded"] = False
         else:
+            # 降级分支：无可用质量模型时 quality_score 退化为四维均值，
+            # token_level_pred 恒定 "A" 只是乐观假设、不可作为质量证据，
+            # 故置 quality_degraded=True 供调用方判定（2026-09-15 修复）。
+            logger.warning("质量模型不可用，打分为降级结果（token_level_pred 恒定 A，不可信）")
             df["quality_score"] = df[self.FEATURE_COLS].mean(axis=1)
             df["a_probability"] = 0.5
             df["token_level_pred"] = "A"
             df["trust_weight"] = df["quality_score"] / 100.0
+            df["quality_degraded"] = True
 
         return df
 

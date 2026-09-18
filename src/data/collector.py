@@ -50,23 +50,39 @@ class DataCollector:
         return self._quality_gate
 
     def assess_quality(self, symbol: str, df: pd.DataFrame) -> dict[str, Any]:
-        """对行情数据做质量体检（fail-soft：任何异常都不影响主链路）。"""
+        """对行情数据做质量体检。
+
+        fail-soft：异常不阻断主链路，但**必须显式留痕** —— 返回带 degraded/error
+        字段的结果并记 error 日志。此前异常分支直接 return {}，调用方无法区分
+        「门控关闭」与「门控崩溃」，门控失效被误当作正常放行（2026-09-15 修复）。
+        """
         if not self.quality_gate_enabled or df is None or len(df) == 0:
             return {}
         try:
             scored = self._get_quality_gate().score_market_data(df)
+            degraded = bool(scored["quality_degraded"].iloc[0]) if "quality_degraded" in scored.columns else False
             info = {
                 "symbol": symbol,
                 "rows": int(len(scored)),
                 "quality_score": round(float(scored["quality_score"].mean()), 2),
                 "a_level_ratio": round(float(scored["token_level_pred"].eq("A").mean()), 4),
                 "min_quality": round(float(scored["quality_score"].min()), 2),
+                "degraded": degraded,
             }
+            if degraded:
+                logger.warning(f"[quality] {symbol} 质量打分为降级结果，A级占比不可信")
             self.last_quality[symbol] = info
             return info
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"[quality] {symbol} 质量体检失败，跳过: {e}")
-            return {}
+            # 门控失效必须可见：返回 degraded=True + error，而非空 dict
+            info = {
+                "symbol": symbol,
+                "degraded": True,
+                "error": f"{type(e).__name__}: {e}",
+            }
+            logger.error(f"[quality] {symbol} 质量体检失败，门控未生效（结果不可信）: {e}")
+            self.last_quality[symbol] = info
+            return info
 
     def _cache_path(self, symbol: str) -> Path:
         safe = symbol.replace("/", "_").replace("\\", "_")
