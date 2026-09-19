@@ -79,6 +79,33 @@ REGIME_BULL = "bull"
 REGIME_BEAR = "bear"
 REGIME_RANGE = "range"
 REGIME_ORDER = (REGIME_BULL, REGIME_RANGE, REGIME_BEAR)   # 与 STATE_NAMES 同集合
+
+# ---- 趋势 / 盘整二分（与牛/熊/震荡三分同源，只做可读化归并）----
+# 用途：`benchmark_relative` 的状态分层在 expanding 口径下**牛态可能被吸收**
+# （见 HMM_MAX_CONSECUTIVE_FAILURES），三分会只剩 range/bear 两态；
+# 把 bull+bear 归并为 trending、range 单列为 choppy，可在不新增拟合口径的
+# 前提下让"趋势 vs 盘整"两态一定可比（**不是**换一套状态模型，只是展示归并）。
+REGIME_TRENDING = "trending"
+REGIME_CHOPPY = "choppy"
+REGIME_TRENDING_MEMBERS = (REGIME_BULL, REGIME_BEAR)
+REGIME_CHOPPY_MEMBERS = (REGIME_RANGE,)
+REGIME_BINARY_ORDER = (REGIME_TRENDING, REGIME_CHOPPY)
+REGIME_BINARY_MAP = {
+    REGIME_BULL: REGIME_TRENDING,
+    REGIME_BEAR: REGIME_TRENDING,
+    REGIME_RANGE: REGIME_CHOPPY,
+}
+
+# expanding 拟合**连续失败**上限：超过则停止重训（照旧**无前视**，只保留已有标签）。
+#
+# 触发场景（真事故，不是假想）：`regime_labels` 从第 1 个有效样本起就尝试 fit，
+# 而 `fit_hmm` 要求 `MIN_FIT_SAMPLES`（60）个样本 —— 起步阶段必然连续抛
+# `insufficient_fit_samples`。以往这些异常被 `except ValueError: continue`
+# **静默吞掉**，每次都在循环里白跑一遍；没有上限时，样本不足或分布退化都会
+# 让循环"看起来在跑、其实一次都没 fit 成"，report 只会写 refits=0。
+# 设上限 >= MIN_FIT_SAMPLES 后，正常路径（首个可 fit 前缀）不会被误停，
+# 而不可 fit 的路径在常数次尝试后**明确停下并如实上报** `stalled=True`。
+HMM_MAX_CONSECUTIVE_FAILURES = 200
 DEFAULT_N_STATES = N_STATES
 DEFAULT_VOL_WINDOW = DEFAULT_WINDOW
 MIN_SAMPLES = MIN_FIT_SAMPLES
@@ -208,20 +235,38 @@ def regime_labels(X: np.ndarray, valid: np.ndarray, n_states: int = N_STATES,
     if len(idx_valid) < MIN_FIT_SAMPLES:
         return {"labels": labels, "states": states,
                 "meta": {"mode": "expanding", "available": False,
-                         "reason": f"insufficient_valid_samples({len(idx_valid)}<{MIN_FIT_SAMPLES})"}}
+                         "reason": f"insufficient_valid_samples({len(idx_valid)}<{MIN_FIT_SAMPLES})",
+                         "lookahead_prefixed": False}}
+
+    # 首个可 fit 的前缀：前 `MIN_FIT_SAMPLES - 1` 个有效样本**必然**不足，
+    # 直接跳过它们再去 fit（此前是逐个尝试、逐个抛异常），既省掉无谓的
+    # 异常开销，也让下面的"连续失败"只统计**真正尝试过**的 fit。
+    start = max(0, int(MIN_FIT_SAMPLES) - 1)
 
     model = None
     names: Dict[int, str] = {}
     next_refit = 0
     refits = 0
+    fit_failures = 0          # 累计拟合失败（含退化检查不通过）
+    consecutive_failures = 0  # 连续失败（触发停滞护栏）
+    stalled = False
     for k, i in enumerate(idx_valid):
-        if model is None or k >= next_refit:
+        if k < start:
+            continue
+        if (model is None or k >= next_refit) and not stalled:
             hist = X[idx_valid[: k + 1]]
             try:
                 model, means = fit_hmm(hist, n_states=n_states, seed=seed)
                 names = name_states(means)
                 refits += 1
+                consecutive_failures = 0
             except ValueError:
+                fit_failures += 1
+                consecutive_failures += 1
+                # 连续失败过多 ⇒ 该样本的收益分布不适合 n_states 态 EM，
+                # 停止重训：已有的标签照旧可用（仍无前视），但不再无限重试。
+                if consecutive_failures >= int(HMM_MAX_CONSECUTIVE_FAILURES):
+                    stalled = True
                 continue
             next_refit = (k // max(1, int(refit_every)) + 1) * max(1, int(refit_every))
         if model is None:
@@ -235,7 +280,9 @@ def regime_labels(X: np.ndarray, valid: np.ndarray, n_states: int = N_STATES,
     return {"labels": labels, "states": states,
             "meta": {"mode": "expanding", "available": any(l is not None for l in labels),
                      "n_states": int(n_states), "refit_every": int(refit_every),
-                     "refits": int(refits), "lookahead_prefixed": False,
+                     "refits": int(refits), "fit_failures": int(fit_failures),
+                     "stalled": bool(stalled),
+                     "lookahead_prefixed": False,
                      "mapping": "state_mean_return_ascending", "seed": int(seed)}}
 
 
