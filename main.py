@@ -1742,7 +1742,6 @@ def run_confidence_gate(config: dict, decided_by: str = "",
     return record
 
 
-
 def run_conformal_interval(config: dict, symbols: list[str] | None = None,
                            horizons: list[int] | None = None,
                            confidence_levels: list[float] | None = None,
@@ -2610,7 +2609,6 @@ def run_calibration(config: dict, symbols: list[str] | None = None,
     print("\n校准报告已保存: reports/probability_calibration_<h>d.json")
     print(f"校准参数已固化到: {model_dir}/probability_calibration_<horizon>.json")
     return reports
-
 
 
 def run_calibration_ablation(config: dict, symbols: list[str] | None = None,
@@ -3848,6 +3846,213 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
     return payload
 
 
+def run_decision_feed_cmd(config: dict, symbols: list[str] | None = None,
+                          symbols_file: str | None = None, stdout: bool = False,
+                          audit_hours: int = 24) -> dict:
+    """**决策源契约导出**（`python main.py decision-feed`）。
+
+    为什么要有这条命令（而不是只在 API 里做）：
+      下游 tradingview / 28 的集成是靠**离线管道**跑的（`scripts/` 下逐行读
+      标的清单 → 写 JSON → 消费），不一定常驻 HTTP 服务。把契约构建做成
+      CLI，可以让「同一份契约」在服务态与离线管道态**逐字段一致**，
+      避免又出现两套换算。
+
+    产出 `reports/decision_feed.json`：每标的净看涨概率（逐周期 + 综合）、
+    校准概率与不确定性、置信度采纳建议、已回溯命中率摘要。
+
+    ⚠️ 只读决策源：不产出仓位/下单建议（`position_role=observer`），
+    不改变门禁（`affects_gate=false`）。
+
+    用法：
+      python main.py decision-feed
+      python main.py decision-feed --symbols-file ~/positions.txt --stdout
+    """
+    from src.export.decision_feed import build_decision_feed
+    from src.inference.predictor import PredictionEngine
+
+    logger.info("决策源契约导出（decision-feed）")
+    logger.info("[decision-feed] 只读决策源：输出方向/概率/采纳建议，不产出仓位（position_role=observer）")
+
+    if symbols_file:
+        try:
+            lines = Path(symbols_file).read_text(encoding="utf-8").splitlines()
+            symbols = [ln.strip().split(",")[0].split()[0]
+                       for ln in lines
+                       if ln.strip() and not ln.strip().startswith("#")]
+            logger.info(f"[decision-feed] 从 {symbols_file} 读到 {len(symbols)} 个标的")
+        except Exception as e:  # noqa: BLE001
+            payload = {"error": f"标的清单读取失败: {e}", "affects_gate": False}
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return payload
+
+    symbol_list = symbols or _config_symbols(config)
+    if not symbol_list:
+        payload = {"error": "未指定标的且配置无启用标的", "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    engine = PredictionEngine(config)
+    engine.load_models(config.get("model", {}).get("type", "lightgbm"))
+
+    from src.api.server import build_portfolio_summary
+
+    base = build_portfolio_summary(engine, config, list(dict.fromkeys(symbol_list)))
+    feed = build_decision_feed(base, config, audit_hours=audit_hours)
+
+    out_dir = Path("reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_path = out_dir / "decision_feed.json"
+    report_path.write_text(json.dumps(feed, ensure_ascii=False, indent=2),
+                           encoding="utf-8")
+    feed["report_path"] = str(report_path)
+
+    summary = {
+        "contract_version": feed.get("contract_version"),
+        "symbol_count": (feed.get("meta") or {}).get("symbol_count"),
+        "scored_count": (feed.get("meta") or {}).get("scored_count"),
+        "advisory_consumable_count": (feed.get("meta") or {}).get("advisory_consumable_count"),
+        "affects_gate": False,
+        "position_role": feed.get("position_role"),
+        "analytics_available": (feed.get("analytics") or {}).get("available"),
+        "analytics_verdict": ((feed.get("analytics") or {}).get("overall") or {}).get(
+            "verdict", {}).get("status"),
+        "report_path": str(report_path),
+    }
+    if stdout:
+        print(json.dumps(feed, ensure_ascii=False, indent=2))
+    else:
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+    logger.info(f"决策源契约已落盘: {report_path}")
+    return feed
+
+
+def run_tv_export_cmd(config: dict, symbols: list[str] | None = None,
+                       symbols_file: str | None = None,
+                       out_dir: str = "outputs/tv/exports",
+                       backfill_anchors: bool = True,
+                       anchor_step: int = 5,
+                       anchor_horizon: str = "short_term",
+                       max_anchors: int = 90,
+                       card_limit: int | None = None) -> dict:
+    """**TradingView 一次交付**（`python main.py tv-export`）。
+
+    下游要的是「能直接读进去的东西」，而不是又一份 JSON 说明。本命令把
+    `decision-feed` 的只读契约投影成 TradingView 侧的两种原生载体：
+
+    1. **图片信号卡**（`signals/<symbol>.png`）—— 单张 PNG 承载三周期净看涨
+       概率 / 综合分 / 置信度 / 门禁结论 / 采纳权重 + 锚点收益条；同一张图的
+       ``tEXt`` 块里带机器可读契约（``signal_contract``）与全精度锚点
+       （``anchors_json``，UTF-8）。TradingView 图片导入读的就是这张图。
+    2. **Pine 外挂数据层**（`pine/trendcast/<symbol>.json`）—— ``tv-pine/1``
+       列结构，``request.seed`` 直接读；列名以 ``ret_`` 前缀，Pine 侧可按前缀
+       批量绑定。**刻意不出口 is_trade / 仓位**：本层用于同图对照，不做下单依据。
+
+    锚点（分数 × 命中 × 已实现收益）来自 `src.eval.anchor_backfill`：
+    本地真实日K + 已训练模型离线回填，**无前视**（结果只在 t+h 收线后回填），
+    同一批读数同时写进卡片图与小图，避免「图看着对、数看着不对」。
+
+    ⚠️ 只读：`affects_gate=false`、`position_role=observer`，不产出仓位/门禁结论。
+    锚点为「同模型回看历史」，标 `validated=false`。
+
+    用法：
+      python main.py tv-export
+      python main.py tv-export --symbols 510300.SH --out-dir outputs/tv/day
+      python main.py tv-export --no-anchors --card-limit 4
+    """
+    from src.export.decision_feed import build_decision_feed
+    from src.export.tv.handoff import build_handoff
+    from src.inference.predictor import PredictionEngine
+
+    logger.info("TradingView 一次交付（tv-export）")
+    logger.info("[tv-export] 只读决策源投影：图片信号卡 + Pine 数据层，"
+                "affects_gate=false，不产出仓位")
+
+    if symbols_file:
+        try:
+            lines = Path(symbols_file).read_text(encoding="utf-8").splitlines()
+            symbols = [ln.strip().split(",")[0].split()[0]
+                       for ln in lines if ln.strip() and not ln.strip().startswith("#")]
+            logger.info(f"[tv-export] 从 {symbols_file} 读到 {len(symbols)} 个标的")
+        except Exception as e:  # noqa: BLE001
+            payload = {"error": f"标的清单读取失败: {e}", "affects_gate": False}
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return payload
+
+    symbol_list = symbols or _config_symbols(config)
+    if not symbol_list:
+        payload = {"error": "未指定标的且配置无启用标的", "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+    symbol_list = list(dict.fromkeys(symbol_list))
+
+    engine = PredictionEngine(config)
+    engine.load_models(config.get("model", {}).get("type", "lightgbm"))
+
+    from src.api.server import build_portfolio_summary
+
+    base = build_portfolio_summary(engine, config, symbol_list)
+    feed = build_decision_feed(base, config)
+
+    anchors_by_symbol: dict = {}
+    backfill_report: dict | None = None
+    if backfill_anchors:
+        try:
+            from src.eval.anchor_backfill import backfill
+
+            backfill_report = backfill(engine, symbol_list, horizon=anchor_horizon,
+                                       step=int(anchor_step),
+                                       max_anchors=int(max_anchors))
+            anchors_by_symbol = {
+                sym: r.get("anchors", [])
+                for sym, r in (backfill_report.get("by_symbol") or {}).items()
+                if isinstance(r, dict) and r.get("available")
+            }
+            logger.info(f"[tv-export] 锚点回填 {len(anchors_by_symbol)} 标的 "
+                        f"（step={anchor_step}, horizon={anchor_horizon}）")
+        except Exception as e:  # noqa: BLE001 - 回填失败不得阻断卡片交付
+            logger.warning(f"[tv-export] 锚点回填失败（卡片按无锚点出）: {e}")
+            backfill_report = {"available": False, "reason": str(e)}
+
+    tv_cfg = (config.get("decision_feed", {}) or {}).get("tv", {}) or {}
+    report = build_handoff(
+        feed, anchors_by_symbol=anchors_by_symbol, out_dir=out_dir,
+        symbols=symbol_list, card_limit=card_limit,
+        cards_for_unavailable=bool(tv_cfg.get("cards_for_unavailable", True)))
+    out_base = Path(out_dir)
+    out_base.mkdir(parents=True, exist_ok=True)
+    feed_path = out_base / "decision_feed.json"
+    feed_path.write_text(json.dumps(feed, ensure_ascii=False, indent=2),
+                         encoding="utf-8")
+    if backfill_report is not None:
+        (out_base / "anchor_backfill.json").write_text(
+            json.dumps(backfill_report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 同时落一份到 16_ 常规报表目录，便于既有链路引用
+    reports_dir = Path("reports")
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    (reports_dir / "decision_feed.json").write_text(
+        json.dumps(feed, ensure_ascii=False, indent=2), encoding="utf-8")
+    (reports_dir / "tv_handoff_report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    summary = {
+        "out_dir": report["out_dir"],
+        "card_count": report["card_count"],
+        "pine_files": len(report["pine_files"]),
+        "symbols_skipped": report["skipped"],
+        "anchors": (backfill_report or {}).get("pooled"),
+        "feed_summary": report["feed_summary"],
+        "affects_gate": False,
+        "position_role": "observer",
+        "signals_index": str(out_base / "signals" / "index.json"),
+        "pine_index": str(out_base / "pine" / "index.json"),
+        "handoff_report": str(out_base / "handoff_report.json"),
+        "decision_feed": str(feed_path),
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return report
+
+
 def run_drift_monitor_cmd(config: dict, symbols: list[str] | None = None,
                           split: float = 0.5) -> dict:
     """漂移监控（S23 / I3：T23.1 准入 + T23.2 PSI/KS 自研 + T23.3 交叉，report_only）。
@@ -4124,6 +4329,15 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py calibration-ablation     # 校准层消融对照：base/platt/isotonic 决策读数并排（T19.4 证据）
   python main.py research-assist          # 投研辅助只读接入评估：候选调研 + 离线对照 + 决策单（S20/H5）
   python main.py portfolio-backtest      # 组合回测闭环：信号×门槛×成本三档→净值/回撤/换手/夏普（S21/I1，report_only）
+  python main.py decision-feed            # 决策源契约导出：净方向概率/综合分/采纳建议 → reports/decision_feed.json
+  python main.py decision-feed --stdout    # 同上，直接打印 JSON（供下游管道消费）
+  python main.py pool-collinearity         # 池共线性诊断（有效独立维度 / 市场 beta 占比）
+  python main.py model-improve             # 模型优化对照（标签口径 A/B + 周期权重重排建议）
+  python main.py regime-signal             # 波动分层下的置信度有效性（高置信=波动探测器？）
+  python main.py tv-export                 # TradingView 一次交付：图片信号卡 + Pine 数据层（只读）
+  python main.py edge-check                # 基准相对决策增量：信号组合 vs 全池等权（扣成本 + 随机子集 + 状态分层）
+  python main.py edge-check --no-regime-breakdown  # 同上，不出状态分层净超额
+  python main.py ablation                  # 特征集 × 模型族联合消融（唯一记分板 = 净超额 + 臂间配对 t）
         """,
     )
     parser.add_argument("command", choices=[
@@ -4137,6 +4351,8 @@ def build_parser() -> argparse.ArgumentParser:
         "conformal", "conformal-interval", "overfit-audit", "regime",
         "calibration", "calibration-ablation", "research-assist",
         "portfolio-backtest", "drift-monitor", "feature-attribution",
+        "decision-feed", "tv-export", "pool-collinearity", "model-improve",
+        "regime-signal", "edge-check", "ablation",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -4145,6 +4361,39 @@ def build_parser() -> argparse.ArgumentParser:
                         choices=["short_term", "mid_term", "long_term", "all"],
                         help="预测周期")
     parser.add_argument("--config", default=None, help="配置文件路径")
+    parser.add_argument("--high-corr", type=float, default=0.7, dest="high_corr",
+                        help="pool-collinearity：高相关对阈值（默认 0.7）")
+    parser.add_argument("--confidence-thr", type=float, default=0.6, dest="confidence_thr",
+                        help="regime-signal：高置信子集门槛（默认 0.6，与下游动作阈值同量级）")
+    parser.add_argument("--stability-subsets", type=int, default=12, dest="stability_subsets",
+                        help="regime-signal：子池稳健性检验抽样次数（默认 12，0=关闭）")
+    parser.add_argument("--stability-size", type=int, default=18, dest="stability_size",
+                        help="regime-signal：子池稳健性检验每次抽多少标的（默认 18）")
+    parser.add_argument("--folds", type=int, default=3,
+                        help="model-improve：walk-forward 折数（默认 3）")
+    parser.add_argument("--holding-horizon", type=int, default=5, dest="holding_horizon",
+                        help="edge-check：非重叠持有期 / 调仓间隔（默认 5 日）")
+    parser.add_argument("--cost-level", default="base", dest="cost_level",
+                        choices=["conservative", "base", "aggressive"],
+                        help="edge-check：T11.2 定稿成本档（默认 base）")
+    parser.add_argument("--random-controls", type=int, default=40, dest="random_controls",
+                        help="edge-check：随机子集对照次数（默认 40）")
+    parser.add_argument("--edge-thr", type=float, default=0.5, dest="edge_thr",
+                        help="edge-check：综合分选中阈值（默认 0.5 = 中性）")
+    parser.add_argument("--no-regime-breakdown", action="store_true", dest="no_regime_breakdown",
+                        help="edge-check：关闭状态分层净超额（默认开启）")
+    parser.add_argument("--regime-refit-every", type=int, default=20, dest="regime_refit_every",
+                        help="edge-check：状态拟合重训步长（交易日，默认 20）")
+    parser.add_argument("--regime-window", type=int, default=20, dest="regime_window",
+                        help="edge-check：状态观测回看窗口（默认 20）")
+    parser.add_argument("--abl-recipes", default=None, dest="abl_recipes",
+                        help="ablation：逗号分隔的特征子集配方（缺省 = 全部；full=全量基线）")
+    parser.add_argument("--abl-models", default=None, dest="abl_models",
+                        help="ablation：逗号分隔的模型族（缺省 = 全部；lightgbm=现行基线族）")
+    parser.add_argument("--abl-model", default="lightgbm", dest="abl_model",
+                        help="ablation：基线模型族（默认 lightgbm）")
+    parser.add_argument("--abl-recipe", default="full", dest="abl_recipe",
+                        help="ablation：基线特征配方（默认 full）")
     parser.add_argument("--model-type", default=None,
                         choices=["lightgbm", "pytorch_lstm", "timesfm", "ensemble",
                                  "factor_model", "multifactor"],
@@ -4233,6 +4482,25 @@ def build_parser() -> argparse.ArgumentParser:
                         help="portfolio-backtest 命令：mechanical=MA 机械基线（S21）；rank=模型截面排序 top-quantile OOS 信号（绕开未校准阈值）")
     parser.add_argument("--rank-quantile", dest="rank_quantile", type=float, default=0.3,
                         help="portfolio-backtest 命令：rank 模式每日做多比例（缺省 0.3 = top 30%%）")
+    parser.add_argument("--symbols-file", dest="symbols_file", default=None,
+                        help="decision-feed 命令：逐行标的清单文件（下游 tradingview 集成方案推荐用法）")
+    parser.add_argument("--stdout", dest="stdout", action="store_true",
+                        help="decision-feed 命令：同时把契约 JSON 打到 stdout（供管道消费）")
+    parser.add_argument("--audit-hours", dest="audit_hours", type=int, default=24,
+                        help="decision-feed 命令：审计摘要窗口小时数（缺省 24）")
+    parser.add_argument("--out-dir", dest="out_dir", default="outputs/tv/exports",
+                        help="tv-export 命令：交付输出根目录（缺省 outputs/tv/exports）")
+    parser.add_argument("--no-anchors", dest="no_anchors", action="store_true",
+                        help="tv-export 命令：跳过锚点回填（只出卡片与 Pine 数据层）")
+    parser.add_argument("--anchor-step", dest="anchor_step", type=int, default=5,
+                        help="tv-export 命令：锚点间隔（交易日，缺省 5；小于周期天数即视窗重叠）")
+    parser.add_argument("--anchor-horizon", dest="anchor_horizon", default="short_term",
+                        choices=["short_term", "mid_term", "long_term"],
+                        help="tv-export 命令：回填所用周期模型（缺省 short_term）")
+    parser.add_argument("--max-anchors", dest="max_anchors", type=int, default=90,
+                        help="tv-export 命令：单标的锚点上限（缺省 90，取最近一段）")
+    parser.add_argument("--card-limit", dest="card_limit", type=int, default=None,
+                        help="tv-export 命令：只出前 N 张信号卡（缺省全部）")
     parser.add_argument("--split", dest="split", type=float, default=0.5,
                         help="drift-monitor 命令：参考窗/当前窗切分比例（缺省 0.5）")
     parser.add_argument("--model-path", dest="model_path", default=None,
@@ -4248,6 +4516,275 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default=None, help="API 服务地址")
     parser.add_argument("--port", type=int, default=None, help="API 服务端口")
     return parser
+
+
+def run_pool_collinearity_cmd(config: dict, symbols: list[str] | None = None,
+                             high_corr: float = 0.7) -> dict:
+    """池共线性诊断（Issue #55 步骤①）：有效独立维度 / 市场 beta 强度 / 剥 beta 残余。
+
+    只产出证据，`affects_gate=False`：不改池、不改门禁；缩池属产品口径变更须人工签字。
+    落盘 `reports/pool_collinearity.json`。
+    """
+    from src.eval.pool_collinearity import build_report
+
+    logger.info("执行池共线性诊断")
+    symbols = symbols or _config_symbols(config)
+    data = _load_price_frames(config, symbols)
+    report = build_report(data, high_corr_threshold=float(high_corr))
+    report["command"] = "pool-collinearity"
+    out_dir = Path("reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "pool_collinearity.json"
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    report["report_path"] = str(path)
+    _record_trial(config, "pool-collinearity", {
+        "available": bool(report.get("available")),
+        "n_symbols": report.get("n_symbols_with_returns", 0),
+    })
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return report
+
+
+def run_model_improve_cmd(config: dict, symbols: list[str] | None = None,
+                          horizons: list[int] | None = None,
+                          folds: int = 3) -> dict:
+    """模型优化对照（Issue #55 步骤②③）：标签口径 A/B + 周期权重重排建议。
+
+    只产出证据，`affects_gate=False`：标签口径切换与聚合权重重排均属产品口径变更，
+    须人工签字并重做泄漏/偏差审查后才可生效。落盘 `reports/model_improvement.json`。
+    """
+    from src.eval.model_improvement import build_report
+
+    logger.info("执行模型优化对照实验（标签口径 + 周期权重）")
+    symbols = symbols or _config_symbols(config)
+    hs = horizons or [int(v) for v in
+                      (config.get("data", {}).get("prediction_horizons", {}) or {}).values()]
+    hs = sorted(set(int(h) for h in hs)) or [5, 10, 20]
+    data = _load_price_frames(config, symbols)
+    report = build_report(data, config, horizons=hs, folds=int(folds))
+    report["command"] = "model-improve"
+    out_dir = Path("reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "model_improvement.json"
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    report["report_path"] = str(path)
+    _record_trial(config, "model-improve", {
+        "available": bool(report.get("available")),
+        "n_symbols": report.get("n_symbols", 0),
+        "horizons": hs,
+    })
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return report
+
+
+def run_regime_signal_cmd(config: dict, symbols: list[str] | None = None,
+                         horizons: list[int] | None = None,
+                         folds: int = 3,
+                         confidence_thr: float = 0.6,
+                         stability_subsets: int = 12,
+                         stability_size: int = 18) -> dict:
+    """波动分层下的置信度有效性（Issue #55 修正：高置信=波动探测器？）。
+
+    只产出证据，`affects_gate=False`：不改门禁 / 权重 / 池。
+    落盘 `reports/regime_conditioned_signal.json`。
+    """
+    from src.eval.regime_conditioned_signal import build_report
+
+    logger.info("执行波动分层置信度有效性评估")
+    symbols = symbols or _config_symbols(config)
+    hs = horizons or [int(v) for v in
+                      (config.get("data", {}).get("prediction_horizons", {}) or {}).values()]
+    hs = sorted(set(int(h) for h in hs)) or [5, 10, 20]
+    data = _load_price_frames(config, symbols)
+    report = build_report(data, config, horizons=hs, folds=int(folds),
+                          confidence_thr=float(confidence_thr),
+                          stability_subsets=int(stability_subsets),
+                          stability_size=int(stability_size))
+    report["command"] = "regime-signal"
+    out_dir = Path("reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "regime_conditioned_signal.json"
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    report["report_path"] = str(path)
+    _record_trial(config, "regime-signal", {
+        "available": bool(report.get("available")),
+        "n_symbols": report.get("n_symbols", 0),
+        "horizons": hs,
+    })
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return report
+
+
+def run_edge_check_cmd(config: dict, symbols: list[str] | None = None,
+                       horizons: list[int] | None = None,
+                       folds: int = 3,
+                       holding_horizon: int = 5,
+                       confidence_thr: float = 0.5,
+                       cost_level: str = "base",
+                       random_controls: int = 40,
+                       regime_breakdown: bool = True,
+                       regime_refit_every: int = 20,
+                       regime_window: int = 20) -> dict:
+    """基准相对决策增量评估（Issue #55：信号组合到底有没有跑赢"什么都不做"）。
+
+    只产出证据，`affects_gate=False`：不改门禁 / 权重 / 池 / 配置。
+    落盘 `reports/benchmark_relative.json`。
+    """
+    from src.eval.benchmark_relative import build_report
+    from src.eval.regime_conditioned_signal import _build_supervised, _feature_columns, _walk_forward_proba
+
+    logger.info("执行基准相对决策增量评估（含成本 + 随机子集对照）")
+    symbols = symbols or _config_symbols(config)
+    hs = horizons or [int(v) for v in
+                      (config.get("data", {}).get("prediction_horizons", {}) or {}).values()]
+    hs = sorted(set(int(h) for h in hs)) or [5, 10, 20]
+    data = _load_price_frames(config, symbols)
+
+    # 逐周期样本外概率（与 regime-signal 同源口径：walk-forward、无前视）
+    probabilities: dict[int, object] = {}
+    for h in hs:
+        sup = _build_supervised(data, config, h)
+        if sup is None or sup.empty:
+            continue
+        feats = _feature_columns(sup, config, h)
+        proba = _walk_forward_proba(sup, feats, h, config, int(folds))
+        sup = sup.assign(_p=proba)
+        probabilities[h] = sup[["date", "_symbol", "_p"]].dropna(subset=["_p"])
+
+    report = build_report(data, probabilities, config, horizons=hs,
+                          holding_horizon=int(holding_horizon),
+                          confidence_thr=float(confidence_thr),
+                          cost_level=str(cost_level),
+                          n_random_controls=int(random_controls),
+                          regime_breakdown=bool(regime_breakdown),
+                          regime_refit_every=int(regime_refit_every),
+                          regime_window=int(regime_window))
+    report["command"] = "edge-check"
+    report["folds"] = int(folds)
+    out_dir = Path("reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "benchmark_relative.json"
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str),
+                    encoding="utf-8")
+    report["report_path"] = str(path)
+    _record_trial(config, "edge-check", {
+        "available": bool(report.get("available")),
+        "n_symbols": report.get("benchmark", {}).get("n_periods", 0) and len(data),
+        "verdict": (report.get("verdict") or {}).get("level"),
+        "regime_conclusion": (report.get("regime_breakdown") or {}).get("conclusion"),
+    })
+    print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+    return report
+
+
+def _ablation_horizons(args) -> list[int] | None:
+    """解析 `--horizons 5,10`（ablation：缺省对 5/10/20 逐个跑，成本是 3× 臂数）。"""
+    raw = getattr(args, "horizons", None)
+    if not raw:
+        return None
+    try:
+        return [int(x.strip()) for x in str(raw).split(",") if x.strip()]
+    except ValueError:
+        return None
+
+
+def run_ablation_cmd(config: dict, symbols: list[str] | None = None,
+                     horizons: list[int] | None = None,
+                     folds: int = 3,
+                     hold_horizon: int = 5,
+                     confidence_thr: float = 0.5,
+                     cost_level: str = "base",
+                     feature_recipes: list[str] | None = None,
+                     model_families: list[str] | None = None,
+                     base_model: str = "lightgbm",
+                     base_recipe: str = "full") -> dict:
+    """特征集 × 模型族联合消融（Issue #55 最后一条未量化嫌疑）。
+
+    只产出证据，`affects_gate=False`：不改特征集 / 模型配置 / 权重 / 池 / 门禁。
+    唯一记分板 = 相对全池等权的净超额（与 `edge-check` 同源）；增量需净超额转正
+    且相对基线臂**配对 t ≥ 2**。落盘 `reports/feature_model_ablation.json`。
+    """
+    from src.eval.feature_model_ablation import build_report
+
+    logger.info("执行特征集 × 模型族联合消融（唯一记分板：基准相对净超额）")
+    symbols = symbols or _config_symbols(config)
+    hs = horizons or sorted(set(int(h) for h in
+                               (config.get("data", {}).get("prediction_horizons", {}) or {}).values()
+                               )) or [5]
+    data = _load_price_frames(config, symbols)
+    if len(data) < 2:
+        payload = {"error": f"可用行情数据不足（{len(data)} < 2）",
+                   "affects_gate": False}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    report = build_report(data, config, horizons=hs, folds=int(folds),
+                          hold_horizon=int(hold_horizon),
+                          confidence_thr=float(confidence_thr),
+                          cost_level=str(cost_level),
+                          feature_recipes=feature_recipes,
+                          model_families=model_families,
+                          base_model=str(base_model),
+                          base_recipe=str(base_recipe))
+    report["command"] = "ablation"
+    report["data"] = {"n_symbols": len(data), "symbols": sorted(data.keys())[:8]}
+    out_dir = Path("reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "feature_model_ablation.json"
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str),
+                    encoding="utf-8")
+    report["report_path"] = str(path)
+    _record_trial(config, "ablation", {
+        "available": bool(report.get("available")),
+        "n_symbols": len(data),
+        "n_arms": sum(len((v.get("feature_arms") or {})) + len((v.get("model_arms") or {}))
+                      for v in (report.get("per_horizon") or {}).values()),
+        "feature_verdict": report.get("feature_verdict_level"),
+        "model_verdict": report.get("model_verdict_level"),
+    })
+    print(json.dumps(_ablation_summary(report), ensure_ascii=False, indent=2, default=str))
+    return report
+
+
+def _ablation_summary(report: dict) -> dict:
+    """终端摘要：只印判定相关字段（完整读数在报告文件里）。"""
+    keep = ("kind", "available", "reason", "horizons", "folds", "holding_horizon",
+            "confidence_threshold", "cost_level", "baseline", "scoring_rule",
+            "feature_verdict_level", "model_verdict_level", "feature_ablation",
+            "model_ablation", "report_path", "affects_gate", "readonly",
+            "conclusion_note")
+    out = {k: report.get(k) for k in keep if k in report}
+    out["per_horizon"] = {}
+    for h, v in (report.get("per_horizon") or {}).items():
+        out["per_horizon"][h] = {
+            "available": v.get("available"), "reason": v.get("reason"),
+            "n_samples": v.get("n_samples"), "n_features_full": v.get("n_features_full"),
+            "n_rebalance_dates": v.get("n_rebalance_dates"),
+            "uncovered_columns": v.get("uncovered_columns"),
+            "elapsed_seconds": v.get("elapsed_seconds"),
+            "baseline_arm": {k: v.get("baseline_arm", {}).get(k) for k in
+                             ("model", "n_features", "verdict", "vs_benchmark",
+                              "avg_n_selected", "mean_probability")},
+            "feature_arms": {k: {kk: a.get(kk) for kk in
+                                 ("n_features", "verdict", "vs_benchmark",
+                                  "vs_baseline_arm", "available", "reason")}
+                             for k, a in (v.get("feature_arms") or {}).items()},
+            "model_arms": {k: {kk: a.get(kk) for kk in
+                               ("n_features", "verdict", "vs_benchmark",
+                                "vs_baseline_arm", "available", "reason")}
+                           for k, a in (v.get("model_arms") or {}).items()},
+        }
+    return out
+
+
+def _load_price_frames(config: dict, symbols: list[str]) -> dict:
+    """加载行情表（本地缓存优先，缺失且未指定 offline 时联网拉取）。"""
+    try:
+        import scripts.evaluate_models as ev
+        return ev.load_market_data(config, symbols)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[pool/model-improve] 行情加载失败: {e}")
+        return {}
 
 
 def main():
@@ -4502,6 +5039,91 @@ def main():
             signals=str(getattr(args, "signals", "mechanical") or "mechanical"),
             rank_quantile=float(getattr(args, "rank_quantile", 0.3) or 0.3),
             horizon_name=str(getattr(args, "horizon", "short_term") or "short_term"))
+    elif args.command == "pool-collinearity":
+        run_pool_collinearity_cmd(
+            config, symbols=_cli_symbols(args),
+            high_corr=float(getattr(args, "high_corr", 0.7) or 0.7))
+    elif args.command == "model-improve":
+        _mh = None
+        _raw_mh = getattr(args, "horizons", None)
+        if _raw_mh:
+            try:
+                _mh = [int(x.strip()) for x in str(_raw_mh).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--horizons 解析失败，改用配置 prediction_horizons: {_raw_mh}")
+        run_model_improve_cmd(
+            config, symbols=_cli_symbols(args), horizons=_mh,
+            folds=int(getattr(args, "folds", 3) or 3))
+    elif args.command == "regime-signal":
+        _rh = None
+        _raw_rh = getattr(args, "horizons", None)
+        if _raw_rh:
+            try:
+                _rh = [int(x.strip()) for x in str(_raw_rh).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--horizons 解析失败，改用配置 prediction_horizons: {_raw_rh}")
+        run_regime_signal_cmd(
+            config, symbols=_cli_symbols(args), horizons=_rh,
+            folds=int(getattr(args, "folds", 3) or 3),
+            confidence_thr=float(getattr(args, "confidence_thr", 0.6) or 0.6),
+            stability_subsets=int(getattr(args, "stability_subsets", 12) or 0),
+            stability_size=int(getattr(args, "stability_size", 18) or 18))
+    elif args.command == "edge-check":
+        _eh = None
+        _raw_eh = getattr(args, "horizons", None)
+        if _raw_eh:
+            try:
+                _eh = [int(x.strip()) for x in str(_raw_eh).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--horizons 解析失败，改用配置 prediction_horizons: {_raw_eh}")
+        run_edge_check_cmd(
+            config, symbols=_cli_symbols(args), horizons=_eh,
+            folds=int(getattr(args, "folds", 3) or 3),
+            holding_horizon=int(getattr(args, "holding_horizon", 5) or 5),
+            confidence_thr=float(getattr(args, "edge_thr", 0.5) or 0.5),
+            cost_level=str(getattr(args, "cost_level", "base") or "base"),
+            random_controls=int(getattr(args, "random_controls", 40) or 0),
+            regime_breakdown=not bool(getattr(args, "no_regime_breakdown", False)),
+            regime_refit_every=int(getattr(args, "regime_refit_every", 20) or 20),
+            regime_window=int(getattr(args, "regime_window", 20) or 20))
+    elif args.command == "ablation":
+        def _ablation_list(raw):
+            if not raw:
+                return None
+            raw = str(raw).strip()
+            if raw.lower() in ("all", "none", ""):
+                return None
+            return [x.strip() for x in raw.split(",") if x.strip()]
+
+        run_ablation_cmd(
+            config, symbols=_cli_symbols(args),
+            horizons=_ablation_horizons(args),
+            folds=int(getattr(args, "folds", 3) or 3),
+            hold_horizon=int(getattr(args, "holding_horizon", 5) or 5),
+            confidence_thr=float(getattr(args, "edge_thr", 0.5) or 0.5),
+            cost_level=str(getattr(args, "cost_level", "base") or "base"),
+            feature_recipes=_ablation_list(getattr(args, "abl_recipes", None)),
+            model_families=_ablation_list(getattr(args, "abl_models", None)),
+            base_model=str(getattr(args, "abl_model", "lightgbm") or "lightgbm"),
+            base_recipe=str(getattr(args, "abl_recipe", "full") or "full"))
+    elif args.command == "decision-feed":
+        run_decision_feed_cmd(
+            config, symbols=_cli_symbols(args),
+            symbols_file=getattr(args, "symbols_file", None),
+            stdout=bool(getattr(args, "stdout", False)),
+            audit_hours=int(getattr(args, "audit_hours", 24) or 24))
+    elif args.command == "tv-export":
+        run_tv_export_cmd(
+            config, symbols=_cli_symbols(args),
+            symbols_file=getattr(args, "symbols_file", None),
+            out_dir=str(getattr(args, "out_dir", "outputs/tv/exports")
+                        or "outputs/tv/exports"),
+            backfill_anchors=not bool(getattr(args, "no_anchors", False)),
+            anchor_step=int(getattr(args, "anchor_step", 5) or 5),
+            anchor_horizon=str(getattr(args, "anchor_horizon", "short_term")),
+            max_anchors=int(getattr(args, "max_anchors", 90) or 90),
+            card_limit=(int(args.card_limit)
+                        if getattr(args, "card_limit", None) is not None else None))
     elif args.command == "drift-monitor":
         run_drift_monitor_cmd(config, symbols=_cli_symbols(args),
                               split=float(getattr(args, "split", 0.5) or 0.5))

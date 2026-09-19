@@ -103,6 +103,10 @@
 - 双维评估：机器学习指标（Accuracy / F1 / AUC）+ 金融指标（胜率 / 夏普 / 盈亏比 / 最大回撤）
 - **推理数据每日自动刷新**：缓存过期经真实源刷新一次，绝不落 simulation 假数据（防随机游走数据伪装"今天"骗过新鲜度检查）
 - FastAPI 预测服务（默认端口 8800），支持单只/批量/组合级预测（`/api/v1/portfolio/summary` 对齐 28 持仓池）
+- **决策源契约** `/api/v1/decision/feed`（Issue #55）：净看涨概率 / 多周期综合分 / 校准概率 / 采纳建议 / 审计摘要；服务态与离线 `main.py decision-feed` 逐字段一致
+- **TradingView 交付** `main.py tv-export`（Issue #55）：把契约投影成 TradingView **可直接读入**的
+  图片信号卡（真 PNG，`tEXt` 内嵌机器可读契约 + 全精度锚点）与 Pine 数据层（`tv-pine/1`，`request.seed` 可读）
+- **模型优化排查**（Issue #55 步骤①②③，2026-09-16）：① 池共线性（38 只 → 有效维度 7.9，缩池无效）→ ② 三重障碍法标签**证伪** → ③ 现行周期权重与证据方向相反；顺带修掉 `label_*` 列静默泄漏进特征集的真缺陷（详见 `cairn/model-optimization-findings.md`）
 - 与 28 系统双向闭环：28 侧审计用本地真实行情回溯命中，命中率与漂移告警进入每日报告
 
 ### 📊 最新训练评估（2026-09-09，腾讯财经真实行情 · 目标泄漏已修复）
@@ -193,7 +197,81 @@ curl -X POST http://localhost:8800/api/v1/predict/batch \
 
 # 组合级摘要（28 系统每日消费的契约端点；缺省用 config 启用标的）
 curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ"
+
+# 决策源契约（tradingview / 28 消费；在 summary 之上**只增不减**地追加决策字段）
+curl "http://localhost:8800/api/v1/decision/feed?symbols=600519.SH,300308.SZ"
 ```
+
+### 决策源契约（`decision-feed/1`）🔌
+
+下游（tradingview / 28）此前需要自己换算口径：判断 `direction == "看涨"`、
+自定多周期权重（那边是 `0.2/0.5/0.3`）、自定动作阈值（`0.6/0.4`）、
+自算置信度。**同一份预测在不同消费方被翻译成不同口径**，是集成期最难排查的一类问题。
+
+契约层把这些换算收到生产方一侧：
+
+| 字段 | 含义 | 对下游的价值 |
+|:---|:---|:---|
+| `horizons.<h>.net_up_probability` | 每周期**净看涨概率** | **不必再判断方向字符串**；方向与概率不可能被读成相反结论 |
+| `horizons.<h>.calibrated_probability` / `uncertainty` | S19 校准层 | 概率是否标定，一眼可见（缺失时如实 `calibration_applied=false`） |
+| `aggregate.composite_score` / `composite_signed` | 多周期综合分（显式权重） | 权重口径统一；`missing_horizons` / `coverage` 如实披露 |
+| `advisory.advisory_consumable` / `recommended_threshold` | 置信度采纳建议 | 门槛不再由消费方各拍一个数 |
+| `audit` / `analytics` | 已回溯命中率 / 分档×已实现收益 | 是否采信有实证依据 |
+
+结构性纪律：`position_role = observer`、`affects_gate = false`、`advisory_only = true`
+—— **不产出仓位、不改门禁**。缺失周期**不补 0.5**，非有限值一律 `None`。
+
+> ⚠️ **实测边界**（真实日K + 本地真实训练 LightGBM，15584 锚点）：
+> 置信度越高 ⇒ 命中率越高（54% → 98%）**但平均已实现收益越低（+1.92% → −0.78%）**，
+> 三周期保守判定均为 `ineffective`。高置信区是「趋势加速段」（波动近乎翻倍而方向仍对），
+> 已过均值回复临界点。**高置信 ≠ 可采信**，信号宜作只读观测 / 风险预警。
+> 详见 [决策源契约专题](../cairn/decision-source-contract.md)。
+
+### TradingView 交付（`tv-export`）🖼️
+
+下游要的是**能被读进去的东西**，不是又一份接口文档。TradingView 侧只有两条近原生入口，
+平台**不做二次渲染**：
+
+| 入口 | TradingView 侧怎么用 | 交付物 |
+|:---|:---|:---|
+| 图片导入 | 客户端读**一张静态 PNG** | `signals/<symbol>.png` —— 单图承载三周期净看涨概率 / 综合分 / 置信度 / 门禁结论 / 采纳权重 / 锚点收益条 |
+| `request.seed` | Pine 读**变量 × 时序** JSON 表 | `pine/trendcast/<symbol>.json` —— `ret_*` 列 + 列字典 |
+
+```bash
+python main.py tv-export                            # 全池，一次产出三件套
+python main.py tv-export --symbols 510300.SH        # 单标的
+python main.py tv-export --no-anchors --card-limit 8  # 只出卡片，只出前 8 张
+```
+
+**像素即契约**：卡片上的每个数值与同一份契约**逐字段相等**（守卫 `tests/test_tv_export.py`）。
+同一张 PNG 的 `tEXt` 块带机器可读内容（UTF-8）：
+
+`signal_contract`（契约摘要）/ `anchors_json`（全精度锚点）/ `Title` / `Description` /
+`Source` / `Boundary`（`position_role=observer; affects_gate=false; ...`）/
+`AnchorEvidence`（`validated=false; ...`）。
+
+**Pine 侧**：
+
+```pine
+//@version=6
+var matrix<float> m = request.seed("TRENDCAST_510300_SH", "trendcast/510300.SH.json")
+if m.size() > 0
+    float comp = m.get(1, m.rows() - 1)     // ret_composite
+    plot(comp * 100, "composite %", color.blue)
+```
+
+**不出口可交易字段**（`is_trade` / 仓位 / 权重一律不在列里）——本层用于同图对照，
+不做下单依据；纪律写在 `meta` 里而不是文档里。
+
+**锚点回填**（`src/eval/anchor_backfill.py`）：本地真实日K + 已训练模型**离线回填**
+「分数 × 命中 × 已实现收益」。**无前视**：特征行只取到 `t`，结果只在 `t+h` 已收线时回填，
+未到期标 `pending` 且不参与统计。模型是当下这一个（不逐锚点重训）→ 全部读数标 `validated=false`。
+
+> ⚠️ **本轮实测（38 标的池，2023-01 ~ 2026-09，3420 锚点）**：
+> 锚点命中 52.9% / 平均已实现收益 +0.32%，三周期置信度几乎全部贴地（`|composite-0.5|` ≤0.02），
+> `advisory_consumable` **0/38**，模型 AUC ≈ 0.50~0.54。
+> **交付形态已通，模型本身还没跑出可用区分度** —— 信号宜作只读观测 / 风险预警。
+> 详见 [TradingView 交付专题](../cairn/tradingview-handoff.md)。
 
 ---
 
@@ -220,6 +298,13 @@ curl "http://localhost:8800/api/v1/portfolio/summary?symbols=600519.SH,300308.SZ
 | `factors` / `factor-model` | 多因子加权组合预测；多因子模型权重与 IC 诊断 |
 | `stream` / `intraday` / `consistency` | 盘中实时流；单只盘中信号；跨周期/跨模型一致性校验 |
 | `risk-advice` | 智能风控建议（止损 / 止盈，门禁未放行则 fail-close） |
+| `decision-feed` | **决策源契约导出**（净方向概率 / 综合分 / 采纳建议 / 审计摘要；`--symbols-file` / `--stdout`） |
+| `tv-export` | **TradingView 交付**（图片信号卡 PNG + Pine 数据层 `tv-pine/1` + 无前视锚点回填；`--out-dir` / `--no-anchors` / `--anchor-step` / `--card-limit`） |
+| `pool-collinearity` | **池共线性诊断**（有效独立维度 / 市场 beta 占比 / 剥 beta 残差；`--high-corr`） |
+| `model-improve` | **模型优化对照**（标签口径 A/B：固定 h vs 三重障碍法；周期权重重排建议；`--horizons` / `--folds`） |
+| `edge-check` | **基准相对决策增量**（信号组合 vs 全池等权的净超额 + 扣成本 + 随机子集对照 + **状态分层净超额**；`--holding-horizon` / `--cost-level` / `--random-controls` / `--edge-thr` / `--no-regime-breakdown` / `--regime-refit-every` / `--regime-window`） |
+| `regime-signal` | **波动分层置信度有效性**（置信度语义诊断 / 高置信×高波动分层读数 / 子池稳健性分级；`--confidence-thr` / `--stability-subsets` / `--folds`） |
+| `ablation` | **特征集 × 模型族联合消融**（唯一记分板 = 相对全池等权的净超额；增量需净超额转正且相对基线臂配对 t ≥ 2 并过 Holm 校正；`--abl-recipes` / `--abl-models` / `--abl-model` / `--abl-recipe` / `--horizons` / `--holding-horizon` / `--cost-level` / `--random-controls`） |
 | `notify <symbol>` | 预测并推送信号（Webhook / 邮件） |
 | `daily-report` / `weekly-report` | 生成日/周报 |
 | `adaptive` | 运行自适应学习引擎 |

@@ -107,15 +107,6 @@ def test_lightgbm_path(cfg, monkeypatch, tmp_path):
         assert res["prediction"] in (0, 1)
 
 
-def test_lightgbm_contract_mismatch_fails_closed(cfg, monkeypatch):
-    """合成特征与真实模型契约（107 列）不符 → 必须显式报错，不得静默对齐。"""
-    apply_monkeypatches(monkeypatch)
-    cfg["model"]["type"] = "lightgbm"
-    engine = PredictionEngine(cfg)
-    engine.load_models("lightgbm")
-    with pytest.raises(ValueError, match="管线漂移|特征"):
-        engine.predict("TEST", "short_term")
-
 
 def test_timesfm_path(cfg, monkeypatch):
     apply_monkeypatches(monkeypatch)

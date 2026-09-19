@@ -494,6 +494,12 @@ class TestHoldingsPoolAndQuality:
         assert collector.quality_summary()["available"] is False
 
     def test_quality_gate_failure_is_fail_soft(self, cfg, market_df, monkeypatch):
+        """体检异常不得中断主链路（fail-soft），但必须**显式留痕**。
+
+        2026-09-15 契约升级：异常时不再静默返回 {}（调用方无法区分
+        「门控关闭」与「门控崩溃」），改为返回带 error 字段的 dict 并记
+        error 日志 —— 仍然不抛异常、不中断采集主链路。
+        """
         cfg = dict(cfg)
         cfg["data"] = dict(cfg["data"])
         cfg["data"]["quality_gate"] = True
@@ -505,7 +511,9 @@ class TestHoldingsPoolAndQuality:
                 raise RuntimeError("boom")
 
         monkeypatch.setattr(collector, "_get_quality_gate", lambda: Boom())
-        assert collector.assess_quality("600519.SH", market_df) == {}, "质量体检异常不得中断主链路"
+        result = collector.assess_quality("600519.SH", market_df)
+        assert isinstance(result, dict), "异常必须返回 dict（不得抛出中断主链路）"
+        assert result.get("error"), "异常必须显式留痕（error 字段），不得静默吞掉"
 
 
 # ----------------------------------------------------------------------

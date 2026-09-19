@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -27,8 +28,15 @@ def _row(thr, hit, cov, samples=5000, avail=True):
             "samples": samples, "hit_rate": hit, "ic": 0.05}
 
 
-def _holdout(generated_at="2026-09-11T18:00:00", horizons=None):
-    """构造保留期报告：默认在 thr∈[0.2,0.3] 内双指标过线。"""
+def _holdout(generated_at=None, horizons=None):
+    """构造保留期报告：默认在 thr∈[0.2,0.3] 内双指标过线。
+
+    generated_at 缺省取「现在 − 1 天」——不能硬编码日期：stale 判定窗口
+    默认 7 天，硬编码日期随真实时钟推移必然越过窗口（时间炸弹，2026-09-19
+    实测触发）。需要测「过期」的用例显式传旧日期（如 2020-01-01）。
+    """
+    if generated_at is None:
+        generated_at = (datetime.now() - timedelta(days=1)).isoformat(timespec="seconds")
     if horizons is None:
         # 0.2 命中率 52.9% 覆盖 17.4%；0.3 命中率 55.2% 覆盖 5.6% → 都过线
         horizons = {
@@ -133,7 +141,7 @@ class TestHoldoutEvidence:
         assert "单一时段" in ev["single_period_warning"]
 
     def test_flat_holdout_layout_supported(self):
-        flat = {"generated_at": "2026-09-11T18:00:00",
+        flat = {"generated_at": (datetime.now() - timedelta(days=1)).isoformat(timespec="seconds"),
                 "5d": {"rows": [_row(0.2, 0.53, 0.2)]}}
         ev = cg.evaluate_holdout_evidence(flat, _CFG)
         assert "5d" in ev["horizons"]

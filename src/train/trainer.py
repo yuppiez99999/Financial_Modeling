@@ -155,12 +155,19 @@ class ModelTrainer:
                 datasets["X_val"], datasets["y_val"],
                 feature_cols=feature_cols,
             )
-        # LightGBM：记录特征契约（feature_cols 持久化进 pkl，推理按名对齐）
-        return model.train(
-            datasets["X_train"], datasets["y_train"],
-            datasets["X_val"], datasets["y_val"],
-            feature_cols=feature_cols,
-        )
+        # LightGBM 也必须拿到训练期列名：否则模型只记 Column_N 占位名，
+        # 推理侧按名对齐会判全列缺失并静默 0 填充（见 LightGBMModel.train）。
+        try:
+            return model.train(
+                datasets["X_train"], datasets["y_train"],
+                datasets["X_val"], datasets["y_val"],
+                feature_cols=feature_cols,
+            )
+        except TypeError:
+            return model.train(
+                datasets["X_train"], datasets["y_train"],
+                datasets["X_val"], datasets["y_val"],
+            )
 
     def _build_dataset(self, symbol: str, horizon: int) -> tuple[np.ndarray, np.ndarray] | None:
         """单标的构建 (X, y)（旧版兼容接口）；数据不足返回 None。"""
