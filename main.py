@@ -4106,6 +4106,7 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py edge-check --no-regime-breakdown  # 同上，不出状态分层净超额
                                                    # 状态分层含三分 + 趋势/盘整二分（binary）
   python main.py ablation                  # 特征集 × 模型族联合消融（唯一记分板 = 净超额 + 臂间配对 t）
+  python main.py risk-signal               # 风险预测力检验：模型输出 vs 朴素波动基线的增量（决定"风险预警"是否值得立项）
         """,
     )
     parser.add_argument("command", choices=[
@@ -4120,7 +4121,7 @@ def build_parser() -> argparse.ArgumentParser:
         "calibration", "calibration-ablation", "research-assist",
         "portfolio-backtest", "drift-monitor", "feature-attribution",
         "decision-feed", "tv-export", "pool-collinearity", "model-improve",
-        "regime-signal", "edge-check", "ablation",
+        "regime-signal", "edge-check", "ablation", "risk-signal",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -4509,6 +4510,66 @@ def run_ablation_cmd(config: dict, symbols: list[str] | None = None,
     return report
 
 
+def run_risk_signal_cmd(config: dict, symbols: list[str] | None = None,
+                        horizons: list[int] | None = None,
+                        folds: int = 3,
+                        stability_subsets: int = 12,
+                        stability_size: int = 18) -> dict:
+    """风险预测力检验（Issue #55：方向预测到顶后，"风险预警"退路成不成立）。
+
+    只产出证据，`affects_gate=False`：既不改门禁 / 权重 / 池 / 配置，
+    也不预设"应该立项"。判据 = 控制朴素 trailing-vol 基线后的**偏秩相关增量**
+    （须效应量 ≥ 0.10 且重叠校正后 |t| ≥ 2，方向对）。
+    落盘 `reports/risk_signal.json`。
+    """
+    from src.eval.risk_signal import build_report
+    from src.eval.regime_conditioned_signal import (
+        _build_supervised, _feature_columns, _walk_forward_proba)
+
+    logger.info("执行风险预测力检验（增量风险信号 vs 朴素波动基线）")
+    symbols = symbols or _config_symbols(config)
+    hs = horizons or [int(v) for v in
+                      (config.get("data", {}).get("prediction_horizons", {}) or {}).values()]
+    hs = sorted(set(int(h) for h in hs)) or [5, 10, 20]
+    data = _load_price_frames(config, symbols)
+
+    # 逐周期样本外概率（与 regime-signal / edge-check 同源：walk-forward、无前视）
+    probabilities: dict[int, object] = {}
+    for h in hs:
+        sup = _build_supervised(data, config, h)
+        if sup is None or sup.empty:
+            continue
+        feats = _feature_columns(sup, config, h)
+        proba = _walk_forward_proba(sup, feats, h, config, int(folds))
+        mask = np.isfinite(proba)
+        if int(mask.sum()) == 0:
+            continue
+        out = sup.loc[mask, ["date", "_symbol"]].copy()
+        out["_p"] = proba[mask]
+        probabilities[h] = out
+
+    report = build_report(data, probabilities, config, horizons=hs,
+                          stability=int(stability_subsets) > 0,
+                          n_subsets=int(stability_subsets),
+                          subset_size=int(stability_size))
+    report["command"] = "risk-signal"
+    report["folds"] = int(folds)
+    out_dir = Path("reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "risk_signal.json"
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str),
+                    encoding="utf-8")
+    report["report_path"] = str(path)
+    _record_trial(config, "risk-signal", {
+        "n_symbols": report.get("n_symbols"),
+        "n_horizons_with_increment": report.get("n_horizons_with_increment"),
+        "conclusion": report.get("conclusion"),
+        "stability_verdict": (report.get("stability") or {}).get("robustness_verdict"),
+    })
+    print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+    return report
+
+
 def _ablation_summary(report: dict) -> dict:
     """终端摘要：只印判定相关字段（完整读数在报告文件里）。"""
     keep = ("kind", "available", "reason", "horizons", "folds", "holding_horizon",
@@ -4846,6 +4907,19 @@ def main():
             regime_breakdown=not bool(getattr(args, "no_regime_breakdown", False)),
             regime_refit_every=int(getattr(args, "regime_refit_every", 20) or 20),
             regime_window=int(getattr(args, "regime_window", 20) or 20))
+    elif args.command == "risk-signal":
+        _rsh = None
+        _raw_rsh = getattr(args, "horizons", None)
+        if _raw_rsh:
+            try:
+                _rsh = [int(x.strip()) for x in str(_raw_rsh).split(",") if x.strip()]
+            except ValueError:
+                logger.warning(f"--horizons 解析失败，改用配置 prediction_horizons: {_raw_rsh}")
+        run_risk_signal_cmd(
+            config, symbols=_cli_symbols(args), horizons=_rsh,
+            folds=int(getattr(args, "folds", 3) or 3),
+            stability_subsets=int(getattr(args, "stability_subsets", 12) or 0),
+            stability_size=int(getattr(args, "stability_size", 18) or 18))
     elif args.command == "ablation":
         def _ablation_list(raw):
             if not raw:
