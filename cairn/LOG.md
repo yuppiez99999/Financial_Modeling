@@ -2,6 +2,32 @@
 
 本文件按倒序记录项目的实质性进展——最新条目紧贴本行下方。每条保持简短——只写摘要与指针；结论沉淀到 `cairn/<topic>.md` 知识专题文档。
 
+## 2026-09-17 · 全池 38 标的状态分层 + 两条静默缺陷（Issue #55 第八轮）
+
+- 第七轮留的"全池 38 标的分状态读数待跑"本轮跑完，并在过程中揪出**两条早就存在**
+  的静默缺陷 —— 它们让第七轮的读数**其实从未真正跑在 HMM 口径上**。
+- **缺陷①（本轮真事故）**：`regime_labels` 从第 1 个有效样本起就 fit，而 `fit_hmm`
+  要求 ≥ `MIN_FIT_SAMPLES`(60) ⇒ 起步必然连续 `insufficient_fit_samples` 被静默吞掉。
+  加 stalled 护栏后，**60 次起步失败正好触发护栏**，一个**完全可 fit** 的全池序列
+  被误标 `stalled=True / refits=0`，静默降级到规则口径 —— 与文档写的 `hmm_expanding`
+  不一致且无告警。修：跳过必然不足的前缀 + 护栏阈值 ≥ `MIN_FIT_SAMPLES`
+  + `stalled/refits/fit_failures` 如实入 meta。修后 `refits=404`、`stalled=False`。
+- **缺陷②**：`build_report` 调 `_date_regime_labels` **无异常保护**，hmmlearn 缺失抛
+  `ModuleNotFoundError`（非 ValueError）⇒ 整个状态分层被判"计算失败"，
+  **连规则口径降级都没走到**，而主读数明明可用。修：单独包一层，异常降级规则口径
+  并写进 `hmm_meta.reason`、`mode=rules_fallback`（不冒充、不静默）。
+- **主读数（全池 38 标的，真实日K 2020-01~2026-09，walk-forward，base 成本档）**：
+  全局净超额 **−0.224%（t −3.62）** `no_edge`；基准年化 +10.5%，信号 +6.1%。
+  三分 **range −0.250%（t −3.23）/ bear −0.134%（t −1.95）/ bull 期数 0 不外推**
+  ⇒ 样本量上来后"相对等权显著为负"从待观察变**统计确认**，三态无一为正。
+- **新增趋势/盘整二分**（`regime_breakdown.binary`，bull∪bear→trending、range→choppy，
+  同一批逐期净超额，**展示归并不换口径**）：trending −0.134%（t −1.95）/
+  choppy −0.250%（t −3.23），`conditional_edge_hint=False`
+  ⇒ "信号只在趋势里有用"同样**不被支持**（三分因 bull 被吸收回答不了这一问）。
+- 新增 `tests/test_regime_fit_guard.py` 11 条守卫；`pytest tests` → **1445 passed**
+  （4 skipped 为环境可选依赖）。只读 `affects_gate=false`。
+- 详情见 `cairn/benchmark-relative-edge.md` 第十节。
+
 ## 2026-09-17 · 全池基线读数冻结：结论在同一条全池上复现（Issue #55 第九轮）
 
 - 前八轮各在**不同子集**上读数（7 轮 8 标的 / 5、6、8 轮 26 标的），两条并行未合并

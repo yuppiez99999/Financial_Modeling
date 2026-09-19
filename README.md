@@ -237,19 +237,28 @@ python main.py schedule         # 自动重训练调度（常驻）
 > 采纳口径调整（信号本身无 edge）。**这是"绝对收益为正 ≠ 有 edge"的直接读数。**
 > 详见 [基准相对增量专题](cairn/benchmark-relative-edge.md)。
 
-> 🪧 **状态分层的净超额**（Issue #55 第七轮，"增量是不是只在某个市场状态下"）：
+> 🪧 **状态分层的净超额**（Issue #55 第七/八轮，"增量是不是只在某个市场状态下"）：
 > `python main.py edge-check`（默认附 `regime_breakdown` 段；`--no-regime-breakdown` 关闭）
 > —— 把前六轮的**全样本平均**读数拆开：信号会不会"大部分时间没用、
 > 只在某种市场状态才有增量"被平均掉。状态由**全池等权市场层**拟合（HMM `expanding`
-> 无前视；缺 hmmlearn 时**如实降级**规则口径并标 `mode=rules_fallback`），
+> 无前视；缺 hmmlearn / 拟合退化时**如实降级**规则口径并标 `mode=rules_fallback`），
 > 调仓日取**当日**标签（有截断回归守卫证明无前视），逐期净超额与全局判据**逐式同源**。
-> 主读数（8 标的真实日K，walk-forward，base 档）：全局净超额 −0.214%（`no_edge`）；
-> 分状态 **range −0.299%（t −1.91）/ bear −0.013%（t −0.07）** —— **没有一个状态为正**；
-> bull 当期无有效样本，**如实标不可用、不外推**。`conditional_edge_hint=False`。
-> ⇒ "增量只藏在某状态"**不被支持**：不是"平均没用"，而是**各状态下都没用**。
-> 边界：8 标的冒烟、单窗、分状态每格期数偏少（28~66），`spread` 极差只记为待观察量，
-> **不构成口径变更依据**；全池 38 标的分状态读数待跑。
-> 详见 [基准相对增量专题](cairn/benchmark-relative-edge.md) 第八节。
+> **第八轮把第七轮的 8 标的冒烟升到全池 38 标的**，主读数（真实日K，walk-forward，base 档）：
+> 全局净超额 **−0.224%（t −3.62）** `no_edge`；三分 **range −0.250%（t −3.23）/
+> bear −0.134%（t −1.95）/ bull 期数 0 不外推**；新增**趋势/盘整二分**
+> （bull∪bear→trending、range→choppy，同一批逐期净超额，**展示归并不换口径**）
+> **trending −0.134% / choppy −0.250%**。`conditional_edge_hint=False`。
+> ⇒ "增量只藏在某状态 / 只在趋势里有用"**均不被支持**；样本量上来后
+> "相对等权显著为负"从待观察变**统计确认**。
+> ⚠️ 本轮顺带修掉**两条静默缺陷**（比读数更重要）：① `regime_labels` 从第 1 个有效样本
+> 起就 fit，起步必然连续 `insufficient_fit_samples` 被静默吞掉；加 stalled 护栏后
+> 60 次起步失败**正好触发护栏**，一个**完全可 fit** 的全池序列被误标
+> `stalled=True / refits=0` 并静默降级到规则口径 —— 即**第七轮的 "hmm_expanding"
+> 读数实际是规则口径降级**，全池口径才是 HMM 真读数（`refits=404`）。
+> ② `build_report` 调状态标签**无异常保护**，hmmlearn 缺失抛 `ModuleNotFoundError`
+> ⇒ 整个状态分层被判"计算失败"，连规则口径降级都没走到，而主读数明明可用。
+> 两条已修 + `tests/test_regime_fit_guard.py` 11 条守卫。
+> 详见 [基准相对增量专题](cairn/benchmark-relative-edge.md) 第八/十节。
 
 > 🛡️ **风险预测力检验**（Issue #55 第八轮，"风险预警"这条退路成不成立）：
 > `python main.py risk-signal`（只读，`affects_gate=false`）

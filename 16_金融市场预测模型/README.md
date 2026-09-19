@@ -310,7 +310,7 @@ if m.size() > 0
 | `tv-export` | **TradingView 交付**（图片信号卡 PNG + Pine 数据层 `tv-pine/1` + 无前视锚点回填；`--out-dir` / `--no-anchors` / `--anchor-step` / `--card-limit`） |
 | `pool-collinearity` | **池共线性诊断**（有效独立维度 / 市场 beta 占比 / 剥 beta 残差；`--high-corr`） |
 | `model-improve` | **模型优化对照**（标签口径 A/B：固定 h vs 三重障碍法；周期权重重排建议；`--horizons` / `--folds`） |
-| `edge-check` | **基准相对决策增量**（信号组合 vs 全池等权的净超额 + 扣成本 + 随机子集对照 + **状态分层净超额：三分 bull/range/bear + 趋势/盘整二分**；`--holding-horizon` / `--cost-level` / `--random-controls` / `--edge-thr` / `--no-regime-breakdown` / `--regime-refit-every` / `--regime-window`） |
+| `edge-check` | **基准相对决策增量**（信号组合 vs 全池等权的净超额 + 扣成本 + 随机子集对照 + **状态分层净超额**：三分 `bull/range/bear` + **趋势/盘整二分 `binary`**；`--holding-horizon` / `--cost-level` / `--random-controls` / `--edge-thr` / `--no-regime-breakdown` / `--regime-refit-every` / `--regime-window`） |
 | `regime-signal` | **波动分层置信度有效性**（置信度语义诊断 / 高置信×高波动分层读数 / 子池稳健性分级；`--confidence-thr` / `--stability-subsets` / `--folds`） |
 | `ablation` | **特征集 × 模型族联合消融**（唯一记分板 = 相对全池等权的净超额；增量需净超额转正且相对基线臂配对 t ≥ 2 并过 Holm 校正；`--abl-recipes` / `--abl-models` / `--abl-model` / `--abl-recipe` / `--horizons` / `--holding-horizon` / `--cost-level` / `--random-controls`） |
 | `risk-signal` | **风险预测力检验**（模型输出 vs 朴素 trailing-vol 基线的**增量**偏秩相关；效应量 ≥ 0.10 且重叠校正后 \|t\| ≥ 2；子池稳健性分级；只回答"风险预警是否值得立项"；`--horizons` / `--folds` / `--stability-subsets` / `--stability-size`） |
