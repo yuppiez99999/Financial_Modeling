@@ -409,3 +409,86 @@ def build_confidence_plan(signal_frames: Dict[str, pd.DataFrame],
             "target_weight": scaled.to_numpy(),
         })
     return plans
+
+
+# ====================================================================== #
+# S25 完善：基准对照臂（buy-and-hold / 随机 top-q）——把「技能」与「运气/beta」分开 #
+# ====================================================================== #
+
+def build_buy_hold_plans(price_frames: Dict[str, pd.DataFrame],
+                         active_plans: Dict[str, pd.DataFrame],
+                         ) -> Dict[str, pd.DataFrame]:
+    """同池 buy-and-hold 基准：与信号臂**同一批标的、同一时间窗**全持有。
+
+    active_plans 只用来取日期集合与标的集合（保证与信号臂逐日可比）；
+    权重恒 1.0（引擎 equal_active 归一后 = 等权满仓）。隔离的是**市场 beta**：
+    rank 臂减去本臂 = 主动收益。
+    """
+    plans: Dict[str, pd.DataFrame] = {}
+    for symbol, plan in active_plans.items():
+        dates = pd.DatetimeIndex(_norm_date(plan)).dropna().unique()
+        plans[symbol] = pd.DataFrame({
+            "date": dates,
+            "target_weight": np.ones(len(dates)),
+        })
+    return plans
+
+
+def build_random_plans(price_frames: Dict[str, pd.DataFrame],
+                       active_plans: Dict[str, pd.DataFrame],
+                       quantile: float = 0.3,
+                       seed: int = 42) -> Dict[str, pd.DataFrame]:
+    """随机 top-q 基准：每日等概率随机选同样数量的标的（确定性种子）。
+
+    隔离的是**选择运气**：rank 臂减去本臂 = 排序信息（若有）的增量。
+    种子写死并入库，保证可复现（不是隐藏的多次尝试）。
+    """
+    rng = np.random.default_rng(seed)
+    # 逐日截面：日期 → 当日候选标的集合（与信号臂同池同窗）
+    dates_all: Dict[pd.Timestamp, list[str]] = {}
+    for symbol, plan in active_plans.items():
+        w = pd.Series(
+            pd.to_numeric(plan["target_weight"], errors="coerce").to_numpy(),
+            index=pd.DatetimeIndex(_norm_date(plan))).dropna()
+        w = w[~w.index.duplicated(keep="last")]
+        for d in w.index:
+            dates_all.setdefault(d, []).append(symbol)
+
+    chosen_by_date: Dict[pd.Timestamp, set] = {}
+    for d, symbols in dates_all.items():
+        n = len(symbols)
+        if n < 3:
+            continue
+        top_k = max(1, int(round(float(quantile) * n)))
+        picked = rng.choice(n, size=top_k, replace=False)
+        chosen_by_date[d] = {symbols[i] for i in picked}
+
+    plans: Dict[str, pd.DataFrame] = {}
+    for symbol in active_plans:
+        dates = sorted(chosen_by_date)
+        w = np.array([1.0 if symbol in chosen_by_date[d] else 0.0 for d in dates])
+        plans[symbol] = pd.DataFrame({"date": dates, "target_weight": w})
+    return plans
+
+
+def split_window_metrics(daily: pd.DataFrame, n_windows: int = 3,
+                         ) -> list[Dict[str, Any]]:
+    """OOS 稳定性：把逐日净收益等分为 n 段，逐段收益/夏普。"""
+    out: list[Dict[str, Any]] = []
+    n = len(daily)
+    if n < n_windows * 10:
+        return out
+    edges = np.linspace(0, n, n_windows + 1).astype(int)
+    for i in range(n_windows):
+        seg = daily.iloc[edges[i]:edges[i + 1]]
+        net = seg["net"].to_numpy()
+        std = float(net.std(ddof=0))
+        out.append({
+            "window": i + 1,
+            "date_range": [str(seg["date"].iloc[0]), str(seg["date"].iloc[-1])],
+            "n_days": int(len(seg)),
+            "total_return": round(float((1.0 + net).prod() - 1.0), 8),
+            "sharpe": round(float(net.mean() / std * np.sqrt(TRADING_DAYS_PER_YEAR)), 6)
+                      if std > 1e-12 else None,
+        })
+    return out

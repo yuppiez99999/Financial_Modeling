@@ -3738,6 +3738,57 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
                      "「DSR 校正后仍为正才采信」属 T25.4 人工检查点"),
         }
 
+    # S25 完善（用户指令「选最优方案」· 证据先行）：rank 模式自动附带基准对照
+    # —— 同池 buy-and-hold（隔离市场 beta）+ 随机 top-q（隔离选择运气，种子 42
+    # 入库可复现）+ 主动收益 DSR + OOS 三分段稳定性。结论口径：rank 臂相对
+    # 基准的主动收益 DSR > 0.5 才构成「排序有技能」的可采信证据。
+    benchmark_report: dict[str, Any] | None = None
+    if signals == "rank":
+        from src.eval.overfit_stats import audit_series as _audit_series
+
+        cost_base = pb.cost_one_side("base")
+        hold_plans = pb.build_buy_hold_plans(price_frames, weight_plans)
+        random_plans = pb.build_random_plans(
+            price_frames, weight_plans, quantile=rank_quantile, seed=42)
+        bt_hold = pb.run_portfolio_backtest(
+            price_frames, hold_plans, cost_one_side_value=cost_base,
+            normalize="equal_active")
+        bt_rand = pb.run_portfolio_backtest(
+            price_frames, random_plans, cost_one_side_value=cost_base,
+            normalize="equal_active")
+        bt_equal = pb.run_portfolio_backtest(
+            price_frames, weight_plans, cost_one_side_value=cost_base)
+        n_trials_bench = int((overfit_audit or {}).get("n_trials")
+                             or 1 + int(budget.get("total") or 0))
+        skill: dict[str, Any] = {"available": False,
+                                 "reason": "等权臂或基准不可用", "affects_gate": False}
+        if bt_equal.get("available") and bt_hold.get("available"):
+            common = bt_equal["daily"][["date", "net"]].merge(
+                bt_hold["daily"][["date", "net"]], on="date",
+                suffixes=("_rank", "_hold"))
+            active_net = common["net_rank"] - common["net_hold"]
+            skill = _audit_series(active_net.to_numpy(),
+                                  n_trials=max(n_trials_bench, 1),
+                                  name="rank_minus_hold(active)")
+        benchmark_report = {
+            "available": True,
+            "affects_gate": False,
+            "cost_tier": "base",
+            "random_seed": 42,
+            "buy_and_hold": {"available": bt_hold.get("available", False),
+                             "metrics": bt_hold.get("metrics")},
+            "random_top_q": {"available": bt_rand.get("available", False),
+                             "metrics": bt_rand.get("metrics")},
+            "rank_equal": {"available": bt_equal.get("available", False),
+                           "metrics": bt_equal.get("metrics")},
+            "windows_equal_arm": pb.split_window_metrics(bt_equal["daily"], 3)
+                                 if bt_equal.get("available") else [],
+            "skill_vs_hold": skill,
+            "verdict_note": ("主动收益 DSR > 0.5 才构成「排序有技能」的可采信证据"
+                             "（T25.4 标准）；未过线前 rank 读数仅为方向性观察，"
+                             "不构成反转 T19.4 的依据"),
+        }
+
     payload: dict[str, Any] = {
         "command": "portfolio-backtest",
         "stage": ("S21/I1 + S22/I2 + S25/I5(rank)" if weights == "all"
@@ -3760,6 +3811,7 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
         "consistency_contrast": contrast_payload,
         "weights_ab": weights_ab,
         "overfit_audit": overfit_audit,
+        "benchmark_vs_hold": benchmark_report,
         "trial_budget": {"total_trials_before_this": budget.get("total"),
                          "available": budget.get("available", False),
                          "note": "本次读数已计入统一试验预算（S17 口径）"},

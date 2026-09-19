@@ -169,3 +169,53 @@ def test_all_arms_deterministic_and_executable():
                                  cost_one_side_value=0.00075,
                                  normalize=arms["equal"][1])
     assert snapshots["equal"].equals(bt2["daily"])
+
+
+# ---------------------------------------------------------------- 基准对照臂
+def test_buy_hold_plans_cover_same_window_and_symbols():
+    """buy-and-hold 基准与信号臂同标的同窗，权重恒 1（等权满仓）。"""
+    from src.eval.portfolio_backtest import build_buy_hold_plans
+
+    prices = {s: _ohlcv([100 + i for i in range(30)], amp=0.3) for s in ("A", "B", "C")}
+    active = build_equal_weight_plan({s: pd.DataFrame({
+        "date": prices[s]["date"],
+        "action": ["BUY"] * 30, "confidence": [1.0] * 30}) for s in prices})
+    plans = build_buy_hold_plans(prices, active)
+    assert set(plans) == set(active)
+    for s in plans:
+        assert (plans[s]["target_weight"] == 1.0).all()
+        assert len(plans[s]) == len(active[s])
+    bt = run_portfolio_backtest(prices, plans, cost_one_side_value=0.00075,
+                                normalize="equal_active")
+    assert bt["available"] is True
+
+
+def test_random_plans_deterministic_and_match_quantile():
+    """同种子完全可复现；每日选中数量 = round(q × 当日候选数)。"""
+    from src.eval.portfolio_backtest import build_random_plans
+
+    prices = {s: _ohlcv([100 + i for i in range(20)], amp=0.3) for s in ("A", "B", "C", "D")}
+    active = build_equal_weight_plan({s: pd.DataFrame({
+        "date": prices[s]["date"],
+        "action": ["BUY"] * 20, "confidence": [1.0] * 20}) for s in prices})
+    p1 = build_random_plans(prices, active, quantile=0.5, seed=42)
+    p2 = build_random_plans(prices, active, quantile=0.5, seed=42)
+    for s in p1:
+        assert p1[s].equals(p2[s])            # 同种子 → 逐日一致
+    w = sum(p1[s].set_index("date")["target_weight"] for s in p1)
+    assert (w == 2.0).all()                    # 4 标的 × 0.5 → 每日恰 2 只
+
+
+def test_split_window_metrics_partitions_and_sums():
+    """三分段逐段读数：段数正确、收益均为有限值。"""
+    from src.eval.portfolio_backtest import split_window_metrics
+
+    rng = np.random.default_rng(5)
+    daily = pd.DataFrame({
+        "date": pd.date_range("2026-01-01", periods=120).strftime("%Y-%m-%d"),
+        "net": rng.normal(0, 0.01, 120),
+    })
+    wins = split_window_metrics(daily, n_windows=3)
+    assert len(wins) == 3
+    assert sum(w["n_days"] for w in wins) == 120
+    assert all(np.isfinite(w["total_return"]) for w in wins)
