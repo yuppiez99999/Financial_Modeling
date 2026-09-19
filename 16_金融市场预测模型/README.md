@@ -45,9 +45,9 @@
 
 <br/>
 
-<!-- ── 工程能力（S1~S15） ── -->
-<img src="https://img.shields.io/badge/CLI-40%20命令-8250df?style=flat-square&logo=gnubash&logoColor=white" alt="CLI">
-<img src="https://img.shields.io/badge/测试-38%20个测试文件-3fb950?style=flat-square&logo=pytest&logoColor=white" alt="Tests">
+<!-- ── 工程能力（S1~S25） ── -->
+<img src="https://img.shields.io/badge/CLI-60%20命令-8250df?style=flat-square&logo=gnubash&logoColor=white" alt="CLI">
+<img src="https://img.shields.io/badge/测试-75%20个测试文件-3fb950?style=flat-square&logo=pytest&logoColor=white" alt="Tests">
 <img src="https://img.shields.io/badge/akshare-P1%20数据源-3fb950?style=flat-square" alt="akshare">
 <img src="https://img.shields.io/badge/期货外汇-S14%20已开启-58a6ff?style=flat-square" alt="Futures/FX">
 <img src="https://img.shields.io/badge/标签-三重障碍法-8b5cf6?style=flat-square" alt="Triple barrier">
@@ -69,7 +69,7 @@
 | [一、它做什么](#一它做什么) | [二、快速开始](#二快速开始) | [三、命令行接口](#三命令行接口) |
 | [四、项目结构](#四项目结构) | [五、配置](#五配置) | [六、可选模型后端](#六可选模型后端) |
 | [七、与主系统对接](#七与主量化系统的对接一期已交付并验证) | [八、测试](#八测试) | [九、已知限制](#九已知限制) |
-| [十、研究进展](#十研究进展-s1s20--%EF%B8%8F) | [十一、技术栈](#十一技术栈) | [十二、免责声明](#十二免责声明) |
+| [十、研究进展](#十研究进展-s1s25--%EF%B8%8F) | [十一、技术栈](#十一技术栈) | [十二、免责声明](#十二免责声明) |
 | [十三、许可证与版权](#十三许可证与版权) | | |
 
 ---
@@ -115,6 +115,13 @@
   `conditional_edge_hint=False`）；消融七子集**无一转正**、模型族 H5 未复现第六轮 10d 线索；
   风险预警唯一非全负读数（H20 偏 IC 0.121）但子池 **0/12 `fragile`** ⇒ 只记待观察、不采信
   （详见 `cairn/full-pool-baseline.md`）
+- **特征契约修复 + rank 信号回测**（2026-09-19）：训练端把 `feature_cols` 契约持久化进 pkl、
+  推理端按**名称+顺序**对齐（缺列/数量不符 **fail-close 显式报错**，不再静默截断/填零）；
+  `--signals rank` 每日截面 top-30% 做多的 OOS 主动收益 +12.7pp、PSR 0.831，
+  但 **DSR 0.099 仍 `insufficient_evidence`** ⇒ 维持 `report_only`、不提请、不代签
+- **I 轮组合闭环验证**（S21~S25，见 Issue #54）：组合回测器 + 三臂对照 + 漂移监控（PSI/KS 自研）
+  + TreeSHAP 归因 + 组合级过拟合审计（PSR/DSR/PBO 自研）；**PBO 0.011 但 DSR 0.08~0.24**、
+  MinTRL ≫ 现有样本 ⇒ 样本长度不足以把 Sharpe > 0 当真
 - 与 28 系统双向闭环：28 侧审计用本地真实行情回溯命中，命中率与漂移告警进入每日报告
 
 ### 📊 最新训练评估（2026-09-09，腾讯财经真实行情 · 目标泄漏已修复）
@@ -302,6 +309,15 @@ if m.size() > 0
 | `feature-experiment` / `label-ab` / `qlib-ab` | 特征扩充正交对照；标签口径 A/B（三重障碍法）；Alpha158 因子增量验证 |
 | `trials` / `release-check` | 评估试验 append-only 登记；发布态健康检查与告警路由 |
 | `tune` / `confidence` | optuna 超参搜索（LightGBM）；置信度阈值曲线 |
+| `confidence-gate` / `confidence-holdout` | **置信度子集门禁决策单**（双指标，须人工签字）；**保留期复验 + 多时段滚动**（T16.3 决策单证据源） |
+| `conformal` / `conformal-interval` | **保形预测覆盖率校准**（区间口径 / 多时段复验）；**保形预测区间 + 概率口径对照**（MAPIE split conformal，覆盖率审计 + 可靠性曲线 + 区间宽度校准） |
+| `overfit-audit` | **过拟合审计**（CPCV 净化交叉验证 + DSR 选择偏差收缩 + PBO + 统一试验预算；`--n-blocks` / `--k-test` / `--embargo`） |
+| `regime` | **市场状态分层**（HMM 牛/熊/震荡识别 + `expanding` 无前视口径 + 状态内分层评估 + 状态特征增量 A/B；`--refit-every` / `--no-ab` / `--holdout-evidence`） |
+| `calibration` / `calibration-ablation` | **概率校准层**（isotonic / Platt + Brier / ECE）；**校准层消融对照**（base / platt / isotonic 决策读数并排，T19.4 证据） |
+| `research-assist` | **投研辅助只读接入评估**（候选调研 + 离线对照 + 决策单；结论：无候选满足准入，默认取消） |
+| `portfolio-backtest` | **组合回测闭环**（信号×门槛×成本三档 → 净值/回撤/换手/夏普；`--signals rank` 截面排序 OOS 信号 + 基准对照臂；`--weights all` 三臂对照；`--no-audit` 跳过组合级过拟合审计） |
+| `drift-monitor` | **漂移监控**（PSI / KS 自研，零新依赖；参考窗 vs 当前窗逐特征漂移 + rolling PSI × 波动率交叉） |
+| `feature-attribution` | **TreeSHAP 状态×特征归因**（lightgbm 原生 `pred_contrib`，零新依赖；非 LightGBM 模型 fail-close 拒绝产出假归因） |
 | `gate` / `gate-diagnose` | 策略门禁判定；门禁阻塞诊断 |
 | `factors` / `factor-model` | 多因子加权组合预测；多因子模型权重与 IC 诊断 |
 | `stream` / `intraday` / `consistency` | 盘中实时流；单只盘中信号；跨周期/跨模型一致性校验 |
@@ -332,19 +348,31 @@ if m.size() > 0
 │   └── config_pro.yaml        # 生产配置（wind→tencent→simulation，标的对齐 28 持仓池 26 只）
 ├── data/
 │   ├── raw/                   # 原始行情缓存 <symbol>.csv（simulation 兜底不落盘）
+│   │   └── *.frozen.20260917.csv  # Issue #55 冻结日K，clone 后离线可复算
 │   ├── processed/             # 特征工程后的数据集
 │   └── news/                  # 新闻缓存
-├── models/                    # 训练产物（pkl）与 exported/（ONNX）
+├── models/                    # 训练产物（pkl，含 feature_cols 契约）与 exported/（ONNX）
 ├── logs/                      # 运行日志与评估报告
 ├── reports/                   # 报告输出
+│   ├── *.frozen.issue55*.json # Issue #55 冻结读数（H5/H10/H20/conservative + risk-signal）
+│   └── calibration/           # 保形/校准读数（conformal_<h>d.json / ab_<h>d.json / rolling_<h>d.json）
 ├── src/
 │   ├── data/                  # 采集 / 预处理 / 技术指标 / 情感分析 / 质量门控
 │   │   ├── collector.py       # DataCollector：多源回退 + collect_all + simulation 不落盘
 │   │   ├── tencent_client.py  # 腾讯财经免费日K客户端（前复权/分页/NO_PROXY/fail-open）
 │   │   └── preprocessor.py    # FeatureEngineer（防目标泄漏）+ DataPreprocessor
 │   ├── train/                 # LightGBM 训练器、模型定义、自适应学习
-│   ├── eval/                  # 双维评估器
-│   ├── inference/             # 推理引擎（每日缓存刷新 _ensure_fresh + 特征对齐 _align_features）
+│   ├── eval/                  # 评估与研究方法层（双维评估器 + 35 个专题模块）
+│   │   ├── evaluator.py       # 双维评估（ML 指标 + 金融指标）
+│   │   ├── benchmark_relative.py    # 基准相对净超额（edge-check 记分板）
+│   │   ├── feature_model_ablation.py # 特征集 × 模型族联合消融
+│   │   ├── risk_signal.py     # 风险预测力检验（增量 vs 朴素波动基线）
+│   │   ├── regime.py          # HMM 状态分层
+│   │   ├── cpcv.py / overfit_stats.py  # CPCV 净化交叉验证 / PSR/DSR/PBO
+│   │   ├── pool_collinearity.py / model_improvement.py  # 池共线性 / 标签口径对照
+│   │   ├── drift_monitor.py / feature_attribution.py    # PSI/KS 漂移 / TreeSHAP 归因
+│   │   └── anchor_backfill.py # TradingView 无前视锚点回填
+│   ├── inference/             # 推理引擎（每日缓存刷新 _ensure_fresh + 特征按名对齐）
 │   ├── api/                   # FastAPI 服务（含 /api/v1/portfolio/summary 组合契约端点）
 │   ├── export/                # ONNX 导出
 │   ├── report/                # 日报 / 周报生成
@@ -356,7 +384,9 @@ if m.size() > 0
 │   └── timesfm_predictor.py   # TimesFM 适配（可选）
 ├── Kronos/                    # 第三方基础模型源码快照（见下）
 ├── scripts/                   # 占位模型生成等工具脚本
-├── tests/                     # pytest 测试（tencent_client/data_freshness/pipeline/api 等）
+├── tests/                     # pytest 测试（75 个文件：数据链路 / 防泄漏 / 评估量尺 / API / 各阶段回归）
+├── 00_kickoff/                # 各阶段交付结论与决策材料（可追溯证据链）
+├── cairn/                     # Project Cairn 知识层（ROADMAP / LOG / 专题文档）
 ├── 为28终极量化交易系统提供策略决策依据_设计方案_20260909.md   # 对接设计与验证记录
 ├── main.py                    # CLI 入口
 └── requirements.txt
@@ -481,25 +511,33 @@ resp = requests.get(
 
 ```bash
 python -m pytest tests/ -q          # 全量
-python main.py --help               # 校验 CLI 的 40 个子命令
+python main.py --help               # 校验 CLI 的 60 个子命令
 ```
 
-测试覆盖 `tests/` 下 **39 个测试文件**：数据链路（tencent / akshare / macro）、特征与防泄漏、训练与评估量尺、API 契约、交易适配、审计与调度，以及 S7~S15 / G1~G5 各阶段专属回归（`test_roadmap_*`）。
+测试覆盖 `tests/` 下 **75 个测试文件**：数据链路（tencent / akshare / macro）、特征与防泄漏、训练与评估量尺、API 契约、交易适配、审计与调度，以及 S7~S25 / G1~G5 / H1~H5 / I1~I5 各阶段专属回归（`test_roadmap_*`、`test_model_feature_contract` 契约守卫、`test_regime_fit_guard` 状态拟合守卫等）。
 
 ---
 
 ## 九、已知限制 ⚠️
 
-- 真实行情下三周期模型区分度均有限（AUC 0.54~0.57，2026-09-09 防泄漏口径），信号仅作观测参考，不应单独作为交易依据
+- **信号无正向 edge（最硬的结论）**：以「相对全池等权的净超额」记分板衡量，现行口径在全池切片上
+  三周期**全部为负或不显著**（5d t −2.12 / 10d t −2.79 / 20d t −2.27），状态分层（三分/二分）
+  **无正向状态**，消融八子集**无一转正**；随机抽同数量标的即可反超 ⇒
+  **选中这些标的没有信息含量**，信号不可单独作为交易依据
+- **风险预警退路同样不成立**：控制朴素 trailing-vol 基线后，模型输出的增量 IC 仅 0.03~0.09、
+  三周期全低于效应量下限 ⇒ 真要做波动/回撤预警，用朴素波动基线即可
+- **rank 排序线索未达证据门槛**：全池截面 top-30% 做多的主动收益 +12.7pp、PSR 0.831 方向为正，
+  但 **DSR 0.099 仍 `insufficient_evidence`** ⇒ 维持 `report_only`，不采信为正式证据
+- 真实行情下三周期模型区分度均有限（AUC 0.54~0.57，2026-09-09 防泄漏口径），信号仅作观测参考
 - 模型评估为历史回测口径，未扣除真实滑点与冲击成本，实盘前需做纸面跟踪
-- 数据源依赖较深：Wind 需终端/Key，缺失时降级 akshare → 腾讯；**期货 / 外汇仅 akshare 档可覆盖**（S14 已开启，akshare 未安装时该档静默跳过，不报错也不伪造）
+- 数据源依赖较深：Wind 需终端/Key，缺失时降级 akshare → 腾讯；**期货 / 外汇仅 akshare 档可覆盖**（S14 已开启，akshare 未安装时该档静默跳过，不报错也不伪造）；全池 38 只中期货/外汇 12 只因数据源不可达常缺席，实际可复算 26 只 A股/ETF
 - 宏观指标与新闻情感为**配置开关，默认关闭**；宏观数据依赖外部接口，降级语义为「缺则置空、不做前视填充」
 - TimesFM / Kronos 路径尚未接入主推理链路；`tune` 的 optuna 搜索当前仅覆盖 LightGBM（LSTM 搜索待 optuna + torch 联调后开放）
-- 模型评估为历史回测口径，未扣除真实滑点与冲击成本，实盘前需做纸面跟踪
+- **样本长度不足以支撑 Sharpe > 0 的结论**：MinTRL 2173~8382 天 ≫ 现有 1569 天；DSR 0.08~0.24
 
 ---
 
-## 十、研究进展（S1~S20）📌
+## 十、研究进展（S1~S25）📌
 
 排期状态落盘于 `schedule/plan.json`（唯一事实来源），历史试验以 **append-only** 方式登记在 `trials`。
 
@@ -591,7 +629,7 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 > 🔒 **本轮边界**：门禁 `strategy_gate` 零改动，所有 `affects_gate` 恒为 false；H5 结论严禁进入信号路径。
 > 🚫 **明确淘汰**（不在本轮引入）：qlib 运行时（S13 已定表达式级对齐）、timesfm/FinGPT/FinRobot（模型族非瓶颈 + 重型依赖）、backtesting.py/rqalpha/hikyuu（S1 已落地 vectorbt）、adata/Ashare/free-stockdb（数据通道已闭环）、tsfresh 类特征库（S12 已否掉）。
 
-### 10.5 人工检查点（11 项已于 2026-09-12 确认 · Issue #40）
+### 10.5 人工检查点（16 项已登记并确认 · G/H 轮 Issue #40、I 轮 Issue #54）
 
 - T11.2 ✅ — 成本三档口径定稿
 - T12.3 ✅ — 三重障碍法标签是否纳入主线
@@ -603,14 +641,23 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 - T18.4 ✅（defer）— 状态分层是否进入信号门禁 / 风控 `withheld` 语义（**证据较强：熊市 62.55% vs 震荡 48.72%**）· 已确认（defer）
 - T19.4 ✅（defer）— 校准层是否进主推理链路（**证据较强：5d ECE 0.1042→0.0025 / 10d 0.1258→0.0463 / 20d 0.0710→0.0530，platt**）· 已确认（defer）
 - T20.1 / T20.4 ✅（reject / cancel）— LLM 投研辅助是否引入 / 是否保留（评估结论：无候选满足准入，默认取消）· 已确认（reject / cancel）
+- T21.4 ✅（keep）— 组合口径是否纳入标准评估集 · 已确认（keep）
+- T22.4 ✅（keep）— 三臂加权方式取舍（等权 / 1-ATR / 置信度加权）· 已确认（keep）
+- T23.4 ✅（keep）— 漂移监控读数是否纳入健康报告 · 已确认（keep）
+- T24.4 ✅（keep）— TreeSHAP 状态×特征归因是否进决策路径 · 已确认（keep）
+- T25.4 ✅（keep）— 组合级过拟合概率下限（PSR/DSR/PBO）语义是否引入门禁 · 已确认（keep）
+
+> 📋 **检查点总数**：`schedule/manual_checkpoints.json` 共 **16 条**（priority 连续），
+> 覆盖 G 轮（S11~S15）/ H 轮（S16~S20）/ I1~I5；`rounds_covered` 字段如实登记。
+> **当前全部为 `confirmed`**，且 `affects_gate` 恒 false、`strategy_gate` 零改动。
 
 > ⚠️ **耦合提醒**：T15.3（阈值语义）、T19.4（概率语义）、T18.4（状态与概率的关系）
 > 操作的是同一条「**概率 → 阈值 → 信号**」链 —— 校准层一旦成为默认语义，同一组 `thr ∈ [0.2, 0.3]`
 > 的**物理含义就会变**（对应子集 ≠ 原先子集，覆盖率与命中率都会漂移）。**建议一起看、一起签**。
 > 详见 [00_kickoff/manual_checkpoints_round_g_h.md](../00_kickoff/manual_checkpoints_round_g_h.md) §11.2。
 
-> 📋 **H 轮检查点已全部登记**：`schedule/manual_checkpoints.json` 共 **11 条**（priority 1..11 连续），
-> 含 H 轮 T16.4 / T17.4 / T18.4 / T19.4 / T20.1 / T20.4 —— 至此再无「已交付但未登记」的检查点。
+> 📋 **检查点已全部登记**：`schedule/manual_checkpoints.json` 覆盖 G 轮 T11.2~T15.3、
+> H 轮 T16.4~T20.4、I 轮 T21.4~T25.4 —— 至此再无「已交付但未登记」的检查点。
 > 决策材料：H4 见 [00_kickoff/probability_calibration_conclusion.md](../00_kickoff/probability_calibration_conclusion.md)，
 > H5 见 [00_kickoff/research_assist_conclusion.md](../00_kickoff/research_assist_conclusion.md)。
 >
@@ -636,6 +683,39 @@ python main.py --help               # 校验 CLI 的 40 个子命令
 > （`reports/confidence_rolling_verify.json`，补充证据，不替代保留期报告）。
 > `affects_gate=false`；挑阈值与签字仍属 T15.3/T16.4 人工检查点。
 > 完整链路：`confidence-holdout` → `confidence-gate`（决策单）→ 人工签字。
+
+### 10.6 高质量项目集成轮 3（I1~I5，见 Issue #54）+ Issue #55 决策源契约轮
+
+> **I 轮（S21~S25）**：S11~S20 把「概率语义 / 评估可信度 / 条件有效性」全部量化之后，
+> 本轮把结论**接到组合层** —— 信号到底能不能变成净值，以及这个净值是不是自欺。
+> 全部阶段 `affects_gate=false`、`report_only`，检查点 T21.4~T25.4 已于 2026-09-13 确认（keep）。
+
+| 阶段 | 内容 | 命令 | 结论 |
+|:---:|:---|:---|:---|
+| S21 / I1 | 组合回测闭环基线：池级回测器 + 成本三档 + 口径一致性对照 | `portfolio-backtest` | 引擎就绪；机械基线仅喂确定性输入，不构成策略推荐 |
+| S22 / I2 | 组合构建三臂对照：等权 / 1-ATR / 校准置信度加权 | `portfolio-backtest --weights all` | 机械基线置信度恒定 → 置信度臂**结构性退化为等权**；加权取舍属 T22.4 |
+| S23 / I3 | 漂移监控：evidently 准入（**不引入**，Python ≥ 3.10）+ PSI/KS 自研 | `drift-monitor` | 收益分布在参考窗/当前窗**显著漂移**（PSI 0.26~0.73）——「读数会失效」的可观测前兆 |
+| S24 / I4 | TreeSHAP 状态×特征归因（零新依赖） | `feature-attribution` | 机制已由合成 LGBM 证明；真实归因待真模型就绪 |
+| S25 / I5 | 组合级过拟合审计：PSR / DSR / PBO 自研 + 试验预算延伸 | `portfolio-backtest`（内置审计段） | **PBO 0.011**（无「选假冠军」迹象），但 **DSR 0.08~0.24**、MinTRL 2173~8382 天 ≫ 现有 1569 天 ⇒ 现有样本不足以把 Sharpe > 0 当真 |
+
+> **Issue #55「决策源契约与优化」轮**（2026-09-16 ~ 09-19，与 I 轮并行）：
+> 16_ 作为 tradingview 数据源/决策源，交付只读契约 `decision-feed/1`，并投影成 TradingView
+> 可读入的图片信号卡与 Pine 数据层；随后对「这信号到底有没有 edge」做了九轮排查。
+>
+> | 轮次 | 检验 | 结论 |
+> |:---:|:---|:---|
+> | ①②③ | 池共线性 / 三重障碍法标签 / 周期权重重排 | 缩池**无效**；标签口径**证伪**；现行权重与证据方向相反 |
+> | ④ | 波动分层与置信度语义 | 「高置信⇒负收益」只在**低波动**成立；置信度**不是** edge 信号 |
+> | ⑤ | 换记分板（相对全池等权净超额） | 信号**无净超额**，随机抽同数量标的即可反超 |
+> | ⑥ | 特征集 × 模型族联合消融 | 八子集**无一转正**；模型族仅 10d "更不差" ⇒ 不够格改配置 |
+> | ⑦⑧ | 状态分层（全池 38 标的）+ 修两条静默缺陷 | 各状态**净超额均为负**，`conditional_edge_hint=False`；顺带修掉 HMM 起步静默降级等真缺陷 |
+> | ⑧ | 风险预测力检验 | `no_risk_increment`：朴素 trailing-vol 基线已把模型能做的做完 ⇒ 不为「风险预警」立项 |
+> | ⑨ | 全池基线读数冻结 | 结论钉到**同一条全池切片**并冻结入库（`data/raw/*.frozen.*.csv` + `reports/*.frozen.*.json`），clone 后离线可复算 |
+> | — | 全池模型信号回测（rank） | 每日截面 top-30% 做多的主动收益 +12.7pp、PSR 0.831，但 **DSR 0.099 仍 `insufficient_evidence`** ⇒ 维持 `report_only`，不提请、不代签 |
+
+> 关键产物：`cairn/` 下的知识专题文档（`full-pool-baseline.md` / `benchmark-relative-edge.md` /
+> `risk-signal-informativeness.md` / `decision-source-contract.md` / `feature-model-ablation.md` 等），
+> 冻结数据见 `data/raw/*.frozen.20260917.csv` 与 `reports/*.frozen.issue55*.json`。
 
 ---
 
