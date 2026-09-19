@@ -107,6 +107,14 @@
 - **TradingView 交付** `main.py tv-export`（Issue #55）：把契约投影成 TradingView **可直接读入**的
   图片信号卡（真 PNG，`tEXt` 内嵌机器可读契约 + 全精度锚点）与 Pine 数据层（`tv-pine/1`，`request.seed` 可读）
 - **模型优化排查**（Issue #55 步骤①②③，2026-09-16）：① 池共线性（38 只 → 有效维度 7.9，缩池无效）→ ② 三重障碍法标签**证伪** → ③ 现行周期权重与证据方向相反；顺带修掉 `label_*` 列静默泄漏进特征集的真缺陷（详见 `cairn/model-optimization-findings.md`）
+- **全池基线读数冻结**（Issue #55 第九轮，2026-09-17）：把前八轮拆散在不同子集上的结论
+  钉到**同一条全池切片**，并把 38 池日K与各命令读数**冻结入库**
+  （`data/raw/*.frozen.*.csv` + `reports/*.frozen.*.json`）⇒ **clone 后离线可复算**。
+  主读数：26 只 A股/ETF 基准年化 +18.44%，信号净超额 **−0.040%（t −0.41，`no_edge`）**；
+  状态分层（三分/二分）**无正向状态**（bull t 0.14 / trending t 0.21，为正但不显著 ⇒
+  `conditional_edge_hint=False`）；消融七子集**无一转正**、模型族 H5 未复现第六轮 10d 线索；
+  风险预警唯一非全负读数（H20 偏 IC 0.121）但子池 **0/12 `fragile`** ⇒ 只记待观察、不采信
+  （详见 `cairn/full-pool-baseline.md`）
 - 与 28 系统双向闭环：28 侧审计用本地真实行情回溯命中，命中率与漂移告警进入每日报告
 
 ### 📊 最新训练评估（2026-09-09，腾讯财经真实行情 · 目标泄漏已修复）
@@ -302,7 +310,7 @@ if m.size() > 0
 | `tv-export` | **TradingView 交付**（图片信号卡 PNG + Pine 数据层 `tv-pine/1` + 无前视锚点回填；`--out-dir` / `--no-anchors` / `--anchor-step` / `--card-limit`） |
 | `pool-collinearity` | **池共线性诊断**（有效独立维度 / 市场 beta 占比 / 剥 beta 残差；`--high-corr`） |
 | `model-improve` | **模型优化对照**（标签口径 A/B：固定 h vs 三重障碍法；周期权重重排建议；`--horizons` / `--folds`） |
-| `edge-check` | **基准相对决策增量**（信号组合 vs 全池等权的净超额 + 扣成本 + 随机子集对照 + **状态分层净超额**；`--holding-horizon` / `--cost-level` / `--random-controls` / `--edge-thr` / `--no-regime-breakdown` / `--regime-refit-every` / `--regime-window`） |
+| `edge-check` | **基准相对决策增量**（信号组合 vs 全池等权的净超额 + 扣成本 + 随机子集对照 + **状态分层净超额：三分 bull/range/bear + 趋势/盘整二分**；`--holding-horizon` / `--cost-level` / `--random-controls` / `--edge-thr` / `--no-regime-breakdown` / `--regime-refit-every` / `--regime-window`） |
 | `regime-signal` | **波动分层置信度有效性**（置信度语义诊断 / 高置信×高波动分层读数 / 子池稳健性分级；`--confidence-thr` / `--stability-subsets` / `--folds`） |
 | `ablation` | **特征集 × 模型族联合消融**（唯一记分板 = 相对全池等权的净超额；增量需净超额转正且相对基线臂配对 t ≥ 2 并过 Holm 校正；`--abl-recipes` / `--abl-models` / `--abl-model` / `--abl-recipe` / `--horizons` / `--holding-horizon` / `--cost-level` / `--random-controls`） |
 | `risk-signal` | **风险预测力检验**（模型输出 vs 朴素 trailing-vol 基线的**增量**偏秩相关；效应量 ≥ 0.10 且重叠校正后 \|t\| ≥ 2；子池稳健性分级；只回答"风险预警是否值得立项"；`--horizons` / `--folds` / `--stability-subsets` / `--stability-size`） |

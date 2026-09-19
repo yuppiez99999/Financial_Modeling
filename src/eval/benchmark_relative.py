@@ -29,7 +29,10 @@
 
 - 只报数，`affects_gate=False`，**不**据自动改权重 / 门槛 / 池；
 - 样本不足 / 日期不可对齐 → `available=False` + reason，不外推；
-- 全部结论带 `verdict` 分级：`no_edge` / `inconclusive` / `positive`。
+- 全部结论带 `verdict` 分级：`no_edge` / `inconclusive` / `positive`；
+- **状态分层**（`regime_breakdown`）：三分（bull/range/bear）+ **趋势/盘整二分**
+  （`binary`，bull∪bear→trending、range→choppy）—— 二分用于回答三分回答不了的
+  "趋势 vs 盘整"（expanding 口径下 bull 可能被吸收）。两者同源，只做展示归并。
 
 ## 与已有模块的关系
 
@@ -46,6 +49,8 @@ import numpy as np
 import pandas as pd
 
 from src.eval.portfolio_backtest import cost_one_side
+from src.eval.regime import (REGIME_BINARY_MAP, REGIME_BINARY_ORDER,
+                             REGIME_CHOPPY_MEMBERS, REGIME_TRENDING_MEMBERS)
 
 logger = logging.getLogger(__name__)
 
@@ -210,8 +215,17 @@ def _date_regime_labels(price_frames: Dict[str, pd.DataFrame],
     if obs.get("reason"):
         meta["observation_reason"] = obs["reason"]
     mode = "hmm_expanding"
-    res = rg.regime_labels(obs["X"], obs["valid"], refit_every=int(refit_every))
+    try:
+        res = rg.regime_labels(obs["X"], obs["valid"], refit_every=int(refit_every))
+    except Exception as e:  # noqa: BLE001
+        # fail-soft：**状态标签本身**失败（hmmlearn 未装 / 依赖 ABI / 数值炸）
+        # 必须降级到规则口径，而不是把异常抛给调用方 —— 否则一个状态层读数
+        # 失败会连带把主读数也标成不可用（"读数本来可用却被记成不可用"）。
+        # 不静默降级：异常类型写进 meta，且 mode 如实标 rules_fallback。
+        res = {"labels": [], "meta": {"available": False,
+                                      "reason": f"{type(e).__name__}: {e}"}}
     labels = list(res.get("labels") or [])
+    meta["hmm_meta"] = dict(res.get("meta") or {})
     if not (res.get("meta") or {}).get("available"):
         # 如实降级：规则口径（同样无前视），并标注真实口径
         mode = "rules_fallback"
@@ -228,6 +242,91 @@ def _date_regime_labels(price_frames: Dict[str, pd.DataFrame],
         meta.setdefault("reason", "no_regime_labels")
         return {"labels_by_date": {}, "meta": meta}
     return {"labels_by_date": labels_by_date, "meta": meta}
+
+
+def _binary_regime_breakdown(grid: Sequence[pd.Timestamp],
+                             labels_by_date: Dict[Any, Optional[str]],
+                             signal: np.ndarray, benchmark: np.ndarray,
+                             one_side_cost: float,
+                             horizon_days: int) -> Dict[str, Any]:
+    """在三分读数之外，再给**趋势 / 盘整二分**（同一批逐期净超额，换分组）。
+
+    为什么需要它：expanding 口径下三分可能出现**牛态无有效期数**
+    （强趋势样本把牛态吸收掉），导致状态分层只有 range/bear 两态可比，
+    "趋势 vs 盘整"这一问**没被回答**。二分把 bull+bear 归并成 trending，
+    让该问一定有读数 —— 这是**展示归并**，不新增拟合口径、不改判据。
+
+    判据、无前视、最小期数纪律与 `_regime_breakdown` 完全一致。
+    """
+    n = min(len(signal), len(benchmark), len(grid))
+    norm_labels = {pd.Timestamp(k): v for k, v in (labels_by_date or {}).items()}
+    groups: Dict[str, List[float]] = {name: [] for name in REGIME_BINARY_ORDER}
+    unlabeled = 0
+    for i in range(n):
+        raw = norm_labels.get(pd.Timestamp(grid[i]))
+        lab = REGIME_BINARY_MAP.get(raw or "")
+        if lab not in groups:
+            unlabeled += 1
+            continue
+        d = float(signal[i]) - float(benchmark[i]) - 2.0 * float(one_side_cost)
+        if np.isfinite(d):
+            groups[lab].append(d)
+
+    per: Dict[str, Any] = {}
+    usable: List[str] = []
+    for name in REGIME_BINARY_ORDER:
+        arr = np.asarray(groups[name], dtype=float)
+        st: Dict[str, Any] = {"name": name, "n_periods": int(arr.size)}
+        if arr.size < MIN_REGIME_PERIODS:
+            st.update({"available": False,
+                       "reason": f"该状态调仓期数不足（{arr.size} < {MIN_REGIME_PERIODS}）"})
+            per[name] = st
+            continue
+        sd = float(arr.std(ddof=1))
+        t = float(arr.mean() / sd * np.sqrt(arr.size)) if sd > 1e-12 else None
+        st.update({
+            "available": True,
+            "excess_mean_per_period": _round(float(arr.mean()), 8),
+            "excess_t_stat": _round(t, 4) if t is not None else None,
+            "positive": bool(arr.mean() > 0),
+            "share": _round(float(arr.size) / max(1, n), 6),
+        })
+        per[name] = st
+        usable.append(name)
+
+    out: Dict[str, Any] = {
+        "available": bool(len(usable) >= 2),
+        "n_periods_total": int(n),
+        "n_periods_unlabeled": int(unlabeled),
+        "by_regime": per,
+        "min_periods": int(MIN_REGIME_PERIODS),
+        "regime_order": list(REGIME_BINARY_ORDER),
+        "mapping": {k: list(v) for k, v in
+                    (("trending", list(REGIME_TRENDING_MEMBERS)),
+                     ("choppy", list(REGIME_CHOPPY_MEMBERS)))},
+        "kind": "binary_trend_choppy",
+    }
+    if len(usable) >= 2:
+        means = {k: per[k]["excess_mean_per_period"] for k in usable}
+        best = max(means, key=lambda k: means[k])
+        worst = min(means, key=lambda k: means[k])
+        out["spread"] = {
+            "best": best, "best_excess": means[best],
+            "worst": worst, "worst_excess": means[worst],
+            "best_minus_worst": _round(float(means[best] - means[worst]), 8),
+        }
+        sig_pos = [k for k in usable
+                   if (per[k].get("excess_t_stat") or 0) >= 2.0
+                   and (per[k].get("excess_mean_per_period") or 0) > 0]
+        out["regimes_with_positive_edge"] = sorted(sig_pos)
+        out["conditional_edge_hint"] = bool(sig_pos)
+        out["conclusion"] = (
+            "conditional_hint" if sig_pos else "no_conditional_edge")
+    else:
+        out["reason"] = "可比状态不足（可用状态 < 2），拒绝给出趋势/盘整分层结论"
+        out["conditional_edge_hint"] = False
+        out["conclusion"] = "unavailable"
+    return out
 
 
 def _regime_breakdown(grid: Sequence[pd.Timestamp],
@@ -288,6 +387,9 @@ def _regime_breakdown(grid: Sequence[pd.Timestamp],
         "by_regime": per,
         "min_periods": int(MIN_REGIME_PERIODS),
     }
+    # 与调用方同口径的状态展示顺序（只对出现在 per 里的状态排序）
+    out["regime_order"] = ([nm for nm in REGIME_ORDER if nm in per]
+                          + [nm for nm in per if nm not in REGIME_ORDER])
     if len(usable) >= 2:
         means = {k: per[k]["excess_mean_per_period"] for k in usable}
         best = max(means, key=lambda k: means[k])
@@ -500,6 +602,14 @@ def build_report(data: Dict[str, pd.DataFrame],
                                        primary_signal, benchmark, one_side,
                                        holding_horizon)
                 rb["labels"] = lab.get("meta", {})
+                # 趋势 / 盘整二分：三分出现"牛态无期数"时该问仍有读数
+                try:
+                    rb["binary"] = _binary_regime_breakdown(
+                        grid, lab.get("labels_by_date") or {},
+                        primary_signal, benchmark, one_side, holding_horizon)
+                except Exception as e:  # noqa: BLE001 - 二分失败不拖垮三分读数
+                    rb["binary"] = {"available": False,
+                                    "reason": f"趋势/盘整分层失败: {e}"}
         except Exception as e:  # noqa: BLE001 - 状态分层失败不拖垮主读数
             logger.warning("状态分层读数失败，主读数不受影响: %s", e)
             rb = {"available": False, "reason": f"状态分层计算失败: {e}"}
