@@ -260,6 +260,19 @@ python main.py schedule         # 自动重训练调度（常驻）
 > 两条已修 + `tests/test_regime_fit_guard.py` 11 条守卫。
 > 详见 [基准相对增量专题](cairn/benchmark-relative-edge.md) 第八/十节。
 
+> 🛡️ **风险预测力检验**（Issue #55 第八轮，"风险预警"这条退路成不成立）：
+> `python main.py risk-signal`（只读，`affects_gate=false`）
+> —— 历轮一致建议「另立项目做波动 / 回撤预警」，本轮**不预设它成立**，把那条建议的
+> **唯一地基**（「置信度 = 波动率探测器」）单独拿出来独立检验。
+> 判据 = **控制朴素 trailing-vol 基线后的偏秩相关增量**（效应量 |IC| ≥ 0.10
+> **且** 重叠校正后 |t| ≥ 2、方向对；t 用 `n_eff ≈ n/h` 防重叠样本撑显著）。
+> 主读数（26 标的真实日K，walk-forward）：朴素 trailing-vol 基线对未来波动
+> IC **0.69~0.75**（波动预测本就"好做"）；模型输出的增量仅 **0.03~0.09**，
+> **三周期全低于效应量下限**，子池稳健性 **2/12 `fragile`** ⇒ 结论 **`no_risk_increment`**。
+> ⇒ **"另立项目做风险预警"的地基也不成立**：真要做波动 / 回撤预警，**用朴素波动基线即可**，
+> 不必为本模型输出立项 —— 不是"没用"，而是**朴素基线已把它能做的做完了**。
+> 详见 [风险预测力专题](cairn/risk-signal-informativeness.md)。
+
 > 🧪 **特征集 × 模型族联合消融**（Issue #55 第六轮，最后一条未量化嫌疑）：
 > `python main.py ablation`（只读，`affects_gate=false`）
 > —— 以**唯一记分板**（相对全池等权的净超额）判两条从未量化的假设。
