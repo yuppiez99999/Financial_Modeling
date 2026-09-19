@@ -24,11 +24,18 @@ class LightGBMModel:
         self.model: lgb.LGBMClassifier | None = None
         self.scaler: StandardScaler | None = None
         self.feature_importance_: np.ndarray | None = None
+        # 训练时特征列契约（名称 + 顺序）：持久化进 pkl，供推理按名对齐，
+        # 防止特征管线变更时静默错位（2026-09-15 退化诊断遗留隐患修复）
+        self.feature_cols_: list[str] | None = None
 
     def train(self, X_train: np.ndarray, y_train: np.ndarray,
-              X_val: np.ndarray | None = None, y_val: np.ndarray | None = None) -> dict[str, list[float]]:
-        """训练模型（X_val/y_val 可选；缺省时不做早停验证）。"""
+              X_val: np.ndarray | None = None, y_val: np.ndarray | None = None,
+              feature_cols: list[str] | None = None) -> dict[str, list[float]]:
+        """训练模型（X_val/y_val 可选；feature_cols 记录训练特征契约）。"""
         logger.info("开始训练 LightGBM 模型...")
+        self.feature_cols_ = [str(c) for c in feature_cols] if feature_cols else None
+        if self.feature_cols_ is None:
+            logger.warning("训练未提供 feature_cols：pkl 将缺少特征契约，推理只能按数量对齐（存在静默错位风险）")
 
         # 标准化
         self.scaler = StandardScaler()
@@ -81,10 +88,11 @@ class LightGBMModel:
         return self.model.predict_proba(X_scaled)
 
     def save(self, path: str | None = None) -> Path:
-        """保存模型"""
+        """保存模型（含 feature_cols 特征契约）"""
         save_path = Path(path) if path else self.save_dir / "lightgbm_model.pkl"
-        joblib.dump({"model": self.model, "scaler": self.scaler}, save_path)
-        logger.info(f"模型已保存到 {save_path}")
+        joblib.dump({"model": self.model, "scaler": self.scaler,
+                     "feature_cols": self.feature_cols_}, save_path)
+        logger.info(f"模型已保存到 {save_path}（feature_cols={'有' if self.feature_cols_ else '缺失'}）")
         return save_path
 
     def load(self, path: str | None = None) -> None:
@@ -93,4 +101,5 @@ class LightGBMModel:
         data = joblib.load(load_path)
         self.model = data["model"]
         self.scaler = data["scaler"]
+        self.feature_cols_ = list(data.get("feature_cols") or []) or None
         logger.info(f"模型已从 {load_path} 加载")

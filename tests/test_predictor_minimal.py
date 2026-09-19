@@ -72,14 +72,49 @@ def apply_monkeypatches(monkeypatch):
     monkeypatch.setattr(tfm_mod, "TimesFMFinancePredictor", DummyTFM)
 
 
-def test_lightgbm_path(cfg, monkeypatch):
+def test_lightgbm_path(cfg, monkeypatch, tmp_path):
     apply_monkeypatches(monkeypatch)
     cfg["model"]["type"] = "lightgbm"
+    # 用契约匹配的微型模型替换真实 pkl（2026-09-15 起 pkl 持久化 feature_cols，
+    # 推理按名对齐 fail-close：合成 3 特征 vs 真实 107 契约会显式报错——这是
+    # 修复后的正确行为。本测试改为训练一个 [f1,f2,f3] 契约的微型模型，
+    # 走通「契约对齐 → scaler → 预测」的完整成功路径。）
+    from src.train.models.lightgbm_model import LightGBMModel
+
+    cfg["training"] = dict(cfg.get("training") or {})
+    cfg["training"]["save_dir"] = str(tmp_path)
+    cfg["model"] = dict(cfg.get("model") or {})
+    cfg["model"]["lightgbm"] = {
+        "objective": "binary", "n_estimators": 10, "learning_rate": 0.1,
+        "max_depth": 2, "num_leaves": 4, "subsample": 1.0,
+        "colsample_bytree": 1.0, "reg_alpha": 0.0, "reg_lambda": 0.0,
+        "verbose": -1, "early_stopping_rounds": 5,
+    }
+    import numpy as np
+    rng = np.random.RandomState(42)
+    X = rng.normal(size=(120, 3))
+    y = (X[:, 0] > 0).astype(int)
+    tiny = LightGBMModel(cfg)
+    tiny.train(X, y, feature_cols=["f1", "f2", "f3"])
+    tiny.save(str(tmp_path / "lightgbm_short_term_5d.pkl"))
+
     engine = PredictionEngine(cfg)
     engine.load_models("lightgbm")
     res = engine.predict("TEST", "short_term")
     assert isinstance(res, dict)
     assert "prediction" in res or "error" in res
+    if "prediction" in res:
+        assert res["prediction"] in (0, 1)
+
+
+def test_lightgbm_contract_mismatch_fails_closed(cfg, monkeypatch):
+    """合成特征与真实模型契约（107 列）不符 → 必须显式报错，不得静默对齐。"""
+    apply_monkeypatches(monkeypatch)
+    cfg["model"]["type"] = "lightgbm"
+    engine = PredictionEngine(cfg)
+    engine.load_models("lightgbm")
+    with pytest.raises(ValueError, match="管线漂移|特征"):
+        engine.predict("TEST", "short_term")
 
 
 def test_timesfm_path(cfg, monkeypatch):

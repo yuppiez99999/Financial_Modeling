@@ -155,9 +155,11 @@ class ModelTrainer:
                 datasets["X_val"], datasets["y_val"],
                 feature_cols=feature_cols,
             )
+        # LightGBM：记录特征契约（feature_cols 持久化进 pkl，推理按名对齐）
         return model.train(
             datasets["X_train"], datasets["y_train"],
             datasets["X_val"], datasets["y_val"],
+            feature_cols=feature_cols,
         )
 
     def _build_dataset(self, symbol: str, horizon: int) -> tuple[np.ndarray, np.ndarray] | None:

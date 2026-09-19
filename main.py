@@ -3387,13 +3387,160 @@ def _load_raw_close(symbols: list[str]) -> tuple[dict, list[str]]:
     return price_frames, missing
 
 
+def _build_rank_signals(config: dict, symbols: list[str],
+                        rank_quantile: float = 0.3,
+                        horizon_name: str = "short_term",
+                        ) -> tuple[dict, dict, list[str], dict]:
+    """截面排序信号（S25 完善 / 模型退化应对，OOS 测试窗，report_only）。
+
+    背景（00_kickoff/model_degeneration_conclusion_20260915.md）：模型概率
+    未校准（spread≈1pp），固定阈值 0.5 的方向信号恒定「看涨」、无信息；
+    但排序有微弱区分度（AUC 0.52~0.58）。本信号改用**截面 top-quantile**：
+    每日取模型概率最高的前 q 比例标的做多 —— 绕开绝对阈值，只消费排序信息。
+
+    样本外口径：与训练 `_split_data` 完全一致的合并时间切分（train 0.7 +
+    val 0.15 → 测试 = 合并序列最后 15%），信号只产生于 cutoff 日期之后 ——
+    对模型而言是真正的 OOS，不作弊。
+
+    Returns:
+        (signal_frames, price_frames, skipped, meta)；模型缺 feature_cols
+        契约时 fail-close 返回空 dict（要求先重训生成新格式 pkl）。
+    """
+    import joblib
+
+    import scripts.evaluate_models as ev
+    from src.data.preprocessor import FeatureEngineer
+
+    empty: tuple[dict, dict, list[str], dict] = ({}, {}, [], {})
+    horizon_days = {"short_term": 5, "mid_term": 10, "long_term": 20}.get(
+        horizon_name, 5)
+    model_file = Path(f"models/lightgbm_{horizon_name}_{horizon_days}d.pkl")
+    if not model_file.exists():
+        logger.error(f"[rank] 模型不存在: {model_file}")
+        return empty
+    bundle = joblib.load(model_file)
+    model = bundle["model"]
+    scaler = bundle.get("scaler")
+    contract = list(bundle.get("feature_cols") or [])
+    if not contract:
+        logger.error("[rank] 模型 pkl 缺 feature_cols 契约（旧格式）——"
+                     "拒绝在无契约下产生信号，请先 python main.py train 重训")
+        return empty
+    expected = int(getattr(model, "n_features_in_", len(contract)))
+    if len(contract) != expected:
+        logger.error(f"[rank] 契约列数 {len(contract)} != 模型 {expected}")
+        return empty
+
+    data = ev.load_market_data(config, symbols)
+    if not data or len(data) < 3:
+        logger.error(f"[rank] 可用行情标的不足（{len(data or {})}）")
+        return empty
+
+    fe = FeatureEngineer(config)
+    price_frames: dict[str, "pd.DataFrame"] = {}
+    proba_frames: dict[str, "pd.DataFrame"] = {}
+    skipped: list[str] = []
+    parts: list["pd.DataFrame"] = []          # 仅用于复刻训练切分
+    for symbol, df in sorted(data.items()):
+        if "date" not in df.columns or "close" not in df.columns:
+            skipped.append(symbol)
+            continue
+        feats = fe.transform(df, horizon_days=horizon_days)
+        feats = fe.create_target(feats, horizon_days)
+        feats = feats.sort_values("date")
+        missing = [c for c in contract if c not in feats.columns]
+        if missing:
+            logger.warning(f"[rank] {symbol} 缺特征 {len(missing)} 列，跳过")
+            skipped.append(symbol)
+            continue
+        keep = ["date"] + contract + [f"target_{horizon_days}d"]
+        block = feats[keep].dropna()
+        if len(block) < 60:
+            skipped.append(symbol)
+            continue
+        X = block[contract].to_numpy()
+        Xs = scaler.transform(X) if scaler is not None else X
+        proba = model.predict_proba(Xs)[:, 1]
+        proba_frames[symbol] = pd.DataFrame({
+            "date": pd.to_datetime(block["date"]).dt.normalize(),
+            "proba": proba,
+        })
+        keep_px = [c for c in ("date", "open", "high", "low", "close", "volume")
+                   if c in df.columns]
+        px = df[keep_px].copy()
+        px["date"] = pd.to_datetime(px["date"], errors="coerce")
+        px = px.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+        price_frames[symbol] = px
+        parts.append(block[["date"] + contract + [f"target_{horizon_days}d"]])
+
+    if len(proba_frames) < 3:
+        logger.error(f"[rank] 有效概率标的不足（{len(proba_frames)}）")
+        return empty
+
+    # 复刻训练切分（trainer._split_data）：合并 → 按日期排序 → 前 85% 截止
+    combined = pd.concat(parts, ignore_index=True).sort_values("date").dropna()
+    val_end = int(len(combined) * (config["data"]["split_ratio"]["train"]
+                                   + config["data"]["split_ratio"]["val"]))
+    cutoff = pd.to_datetime(combined["date"].iloc[min(val_end, len(combined) - 1)])
+    cutoff = cutoff.normalize()
+
+    signal_frames: dict[str, "pd.DataFrame"] = {}
+    active_counts: list[int] = []
+    dates = sorted(set().union(*[set(f["date"]) for f in proba_frames.values()]))
+    proba_by_date: dict[pd.Timestamp, dict[str, float]] = {}
+    for symbol, f in proba_frames.items():
+        f = f[f["date"] > cutoff]
+        for d, p in zip(f["date"], f["proba"]):
+            proba_by_date.setdefault(d, {})[symbol] = float(p)
+    for d in dates:
+        if d <= cutoff or d not in proba_by_date:
+            continue
+        cross = proba_by_date[d]
+        n = len(cross)
+        if n < 3:
+            continue
+        top_k = max(1, int(round(float(rank_quantile) * n)))
+        chosen = set(sorted(cross, key=cross.get, reverse=True)[:top_k])
+        active_counts.append(len(chosen))
+        for symbol in cross:
+            sig = signal_frames.setdefault(symbol, {"date": [], "action": [], "confidence": []})
+            sig["date"].append(d)
+            sig["action"].append("BUY" if symbol in chosen else "HOLD")
+            sig["confidence"].append(cross[symbol])
+    out_frames = {
+        s: pd.DataFrame(v) for s, v in signal_frames.items()
+        if sum(1 for a in v["action"] if a == "BUY") >= 3
+    }
+    meta = {
+        "mode": "rank_top_quantile",
+        "rank_quantile": float(rank_quantile),
+        "horizon": horizon_name,
+        "model_file": str(model_file),
+        "feature_contract_n": len(contract),
+        "oos_cutoff_date": str(cutoff.date()),
+        "n_signal_symbols": len(out_frames),
+        "avg_active_per_day": (round(sum(active_counts) / len(active_counts), 2)
+                               if active_counts else 0.0),
+        "n_cross_section_days": len(active_counts),
+        "confidence_semantics": "raw model proba（未校准，spread≈1pp——退化诊断口径）",
+        "note": "方向信号无信息（退化诊断），本信号只消费截面排序信息；"
+                "校准进主链路属 T19.4 defer 维持",
+    }
+    logger.info(f"[rank] OOS cutoff={cutoff.date()} 信号标的={len(out_frames)} "
+                f"日均持仓={meta['avg_active_per_day']}")
+    return out_frames, price_frames, skipped, meta
+
+
 def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
                                min_confidence: float | None = None,
                                cost_levels: list[str] | None = None,
                                ma_window: int = 20,
                                contrast: bool = True,
                                weights: str = "equal",
-                               audit: bool = True) -> dict:
+                               audit: bool = True,
+                               signals: str = "mechanical",
+                               rank_quantile: float = 0.3,
+                               horizon_name: str = "short_term") -> dict:
     """组合回测闭环基线（S21 / I1 + S22 / I2 三臂对照，report_only）。
 
     本命令做的事：
@@ -3424,12 +3571,15 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return payload
 
-    price_frames, missing = _load_raw_close(symbols)
-    if len(price_frames) < 3:
-        payload = {"error": f"可用价格标的不足（{len(price_frames)} < 3）",
-                   "missing": missing, "affects_gate": False}
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-        return payload
+    price_frames: dict[str, "pd.DataFrame"] = {}
+    missing: list[str] = []
+    if signals != "rank":
+        price_frames, missing = _load_raw_close(symbols)
+        if len(price_frames) < 3:
+            payload = {"error": f"可用价格标的不足（{len(price_frames)} < 3）",
+                       "missing": missing, "affects_gate": False}
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return payload
 
     from src.eval.factor_metrics import T112_COST_TIERS
 
@@ -3445,17 +3595,28 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
     # 机械基线信号（确定性，无模型依赖）：close > MA(ma_window) → 看多激活
     signal_frames: dict[str, "pd.DataFrame"] = {}
     skipped: list[str] = []
-    for symbol, px in price_frames.items():
-        ma = px["close"].rolling(int(ma_window)).mean()
-        active = (px["close"] > ma).fillna(False)
-        if int(active.sum()) < 5:
-            skipped.append(symbol)
-            continue
-        signal_frames[symbol] = pd.DataFrame({
-            "date": px["date"],
-            "action": ["BUY" if a else "HOLD" for a in active],
-            "confidence": [1.0 if a else 0.0 for a in active],
-        })
+    rank_meta: dict[str, Any] | None = None
+    if signals == "rank":
+        signal_frames, price_frames, skipped, rank_meta = _build_rank_signals(
+            config, symbols, rank_quantile=rank_quantile,
+            horizon_name=horizon_name)
+        if len(signal_frames) < 3:
+            payload = {"error": f"rank 信号标的不足（{len(signal_frames)} < 3）",
+                       "detail": rank_meta, "affects_gate": False}
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return payload
+    else:
+        for symbol, px in price_frames.items():
+            ma = px["close"].rolling(int(ma_window)).mean()
+            active = (px["close"] > ma).fillna(False)
+            if int(active.sum()) < 5:
+                skipped.append(symbol)
+                continue
+            signal_frames[symbol] = pd.DataFrame({
+                "date": px["date"],
+                "action": ["BUY" if a else "HOLD" for a in active],
+                "confidence": [1.0 if a else 0.0 for a in active],
+            })
     if len(signal_frames) < 3:
         payload = {"error": f"有效信号标的不足（{len(signal_frames)} < 3）",
                    "skipped": skipped, "affects_gate": False}
@@ -3579,12 +3740,18 @@ def run_portfolio_backtest_cmd(config: dict, symbols: list[str] | None = None,
 
     payload: dict[str, Any] = {
         "command": "portfolio-backtest",
-        "stage": "S21/I1 + S22/I2" if weights == "all" else "S21/I1",
+        "stage": ("S21/I1 + S22/I2 + S25/I5(rank)" if weights == "all"
+                  else ("S25/I5(rank)" if signals == "rank" else "S21/I1")),
         "available": any(v.get("available") for v in tiers_report.values()),
         "asof": datetime.now(timezone.utc).isoformat(),
         "report_only": True,
         "affects_gate": False,
-        "baseline_signal": f"mechanical MA{int(ma_window)} long/flat（确定性，非策略推荐）",
+        "signals_mode": signals,
+        "baseline_signal": (
+            f"model rank top-{rank_quantile:.0%} OOS（截面排序，绕开未校准阈值；"
+            "见 model_degeneration_conclusion_20260915.md）" if signals == "rank"
+            else f"mechanical MA{int(ma_window)} long/flat（确定性，非策略推荐）"),
+        "rank_meta": rank_meta,
         "symbols_used": sorted(signal_frames),
         "symbols_missing_or_skipped": sorted(set(missing) | set(skipped)),
         "min_confidence": float(min_confidence or 0.0),
@@ -4009,6 +4176,11 @@ def build_parser() -> argparse.ArgumentParser:
                         help="portfolio-backtest 命令：equal=等权基线（S21）；all=三臂对照 等权/1-ATR/置信度（S22，T22.1/T22.2）")
     parser.add_argument("--no-audit", dest="no_audit", action="store_true",
                         help="portfolio-backtest 命令：跳过 S25 组合级过拟合审计段（PSR/DSR/PBO）")
+    parser.add_argument("--signals", dest="signals", default="mechanical",
+                        choices=["mechanical", "rank"],
+                        help="portfolio-backtest 命令：mechanical=MA 机械基线（S21）；rank=模型截面排序 top-quantile OOS 信号（绕开未校准阈值）")
+    parser.add_argument("--rank-quantile", dest="rank_quantile", type=float, default=0.3,
+                        help="portfolio-backtest 命令：rank 模式每日做多比例（缺省 0.3 = top 30%%）")
     parser.add_argument("--split", dest="split", type=float, default=0.5,
                         help="drift-monitor 命令：参考窗/当前窗切分比例（缺省 0.5）")
     parser.add_argument("--model-path", dest="model_path", default=None,
@@ -4274,7 +4446,10 @@ def main():
             ma_window=int(getattr(args, "ma_window", 20) or 20),
             contrast=not bool(getattr(args, "no_contrast", False)),
             weights=str(getattr(args, "weights", "equal") or "equal"),
-            audit=not bool(getattr(args, "no_audit", False)))
+            audit=not bool(getattr(args, "no_audit", False)),
+            signals=str(getattr(args, "signals", "mechanical") or "mechanical"),
+            rank_quantile=float(getattr(args, "rank_quantile", 0.3) or 0.3),
+            horizon_name=str(getattr(args, "horizon", "short_term") or "short_term"))
     elif args.command == "drift-monitor":
         run_drift_monitor_cmd(config, symbols=_cli_symbols(args),
                               split=float(getattr(args, "split", 0.5) or 0.5))

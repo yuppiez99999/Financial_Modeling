@@ -45,6 +45,35 @@ def _align_features(latest: "np.ndarray", model: Any) -> "np.ndarray":
     return np.hstack([latest, pad])
 
 
+def _align_features_by_contract(df_features: "pd.DataFrame", model_data: dict,
+                                fallback_cols: list) -> "np.ndarray":
+    """按训练特征契约对齐推理特征（fail-close）。
+
+    - pkl 带 feature_cols（新格式）：按**名称**取列、按**训练顺序**排列；
+      缺列 / 数量与模型不符 → 显式报错（训练/推理管线漂移不可静默）。
+    - 旧格式无契约：退回数量对齐（截断/补零），但显式告警存在错位风险。
+    """
+    artifact = model_data.get("_artifact")
+    contract = list(getattr(artifact, "feature_cols", []) or []) if artifact else []
+    if contract:
+        missing = [c for c in contract if c not in df_features.columns]
+        if missing:
+            raise ValueError(
+                f"推理特征缺失 {len(missing)} 列（训练/推理管线漂移，拒绝静默错位）: "
+                f"{missing[:8]}{'...' if len(missing) > 8 else ''}")
+        X = df_features[contract].to_numpy()
+        expected = getattr(model_data.get("model"), "n_features_in_", None)
+        if expected is not None and X.shape[1] != int(expected):
+            raise ValueError(
+                f"特征数与模型不符: 契约 {X.shape[1]} vs 模型 {int(expected)}")
+        return X[-1:]
+    logger.warning(
+        "模型无 feature_cols 契约（旧格式 pkl），退回数量对齐——存在静默错位风险，"
+        "建议重训以持久化特征契约")
+    return _align_features(df_features[fallback_cols].iloc[-1:].values,
+                           model_data.get("model"))
+
+
 class PredictionEngine:
     """推理引擎 - 加载训练好的模型进行预测"""
 
@@ -316,8 +345,9 @@ class PredictionEngine:
             model = model_data["model"]
             scaler = model_data["scaler"]
 
-            # 特征数对齐：训练时和推理时可能因目标列不同导致特征数不一致
-            latest = _align_features(latest, model)
+            # 特征对齐：优先按训练特征契约（名称+顺序，fail-close）；
+            # 旧格式无契约时退回数量对齐（截断/补零，显式告警错位风险）
+            latest = _align_features_by_contract(df_features, model_data, feature_cols)
 
             X_scaled = scaler.transform(latest) if scaler is not None else latest
             pred = int(model.predict(X_scaled)[0])
