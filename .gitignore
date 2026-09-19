@@ -44,8 +44,14 @@ venv/
 
 # 运行时产物目录
 logs/
-reports/
-data/raw/
+# Issue #55 离线复现：38 池日K（腾讯源 A股/ETF，2026-09-17 采集）与各命令读数产出，
+# 作为**冻结快照**入库（date,open,high,low,close,volume）。冻结就是为了不再依赖采集
+# 时刻：网络受限时缺行的短板已实测 —— edge-check 内连接对齐，缺行会把复现读数带偏
+# 而**不会**失败。路径名以 `.frozen.` 段显式区别于运行产物目录 reports/ 与 data/raw/。
+reports/**
+!reports/**/*.frozen.*.json
+data/raw/**
+!data/raw/**/*.frozen.*.csv
 # S13/G3：qlib .bin 列存与导出因子（离线生成物，不入 git）
 data/qlib_bin/
 data/qlib_factors/

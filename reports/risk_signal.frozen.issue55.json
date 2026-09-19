@@ -1,0 +1,212 @@
+{
+  "kind": "risk_signal_informativeness",
+  "affects_gate": false,
+  "readonly": true,
+  "boundary": "只报数：不改门禁 / 权重 / 池 / 配置；本模块只回答'值不值得立项'。",
+  "criterion": "增量判据 = 控制 trailing-vol 基线后的偏秩相关（partial IC）；方向：conf→未来波动 需 > 0、conf→未来回撤 需 < 0；且须**效应量** |IC| ≥ 0.10（防大 n 抬小相关）**且** |t| ≥ 2（t 已按重叠周期折算有效 n）。",
+  "effect_size_floor": 0.1,
+  "min_t": 2.0,
+  "n_symbols": 26,
+  "per_horizon": {
+    "5": {
+      "horizon_days": 5,
+      "available": true,
+      "reason": "",
+      "n_samples": 31481,
+      "n_effective": 6296,
+      "interpretation": "朴素 trailing-vol 基线本身最强（IC=0.705585），模型输出**不提供超出它的增量** ⇒ 风险预警用朴素基线即可，模型无附加价值。",
+      "ic_trailvol_vs_fwdvol": 0.705585,
+      "ic_trailvol_vs_fwdmdd": -0.355265,
+      "ic_prob_vs_fwdvol": -0.0278,
+      "ic_conf_vs_fwdvol": -0.011628,
+      "ic_prob_vs_fwdmdd": 0.004982,
+      "ic_conf_vs_fwdmdd": 0.006944,
+      "partial_ic_prob_fwdvol": 0.035004,
+      "partial_ic_conf_fwdvol": 0.021612,
+      "partial_ic_prob_fwdmdd": -0.023032,
+      "partial_ic_conf_fwdmdd": -0.007083,
+      "partial_ic_prob_fwdvol_t": 2.7787,
+      "partial_ic_conf_fwdvol_t": 1.715,
+      "partial_ic_prob_fwdmdd_t": -1.8277,
+      "partial_ic_conf_fwdmdd_t": -0.5619,
+      "vol_increment_hits": [],
+      "mdd_increment_hits": [],
+      "has_vol_increment": false,
+      "has_drawdown_increment": false,
+      "verdict": "no_increment_naive_wins"
+    },
+    "10": {
+      "horizon_days": 10,
+      "available": true,
+      "reason": "",
+      "n_samples": 31403,
+      "n_effective": 3140,
+      "interpretation": "朴素 trailing-vol 基线本身最强（IC=0.773607），模型输出**不提供超出它的增量** ⇒ 风险预警用朴素基线即可，模型无附加价值。",
+      "ic_trailvol_vs_fwdvol": 0.773607,
+      "ic_trailvol_vs_fwdmdd": -0.370932,
+      "ic_prob_vs_fwdvol": -0.032416,
+      "ic_conf_vs_fwdvol": -0.030135,
+      "ic_prob_vs_fwdmdd": 0.027119,
+      "ic_conf_vs_fwdmdd": 0.035104,
+      "partial_ic_prob_fwdvol": 0.043665,
+      "partial_ic_conf_fwdvol": 0.015796,
+      "partial_ic_prob_fwdmdd": -0.001782,
+      "partial_ic_conf_fwdmdd": 0.017103,
+      "partial_ic_prob_fwdvol_t": 2.4484,
+      "partial_ic_conf_fwdvol_t": 0.885,
+      "partial_ic_prob_fwdmdd_t": -0.0998,
+      "partial_ic_conf_fwdmdd_t": 0.9582,
+      "vol_increment_hits": [],
+      "mdd_increment_hits": [],
+      "has_vol_increment": false,
+      "has_drawdown_increment": false,
+      "verdict": "no_increment_naive_wins"
+    },
+    "20": {
+      "horizon_days": 20,
+      "available": true,
+      "reason": "",
+      "n_samples": 31247,
+      "n_effective": 1562,
+      "interpretation": "模型输出在**朴素波动基线之上**仍有显著增量 ⇒ 风险预警这条退路**有地基**，值得进一步做子池稳健性确认。",
+      "ic_trailvol_vs_fwdvol": 0.789705,
+      "ic_trailvol_vs_fwdmdd": -0.34966,
+      "ic_prob_vs_fwdvol": 0.020963,
+      "ic_conf_vs_fwdvol": -0.033374,
+      "ic_prob_vs_fwdmdd": -0.031174,
+      "ic_conf_vs_fwdmdd": 0.021497,
+      "partial_ic_prob_fwdvol": 0.121094,
+      "partial_ic_conf_fwdvol": 0.036599,
+      "partial_ic_prob_fwdmdd": -0.05853,
+      "partial_ic_conf_fwdmdd": -0.003421,
+      "partial_ic_prob_fwdvol_t": 4.8183,
+      "partial_ic_conf_fwdvol_t": 1.4465,
+      "partial_ic_prob_fwdmdd_t": -2.3157,
+      "partial_ic_conf_fwdmdd_t": -0.1351,
+      "vol_increment_hits": [
+        "partial_ic_prob_fwdvol"
+      ],
+      "mdd_increment_hits": [],
+      "has_vol_increment": true,
+      "has_drawdown_increment": false,
+      "verdict": "incremental_risk_signal"
+    }
+  },
+  "n_horizons_available": 3,
+  "n_horizons_with_increment": 1,
+  "stability": {
+    "kind": "risk_stability",
+    "horizon_days": 10,
+    "n_subsets_requested": 12,
+    "subset_size": 18,
+    "available": true,
+    "reason": "",
+    "trials": [
+      {
+        "available": true,
+        "n_samples": 22416,
+        "partial_ic_conf_fwdvol": 0.022765,
+        "partial_ic_conf_fwdvol_t": 1.0775,
+        "partial_ic_conf_fwdmdd": -0.016095,
+        "holds": false
+      },
+      {
+        "available": true,
+        "n_samples": 21092,
+        "partial_ic_conf_fwdvol": 0.0044,
+        "partial_ic_conf_fwdvol_t": 0.202,
+        "partial_ic_conf_fwdmdd": 0.044144,
+        "holds": false
+      },
+      {
+        "available": true,
+        "n_samples": 21847,
+        "partial_ic_conf_fwdvol": 0.034497,
+        "partial_ic_conf_fwdvol_t": 1.6124,
+        "partial_ic_conf_fwdmdd": -0.017774,
+        "holds": false
+      },
+      {
+        "available": true,
+        "n_samples": 21366,
+        "partial_ic_conf_fwdvol": 0.041276,
+        "partial_ic_conf_fwdvol_t": 1.9084,
+        "partial_ic_conf_fwdmdd": -0.014289,
+        "holds": false
+      },
+      {
+        "available": true,
+        "n_samples": 22320,
+        "partial_ic_conf_fwdvol": -0.00065,
+        "partial_ic_conf_fwdvol_t": -0.0307,
+        "partial_ic_conf_fwdmdd": -0.001429,
+        "holds": false
+      },
+      {
+        "available": true,
+        "n_samples": 22623,
+        "partial_ic_conf_fwdvol": -0.00058,
+        "partial_ic_conf_fwdvol_t": -0.0275,
+        "partial_ic_conf_fwdmdd": 0.014092,
+        "holds": false
+      },
+      {
+        "available": true,
+        "n_samples": 22509,
+        "partial_ic_conf_fwdvol": 0.002159,
+        "partial_ic_conf_fwdvol_t": 0.1024,
+        "partial_ic_conf_fwdmdd": 0.024445,
+        "holds": false
+      },
+      {
+        "available": true,
+        "n_samples": 21473,
+        "partial_ic_conf_fwdvol": -0.002509,
+        "partial_ic_conf_fwdvol_t": -0.1162,
+        "partial_ic_conf_fwdmdd": 0.003293,
+        "holds": false
+      },
+      {
+        "available": true,
+        "n_samples": 22142,
+        "partial_ic_conf_fwdvol": 0.030795,
+        "partial_ic_conf_fwdvol_t": 1.449,
+        "partial_ic_conf_fwdmdd": -0.003437,
+        "holds": false
+      },
+      {
+        "available": true,
+        "n_samples": 21607,
+        "partial_ic_conf_fwdvol": -0.021078,
+        "partial_ic_conf_fwdvol_t": -0.9794,
+        "partial_ic_conf_fwdmdd": 0.027883,
+        "holds": false
+      },
+      {
+        "available": true,
+        "n_samples": 22072,
+        "partial_ic_conf_fwdvol": 0.035631,
+        "partial_ic_conf_fwdvol_t": 1.6742,
+        "partial_ic_conf_fwdmdd": 0.015471,
+        "holds": false
+      },
+      {
+        "available": true,
+        "n_samples": 21585,
+        "partial_ic_conf_fwdvol": 0.020156,
+        "partial_ic_conf_fwdvol_t": 0.9361,
+        "partial_ic_conf_fwdmdd": 0.020213,
+        "holds": false
+      }
+    ],
+    "n_subsets_usable": 12,
+    "n_holds": 0,
+    "hold_rate": 0.0,
+    "robustness_verdict": "fragile",
+    "verdict_note": "'robust' 才够格作为立项依据（仍须人工签字）；'suggestive' 只能作下一步实验方向；'fragile' 不得外推。"
+  },
+  "conclusion": "risk_increment_fragile",
+  "recommendation": "增量风险信号在子池上不稳健（fragile）⇒ 不得外推，不支持据此立项。",
+  "command": "risk-signal",
+  "folds": 3
+}
