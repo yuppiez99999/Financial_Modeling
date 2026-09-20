@@ -267,10 +267,14 @@ class TestDecisionMaterialsNotDangling:
         """
         doc = DOC_PATH.read_text(encoding="utf-8")
         assert "11 条" in doc, "决策包文档声明的条目数与清单不一致"
-        manifest = _manifest()["checkpoints"]
+        # 2026-09-20 起新增 J 轮（S26），其检查点属**新一轮**、不在本文档计数范围。
+        # 本守卫按轮次归属限定 G/H/I，而非「凡 phase=decision 即计入」的旧假设。
+        i_round = ["T21.4", "T22.4", "T23.4", "T24.4", "T25.4"]
+        in_scope = set(i_round) | {"T11.2", "T12.3", "T13.4", "T14.3", "T15.3",
+                                   "T16.4", "T17.4", "T18.4", "T19.4", "T20.1", "T20.4"}
+        manifest = [c for c in _manifest()["checkpoints"] if c["id"] in in_scope]
         decision = [c for c in manifest if c.get("phase", "decision") == "decision"]
         planning = [c for c in manifest if c.get("phase") == "planning"]
-        i_round = ["T21.4", "T22.4", "T23.4", "T24.4", "T25.4"]
         confirmed_i = [c for c in decision if c["id"] in i_round]
         assert len(decision) == 11 + len(confirmed_i), (
             f"决策条目数异常: {len(decision)} != 11 + {len(confirmed_i)}")

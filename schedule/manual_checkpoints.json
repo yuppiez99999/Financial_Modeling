@@ -613,6 +613,63 @@
         "strategy_gate 逐字段零改动",
         "affects_gate 恒为 false"
       ]
+    },
+    {
+      "id": "T26.1",
+      "stage": "S26",
+      "priority": 17,
+      "question": "是否接受 Laya 开放权重的重型依赖代价（~1.7GB fp32 / ~2GB RAM）与许可证条款，以换取一个可离线复现的只读第二决策源",
+      "current_default": "默认 pending（无人工签字不放行）；不通过则整阶段取消",
+      "evidence": [
+        "reports/laya_evaluation.json"
+      ],
+      "doc": "00_kickoff/s26_laya_decision_conclusion.md",
+      "blocks": [
+        "Laya 只读接入是否开工（依赖重量 / 许可证 / py3.8 CI 离线兼容）"
+      ],
+      "status": "pending",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/66",
+      "round": "J1",
+      "phase": "admission",
+      "out_of_scope": [
+        "签字仅确认「是否接受依赖代价 + 许可证」本身，不含门禁/阈值/超参的任何变更",
+        "strategy_gate 逐字段零改动，affects_gate 恒为 false",
+        "不得把「适配器已交付」等同于「已接入真实权重」——真实后端须过本检查点后另行接入"
+      ],
+      "boundary": [
+        "strategy_gate 逐字段零改动",
+        "affects_gate 恒为 false"
+      ]
+    },
+    {
+      "id": "T26.5",
+      "stage": "S26",
+      "priority": 18,
+      "question": "Laya 是否接入（仅作只读评估臂 / 彻底不引入 / 整阶段取消）",
+      "current_default": "默认 defer（无人工签字不放行）",
+      "evidence": [
+        "reports/laya_evaluation.json",
+        "reports/laya_contrast.json",
+        "reports/laya_cascade_smoke.json",
+        "reports/laya_decision.json"
+      ],
+      "doc": "00_kickoff/s26_laya_decision_conclusion.md",
+      "blocks": [
+        "Laya 只读接入的最终保留决策"
+      ],
+      "status": "pending",
+      "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/66",
+      "round": "J1",
+      "phase": "decision",
+      "out_of_scope": [
+        "签字仅确认保留/取消本身，不含门禁/阈值/超参的任何变更",
+        "strategy_gate 逐字段零改动，affects_gate 恒为 false",
+        "离线对照为 unverifiable（真实权重未接入）时，不得以「Laya 有提升」为由放行"
+      ],
+      "boundary": [
+        "strategy_gate 逐字段零改动",
+        "affects_gate 恒为 false"
+      ]
     }
   ],
   "scope_note": "G 轮（S11~S15，Issue #29）与 H 轮（S16~S20，Issue #40）人工检查点统一收口：H 轮自动任务已全部交付（收口字段见 plan.json 各阶段 closing），H 轮人工检查点**全部进清单**——至此再无「已交付但未登记」；11 项均已由用户指令于 Issue #40 确认（确认对象 = 现状默认值）。",
@@ -644,9 +701,13 @@
     "reports/probability_calibration_20d.json",
     "reports/research_assist_decision.json",
     "reports/portfolio/portfolio_backtest.json",
-    "reports/drift/drift_monitor.json"
+    "reports/drift/drift_monitor.json",
+    "reports/laya_evaluation.json",
+    "reports/laya_contrast.json",
+    "reports/laya_cascade_smoke.json",
+    "reports/laya_decision.json"
   ],
-  "known_optional_evidence_note": "以下证据为**按需生成、不入 git** 的产物（跑对应命令才落盘）；登记在此是为了让「缺失」显式可见，而不是让引用悬空。守卫测试 tests/test_roadmap_manual_checkpoints.py::TestNoDanglingEvidenceRefs 双向校验。 2026-09-16 追加 S21~S25（I 轮）与 T 轮按需产物：组合回测 / 漂移监控报告为「跑命令才产出」的运行产物（reports/ 整目录 gitignored），与既有条目同性质；T 轮（TradingView 交付）产物落在 outputs/tv/exports/（同样 gitignored），其读数已随 Issue #55 评论与本轮 cairn 专题落库。",
+  "known_optional_evidence_note": "以下证据为**按需生成、不入 git** 的产物（跑对应命令才落盘）；登记在此是为了让「缺失」显式可见，而不是让引用悬空。守卫测试 tests/test_roadmap_manual_checkpoints.py::TestNoDanglingEvidenceRefs 双向校验。 2026-09-16 追加 S21~S25（I 轮）与 T 轮按需产物：组合回测 / 漂移监控报告为「跑命令才产出」的运行产物（reports/ 整目录 gitignored），与既有条目同性质；T 轮（TradingView 交付）产物落在 outputs/tv/exports/（同样 gitignored），其读数已随 Issue #55 评论与本轮 cairn 专题落库。 2026-09-20 追加 S26（J 轮）Laya 评估产物：reports/laya_*.json 为「跑 python main.py laya-decision 才产出」的运行产物（reports/ gitignored），与既有条目同性质。",
   "instruction": {
     "issue": "https://cnb.cool/yuppiez328/Financial_Modeling/-/issues/40",
     "text": "用户指令原文：「这11项确认 并继续按排期计划开发」",
@@ -667,6 +728,7 @@
     "I2",
     "I3",
     "I4",
-    "I5"
+    "I5",
+    "J1"
   ]
 }

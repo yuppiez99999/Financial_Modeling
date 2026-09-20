@@ -1,6 +1,14 @@
 # 16_金融市场预测模型 路线图（ROADMAP）
 
-**当前焦点**：Issue #55「决策源契约与优化」——**第九轮（全池基线读数冻结）已完成**：
+**当前焦点（新增）**：Issue #66「GitHub 项目接入选型」——**J 轮 S26 已开工**：
+方向裁定 **Laya 打底、只留本地 Laya（无 Jev 在线臂）**（用户决策「1同意 2只留Laya 3开工」）。
+Laya（Convai 开放权重、Jev 同构）给类型化决策 `choice`/`score`/`noul` + **校准置信度**、
+可本地跑 ⇒ 补契约层缺失的一环：一个**只读第二决策源 / 交叉验证臂**。
+T26.2/T26.3/T26.4 自动交付（`src/eval/laya_typed_decision.py`，全部 `readonly`、
+`affects_gate` 恒 false）；T26.1（重型依赖 ~1.7GB + 许可证准入）/ T26.5（保留决策）
+待人工签字（决策包 priority 17/18，pending）。详见 `00_kickoff/s26_laya_decision_conclusion.md`。
+
+**前序焦点**：Issue #55「决策源契约与优化」——**第九轮（全池基线读数冻结）已完成**：
 把前八轮**拆散在不同子集**上的结论钉到**同一条全池切片**，并把 38 池日K与各命令读数
 **冻结入库**（`data/raw/*.frozen.*.csv` + `reports/*.frozen.*.json`，离线可复算）。
 主读数：26 只 A股/ETF，基准年化 +18.44%，信号净超额 **−0.040%（t −0.41，`no_edge`）**；
