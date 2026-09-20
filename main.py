@@ -2874,6 +2874,120 @@ def run_research_assist(config: dict, symbols: list[str] | None = None,
     return {"evaluation": evaluation, "contrast": contrast, "decision": decision}
 
 
+def run_laya_decision(config: dict, symbols: list[str] | None = None,
+                       folds: int = 3, decided_by: str = "",
+                       reason: str = "", weights_path: str = "") -> dict:
+    """Laya 类型化决策只读接入评估（S26 / J1，T26.2~T26.4）。
+
+    四件事一次做完（全部只读、**结构性不进信号路径**）：
+      1. **适配器**（T26.2）：本地 Laya 只读适配器（`choice` / `score` / `noul`），
+         权重缺失即降级（不联网、不下载、不报错）；
+      2. **离线对照**（T26.3）：Laya 置信度 vs 现有 LightGBM 概率；
+         真实权重未接入 ⇒ 如实记 ``unverifiable`` + 止损（不编造效果）；
+      3. **级联冒烟**（T26.4）：**只留 Laya**（Jev 升级臂已按用户决策移除）
+         口径下的本地降级路径验证（零网络调用、零信号产出）；
+      4. **保留决策**（T26.5）：默认 ``defer`` / ``cancel``，无人工签字不放行。
+
+    ⚠️ ``affects_gate`` 与 ``affects_signal`` 恒为 False —— 这是结构性保证。
+    落盘 ``reports/laya_evaluation.json`` / ``laya_contrast.json`` /
+    ``laya_cascade_smoke.json`` / ``laya_decision.json``。
+    """
+    from src.eval.laya_typed_decision import (
+        LayaLocalAdapter, build_decision, build_laya_evaluation, cascade_smoke,
+        offline_contrast,
+    )
+
+    logger.info("Laya 类型化决策只读接入评估（J1 / S26）")
+    evaluation = build_laya_evaluation()
+
+    adapter = LayaLocalAdapter(weights_path=weights_path)
+    adapter_status = adapter.status()
+
+    # 离线对照用的样本：现行模型概率 + 未来收益（Laya 侧无真实输出）
+    contrast: dict = {}
+    symbols = symbols or _config_symbols(config)
+    try:
+        import scripts.evaluate_models as ev
+        from src.data.preprocessor import FeatureEngineer
+        from src.eval.hyperopt_tuner import current_lightgbm_params
+        from sklearn.preprocessing import StandardScaler
+
+        data = ev.load_market_data(config, symbols)
+        horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
+        days = int(_horizon_days_list(horizons_cfg)[0]) if _horizon_days_list(horizons_cfg) else 5
+        combined = ev.build_supervised(data, config, days) if data else None
+        if combined is not None and not combined.empty:
+            fe = FeatureEngineer(config)
+            cols = [c for c in fe.get_feature_columns(combined, days)
+                    if not str(c).startswith("_")]
+            splits = ev.walk_forward_splits(len(combined), folds)
+            X = combined[cols].to_numpy(dtype=float)
+            y = combined[f"target_{days}d"].to_numpy(int)
+            fwd = combined["_fwd_ret"].to_numpy(dtype=float)
+            params = current_lightgbm_params(config)
+            params = {k: (int(v) if k in ("num_leaves", "max_depth", "n_estimators")
+                          else float(v)) for k, v in params.items()}
+            from src.train.models import lightgbm_model as m
+
+            parts = []
+            for train_idx, test_idx in splits:
+                scaler = StandardScaler()
+                X_tr = scaler.fit_transform(X[train_idx])
+                X_te = scaler.transform(X[test_idx])
+                clf = m.lgb.LGBMClassifier(objective="binary", verbose=-1,
+                                           random_state=42, **params)
+                clf.fit(X_tr, y[train_idx])
+                parts.append(clf.predict_proba(X_te)[:, 1])
+            if parts:
+                proba = np.concatenate(parts)
+                ret = np.concatenate([fwd[te] for _, te in splits])
+                contrast = offline_contrast(proba, ret)
+                contrast["horizon_days"] = days
+    except Exception as e:  # noqa: BLE001 - 对照失败不拖垮评估（此处不是核心交付）
+        logger.warning(f"[laya-decision] 离线对照跳过（不影响评估）: {e}")
+        contrast = {"kind": "laya_contrast", "available": False,
+                    "reason": f"对照未执行: {e}",
+                    "verdict": "unverifiable", "stop_loss": True,
+                    "affects_gate": False, "affects_signal": False}
+
+    smoke = cascade_smoke(adapter_available=adapter.available)
+    decision = build_decision(evaluation, contrast,
+                              decided_by=decided_by, proceed=False, reason=reason)
+
+    out_dir = Path("reports")
+    out_dir.mkdir(exist_ok=True)
+    for name, payload in (("laya_evaluation.json", evaluation),
+                          ("laya_contrast.json", contrast),
+                          ("laya_cascade_smoke.json", smoke),
+                          ("laya_decision.json", decision)):
+        (out_dir / name).write_text(json.dumps(payload, ensure_ascii=False, indent=2),
+                                    encoding="utf-8")
+
+    _record_trial(config, "laya-decision", {
+        "n_worth_introducing": evaluation.get("n_worth_introducing"),
+        "verdict": decision.get("verdict"),
+        "contrast_verdict": contrast.get("verdict"),
+        "adapter_available": adapter.available,
+    })
+
+    print(json.dumps({
+        "evaluation": {"n_worth_introducing": evaluation["n_worth_introducing"],
+                       "n_needs_manual_admission": evaluation["n_needs_manual_admission"],
+                       "recommendation": evaluation["recommendation"]},
+        "adapter": adapter_status,
+        "contrast": {"verdict": contrast.get("verdict"),
+                     "stop_loss": contrast.get("stop_loss")},
+        "cascade_smoke": {"verdict": smoke["verdict"], "n_noul": smoke["n_noul"],
+                          "network_calls": smoke["network_calls"]},
+        "decision": {"verdict": decision["verdict"], "status": decision["status"],
+                     "blockers": decision["blockers"]},
+    }, ensure_ascii=False, indent=2))
+    print("\n报告已保存: reports/laya_evaluation.json / _contrast.json / "
+          "_cascade_smoke.json / _decision.json")
+    return {"evaluation": evaluation, "adapter": adapter_status,
+            "contrast": contrast, "cascade_smoke": smoke, "decision": decision}
+
+
 def _horizon_name_for(days: int, horizons_cfg: dict) -> str:
     """交易日数 → 配置里的 horizon 名（short_term 等）；找不到则用 ``h<days>d``。
 
@@ -4328,6 +4442,7 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py calibration              # 概率校准层：isotonic/Platt + Brier/ECE（S19/H4）
   python main.py calibration-ablation     # 校准层消融对照：base/platt/isotonic 决策读数并排（T19.4 证据）
   python main.py research-assist          # 投研辅助只读接入评估：候选调研 + 离线对照 + 决策单（S20/H5）
+  python main.py laya-decision             # Laya 类型化决策只读接入评估（S26/J1）：适配器 + 离线对照 + 级联冒烟 + 决策单
   python main.py portfolio-backtest      # 组合回测闭环：信号×门槛×成本三档→净值/回撤/换手/夏普（S21/I1，report_only）
   python main.py decision-feed            # 决策源契约导出：净方向概率/综合分/采纳建议 → reports/decision_feed.json
   python main.py decision-feed --stdout    # 同上，直接打印 JSON（供下游管道消费）
@@ -4354,7 +4469,7 @@ def build_parser() -> argparse.ArgumentParser:
         "calibration", "calibration-ablation", "research-assist",
         "portfolio-backtest", "drift-monitor", "feature-attribution",
         "decision-feed", "tv-export", "pool-collinearity", "model-improve",
-        "regime-signal", "edge-check", "ablation", "risk-signal",
+        "regime-signal", "edge-check", "ablation", "risk-signal", "laya-decision",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -4439,6 +4554,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="confidence-gate 命令：人工挑定的置信度阈值（须落在候选区间内）")
     parser.add_argument("--reason", dest="reason", default="",
                         help="horizon-decision 命令：人工确认/驳回的理由（写入决策单审计字段）")
+    parser.add_argument("--laya-weights", dest="laya_weights", default="",
+                        help="laya-decision 命令：本地 Laya 权重路径（缺省即降级，不联网、不下载）")
     parser.add_argument("--n-trials", dest="n_trials", type=int, default=20,
                         help="tune 命令：optuna 试验数（缺省 20）")
     parser.add_argument("--n-periods", dest="n_periods", type=int, default=3,
@@ -5231,6 +5348,13 @@ def main():
             config, symbols=_cli_symbols(args),
             decided_by=str(getattr(args, "decided_by", "") or ""),
             reason=str(getattr(args, "reason", "") or ""))
+    elif args.command == "laya-decision":
+        run_laya_decision(
+            config, symbols=_cli_symbols(args),
+            folds=int(getattr(args, "folds", 3) or 3),
+            decided_by=str(getattr(args, "decided_by", "") or ""),
+            reason=str(getattr(args, "reason", "") or ""),
+            weights_path=str(getattr(args, "laya_weights", "") or ""))
     elif args.command == "confidence-gate":
         _ct = getattr(args, "chosen_threshold", None)
         run_confidence_gate(

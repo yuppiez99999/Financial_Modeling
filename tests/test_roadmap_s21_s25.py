@@ -38,7 +38,11 @@ def test_round3_stages_exist():
     ids = [s["id"] for s in plan["stages"]]
     for sid in ROUND3_STAGE_IDS:
         assert sid in ids, f"缺少阶段 {sid}"
-    assert ids[-5:] == ROUND3_STAGE_IDS, "S21~S25 必须是排期最后五个阶段"
+    # 2026-09-20 起新增 J 轮（S26），故 S21~S25 不再必然位于排期末尾；
+    # 本守卫改为断言「I 轮五阶段按序连续且位于 H 轮之后」，不与后续轮次冲突。
+    assert ids[ids.index("S21"):ids.index("S21") + 5] == ROUND3_STAGE_IDS, \
+        "S21~S25 必须按序连续"
+    assert ids.index("S21") > ids.index("S20"), "I 轮必须置于 H 轮（S16~S20）之后"
 
 
 def test_round3_progress_is_honest_no_fake_completion():

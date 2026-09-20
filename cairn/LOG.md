@@ -2,6 +2,26 @@
 
 本文件按倒序记录项目的实质性进展——最新条目紧贴本行下方。每条保持简短——只写摘要与指针；结论沉淀到 `cairn/<topic>.md` 知识专题文档。
 
+## 2026-09-20 · Laya 类型化决策只读接入开工（Issue #66 · J 轮 S26）
+
+- Issue #66 问「Jev 与 Laya 哪个适合接入」。上一轮结论：**两者分工不同、非二选一**
+  （Laya 开放权重可本地跑 / Jev 闭源托管 API）。用户决策「1同意 2只留Laya 3开工」：
+  **只留 Laya** —— 移除原设计的 Jev 在线升级臂（闭源 API = 网络依赖 + 成本 +
+  不可复现，撞上 H5 被否的三条死因），级联简化为**纯本地降级**。
+- 新增 S26（J1）入排期：T26.2/T26.3/T26.4 自动交付，T26.1/T26.5 人工检查点
+  （进决策包 priority 17/18，status pending，NPC 不代签）。
+- 交付 `src/eval/laya_typed_decision.py`：`LayaLocalAdapter` 本地只读适配
+  （`choice`/`score`/`noul`；权重缺失即降级 `unavailable`，**不联网、不下载、不报错**）
+  + `offline_contrast`（真实权重未接入 ⇒ 如实记 `unverifiable` + 止损，不编造效果）
+  + `cascade_smoke`（只留 Laya 的本地降级路径：零网络调用、零信号产出）。
+- CLI：`python main.py laya-decision [--laya-weights ...]`；落盘
+  `reports/laya_evaluation.json` / `_contrast.json` / `_cascade_smoke.json` / `_decision.json`。
+- **纪律**：全部产出 `readonly=True`、无 `probability`/`direction`/`signal` 字段，
+  `affects_gate`/`affects_signal` 恒 False（结构性保证）；`strategy_gate` 零改动。
+- 新增 `tests/test_laya_typed_decision.py` 35 条守卫（全离线）；并修三处**旧守卫把
+  「排期末尾/凡 decision 即已签」写死**的假设（S26 新增后被误判）—— 改为按轮次归属限定。
+- 详见 `00_kickoff/s26_laya_decision_conclusion.md`。
+
 ## 2026-09-17 · 全池 38 标的状态分层 + 两条静默缺陷（Issue #55 第八轮）
 
 - 第七轮留的"全池 38 标的分状态读数待跑"本轮跑完，并在过程中揪出**两条早就存在**

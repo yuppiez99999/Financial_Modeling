@@ -48,9 +48,16 @@ def _manifest() -> dict:
 
 
 def _decision_entries() -> list[dict]:
-    """已签字决策包条目（G/H 轮收官确认，全部必须 confirmed）。"""
+    """已签字决策包条目（G/H/I 轮收官确认，全部必须 confirmed）。
+
+    2026-09-20 起新增 J 轮（S26）：其人工检查点属**新一轮**、按「规划期 → 决策」
+    推进，签字段只能在后轮由人工补入。本守卫按**轮次归属**限定范围
+    （G/H/I），而非「凡 phase=decision 即已确认」的旧假设 ——
+    后者会把新轮的 pending 决策条目误判为「未确认的已签条目」。
+    """
+    in_scope = set(EXPECTED_IDS) | set(I_ROUND_IDS)
     return [cp for cp in _manifest()["checkpoints"]
-            if cp.get("phase", "decision") == "decision"]
+            if cp["id"] in in_scope]
 
 
 def _planning_entries() -> list[dict]:
