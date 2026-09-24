@@ -41,16 +41,44 @@ Laya 是 Jev 的**开放权重同构替代**（同一 request/response 形状：
   （高置信子集命中率 + 置信度分档×收益单调性 + 两源 Spearman）；
   真实权重未接入时如实记 `unverifiable` + **止损**（延续 H5，不编造效果）；
 - **级联冒烟**（T26.4）：只留 Laya 口径下的本地降级路径验证（`network_calls=0`、`raises=False`）；
-- **保留决策**（T26.5）：决策单，无 `decided_by` 时最多 `defer` / `cancel`。
+- **保留决策**（T26.5）：决策单，无 `decided_by` 时最多 `defer` / `cancel`；
+- **冻结快照回放对账**（T26.6，2026-09-24 补交付）：把「先批 T26.1 重型依赖、
+  再发现 T26.3 对照不可复现」这一**顺序风险**，变成审批时就能看到的读数。
 
 复现命令：
 
 ```bash
 python main.py laya-decision                      # 适配器 + 离线对照 + 级联冒烟 + 决策单
 python main.py laya-decision --laya-weights /path/to/laya   # 指定本地权重（仍只读）
+python main.py laya-replay                        # 冻结快照回放对账（T26.6，只读、不联网）
 ```
 
-落盘：`reports/laya_evaluation.json` / `laya_contrast.json` / `laya_cascade_smoke.json` / `laya_decision.json`。
+落盘：`reports/laya_evaluation.json` / `laya_contrast.json` / `laya_cascade_smoke.json` / `laya_decision.json` / `laya_replay.json`。
+
+### 3.1 T26.6：为什么回放对账必须在 T26.1 之前（实测）
+
+对照用的行情是 `data/raw/<symbol>.csv` —— 那是一份**滑动增量缓存**，
+不是可复现的快照。实测两条结构事实：
+
+1. **它按日期标签对齐，而日期标签是错位的**：同一价格序列（金额列逐行相等）
+   在缓存里的日期比冻结快照整体晚 **5 个交易日**（`600519.SH`：缓存 2025-03-14 起，
+   快照 2025-03-07 起）；
+2. **它只保留最近 N 行**（实测 400 行，窗口随每次追加而滑动）。
+
+⇒ 同一份模型输出，在"采集日 A"与"采集日 B"上做对照，**样本落在不同的价格序列上**。
+若先批 T26.1、再在 T26.3 撞上这件事，那 1.7GB 依赖就被**白批**了。
+
+`python main.py laya-replay` 的读数（真实数据，只读）：
+
+| 项 | 值 |
+|---|---|
+| 成对标的（缓存 ↔ 冻结快照） | 3 / 28（其余 25 只已只剩快照，缓存窗口已滑走） |
+| 价格序列逐行相等 | ✅ 3/3（含 `600519.SH` / `000858.SZ` / `300308.SZ`） |
+| 日期标签对齐 | ❌ 0/3（错位 **5~7 个交易日**） |
+| 结论 | `replayable_with_label_drift` |
+
+**判定**：对照**可离线复算**（价格同一），但**口径必须以冻结快照的日期为准**，
+不得混用缓存的错位标签 —— 否则日期语义与 `reports/*.frozen.*.json` 里的读数**对不上**。
 
 ## 四、准入评估结果（T26.1 材料）
 
@@ -70,10 +98,13 @@ python main.py laya-decision --laya-weights /path/to/laya   # 指定本地权重
 | T26.2 | `src/eval/laya_typed_decision.py`：只读适配器（挂报告层） | ✅ |
 | T26.3 | 离线对照（Laya vs LightGBM 概率） | ✅ |
 | T26.4 | 级联冒烟（只留 Laya 的本地降级路径） | ✅ |
+| T26.6 | 冻结快照回放对账（`src/eval/laya_frozen_replay.py`，接入前必做） | ✅ |
 | T26.5 | 是否接入 / 是否仅评估 | 🔶 人工 |
 
 CLI：`python main.py laya-decision [--laya-weights ... --decided-by ... --reason ...]`
-测试：`tests/test_laya_typed_decision.py`（全离线合成数据，不触网、不下载权重）
+      `python main.py laya-replay`（T26.6）
+测试：`tests/test_laya_typed_decision.py` + `tests/test_laya_frozen_replay.py`
+（全离线合成数据，不触网、不下载权重）
 
 ## 六、边界（写在最前，也写在最后）
 
@@ -82,4 +113,6 @@ CLI：`python main.py laya-decision [--laya-weights ... --decided-by ... --reaso
 - **CI 离线**：只用本地权重；权重缺失如实降级 `unavailable`，**不联网、不下载**；
 - **不编造效果**：真实权重未接入 ⇒ 对照记 `unverifiable` + 止损，
   **不得**以「Laya 有提升」为由放行；
-- **strategy_gate 零改动**。
+- **strategy_gate 零改动**；
+- **回放对账只读**（T26.6）：不写数据、不改配置、不联网；缺缓存 / 缺快照如实 `unverifiable`，
+  不给"没证明"的结论。

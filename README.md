@@ -364,6 +364,20 @@ python main.py schedule         # 自动重训练调度（常驻）
 > 另修掉 `feature_cols` 契约隐患：训练端持久化 + 推理端按**名称+顺序**对齐，
 > 缺列/数量不符 **fail-close 显式报错**，静默截断/填零的错位风险就此关闭。
 
+> 🔌 **Laya 只读决策源接入（J 轮 S26，Issue #66）**：
+> `python main.py laya-decision` / `python main.py laya-replay`（只读，`affects_gate=false`）
+> —— 方向裁定：**Laya 打底、只留本地 Laya**（Jev 闭源在线臂按用户决策移除，避免网络依赖 /
+> 成本 / 不可复现）。Laya 的 `choice`/`score`/`noul` + **校准置信度**用来补契约层缺失的一环：
+> 一个可离线复现的**只读第二决策源 / 交叉验证臂**；产出全部无
+> `probability`/`direction`/`signal` 字段，`affects_gate`/`affects_signal` **恒 false**。
+> **接入前先过可复现性证明**（T26.6）：对照用的 `data/raw/*.csv` 是**滑动增量缓存**
+> （只留最近 400 行、日期标签整体偏 5~7 个交易日）⇒ 同一模型输出在不同采集日会落在
+> **不同价格序列**上。`laya-replay` 逐行对账「缓存 ↔ 冻结快照」：实测
+> **价格逐行相等 ✅ 3/3、日期标签错位 ❌ 0/3** ⇒ `replayable_with_label_drift`
+> —— 对照**可离线复算**，但口径**必须认冻结快照的日期**。
+> T26.1（~1.7GB 重型依赖 + 许可证准入）/ T26.5（保留决策）仍 `pending`，**NPC 不代签**。
+> 详见 [Laya 只读接入边界](cairn/laya-readonly-admission.md)。
+
 > 📌 完整命令与配置请参见 → [**16_金融市场预测模型/README.md**](16_金融市场预测模型/README.md)
 
 ---
