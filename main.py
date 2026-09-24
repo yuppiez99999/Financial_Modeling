@@ -2911,9 +2911,21 @@ def run_laya_decision(config: dict, symbols: list[str] | None = None,
         import scripts.evaluate_models as ev
         from src.data.preprocessor import FeatureEngineer
         from src.eval.hyperopt_tuner import current_lightgbm_params
+        from src.eval.laya_frozen_replay import FROZEN_GLOB, load_frozen_frames
         from sklearn.preprocessing import StandardScaler
 
-        data = ev.load_market_data(config, symbols)
+        # T26.8：对照数据基优先取**已入库冻结快照**（机器无关、离线可复现）。
+        # 滑窗缓存是 gitignore 的机器本地文件，且跨机会因复权锚点重算与冻结基线
+        # 分叉（T26.6/T26.8 实测：尾部共同日期相等、历史逐日漂移）⇒
+        # 准入对照只在快照基上跑，读数任何机器一致；无冻结快照才退回缓存。
+        frozen_frames = load_frozen_frames(symbols=set(symbols))
+        if frozen_frames:
+            data = frozen_frames
+            symbols = sorted(frozen_frames)
+            data_base = FROZEN_GLOB
+        else:
+            data = ev.load_market_data(config, symbols)
+            data_base = "cache"
         horizons_cfg = (config.get("data", {}) or {}).get("prediction_horizons", {}) or {}
         days = int(_horizon_days_list(horizons_cfg)[0]) if _horizon_days_list(horizons_cfg) else 5
         combined = ev.build_supervised(data, config, days) if data else None
@@ -2944,6 +2956,7 @@ def run_laya_decision(config: dict, symbols: list[str] | None = None,
                 ret = np.concatenate([fwd[te] for _, te in splits])
                 contrast = offline_contrast(proba, ret)
                 contrast["horizon_days"] = days
+                contrast["data_base"] = data_base
     except Exception as e:  # noqa: BLE001 - 对照失败不拖垮评估（此处不是核心交付）
         logger.warning(f"[laya-decision] 离线对照跳过（不影响评估）: {e}")
         contrast = {"kind": "laya_contrast", "available": False,

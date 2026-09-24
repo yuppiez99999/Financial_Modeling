@@ -2,6 +2,31 @@
 
 本文件按倒序记录项目的实质性进展——最新条目紧贴本行下方。每条保持简短——只写摘要与指针；结论沉淀到 `cairn/<topic>.md` 知识专题文档。
 
+## 2026-09-25 · 同步远端 + Laya 对照数据基冻结化与分歧诊断（Issue #66 · J 轮 S26 · T26.8）
+
+- 用户「同步到本地并按排期继续开发」⇒ 本地 main 快进到 658f711（S26 自动任务全交付、
+  T26.1/T26.5 待人工）；同步后 `pytest` 抓到 **T26.6 回放守卫失败**（`snapshot_diverged`），
+  顺藤摸出**第三条结构事实**：换机器后滑窗缓存与冻结快照**确实不是同一价格序列** ——
+  分红/拆股后前复权全序列按**更晚锚点**重算（实测 000408.SZ：尾部 10 个共同日期
+  OHLC 相等、2020 年代差 116 倍；volume 口径全窗 0 相等）。
+- **两处旧口径更正**（判据不放松）：① 按位置前缀比对把「窗口形状不同」误判为
+  「价格分叉」（跨机 26/28 全数 diverged）；② diverged 处置写成「重建冻结快照」——
+  会使 Issue #55 第九轮 `reports/*.frozen.*.json` 基线失效，**方向反了**。
+- **交付 T26.8**：`laya_frozen_replay.py` 对齐搜索（头部锚 ∪ 尾部锚 ±5）+
+  diverged 必带诊断 `divergence_pattern`（`qfq_reanchor` / `recent_revision` /
+  `hard_divergence` / `undetermined`）+ 价格同一性只看 OHLC；新增
+  `load_frozen_frames`（冻结快照 → 机器无关行情帧）；`laya-decision` 对照数据基
+  **优先冻结快照**（实测 `data_base=frozen.20260917`、31547 样本、unverifiable 如实止损）。
+  本机读数：diverged 26 = qfq 10 / recent_revision 5 / hard 2 / undetermined 9 ——
+  qfq/revision 不阻断**快照基**对照；hard 2 只（600519.SH 等）须人工核查。
+- **守卫重构**：原「n_diverged==0」守卫依赖机器本地缓存、只在交付机成立；
+  仓库层改钉「快照可离线加载 + 分歧必带诊断」，机器本地数据链健康度进 T26.1
+  准入材料。排期 S26 登记 T26.8（`auto_acceptable`），全部产出
+  `affects_gate`/`affects_signal` 恒 False、不写数据、不联网。
+- **边界**：T26.1/T26.5 仍 `pending`，NPC 不代签。
+- 详见 `00_kickoff/s26_laya_decision_conclusion.md` §3.1 更正与 §3.3、
+  `cairn/laya-readonly-admission.md` 四·补。
+
 ## 2026-09-24 · Laya 对照判据的接入前预注册（Issue #66 · J 轮 S26 · T26.7）
 
 - 用户「继续」⇒ 承接 T26.6，补**同一顺序风险的下一层**：T26.6 只答了

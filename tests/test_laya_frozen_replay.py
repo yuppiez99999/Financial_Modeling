@@ -170,12 +170,32 @@ class TestReplayReport:
 # 真实仓库形态：接入前可复现性（只读，不写盘）
 # ----------------------------------------------------------------------
 class TestRepoSnapshotShape:
-    def test_repo_pairs_are_replayable_or_unverifiable(self):
-        """本仓库现存快照对账：只允许 `replayable*` / `unverifiable`，绝不允许 diverged。"""
+    def test_repo_frozen_frames_load_offline(self):
+        """冻结快照是仓库内**唯一机器无关行情源**（T26.8）：已入库、可离线加载、列契约齐备。"""
+        frames = R.load_frozen_frames()
+        assert frames, "冻结快照缺失：回放对账无法离线进行"
+        required = {"date", *R.PRICE_COLUMNS}
+        for sym, df in frames.items():
+            assert required <= set(df.columns), sym
+            assert len(df) >= R.MIN_COMMON_ROWS, sym
+
+    def test_repo_divergence_always_diagnosed(self):
+        """任何 diverged 必须带 divergence_pattern 诊断 —— 不给无解释的分歧（T26.8）。
+
+        更正说明（2026-09-25）：本类原有的守卫是「本仓库现存对账只允许
+        replayable* / unverifiable，绝不允许 diverged」。该守卫写在交付机上
+        （那里缓存 ≡ 冻结基线），但缓存是 gitignore 的**机器本地文件**：
+        跨机实测（2026-09-25）复权锚点重算使 26/28 对 diverged —— 分叉本身
+        是跨机常态、且不影响**快照基**对照（T26.8 已交付）。仓库守卫能钉死的
+        是「分歧必须带诊断」；机器本地数据链健康度进 T26.1 的准入材料
+        （admission_implication），不进仓库守卫。
+        """
         rep = R.build_replay_report()
         assert rep["conclusion"] in ("replayable", "replayable_with_label_drift",
-                                     "unverifiable"), rep["conclusion"]
-        assert rep["n_diverged"] == 0, "缓存与冻结快照出现价格分叉，对照不可复现"
+                                     "snapshot_diverged", "unverifiable"), rep["conclusion"]
+        for p in rep["pairs"]:
+            if p.get("verdict") == "snapshot_diverged":
+                assert p.get("divergence_pattern") in R.DIVERGENCE_PATTERNS, p["symbol"]
 
     def test_frozen_glob_is_declared_and_offline(self):
         """冻结快照必须已入库（CI 不触网），路径可枚举。"""
@@ -184,6 +204,118 @@ class TestRepoSnapshotShape:
 
 def rep_glob_has_files() -> bool:
     return len(glob.glob(str(PROJECT_ROOT / R.FROZEN_GLOB))) > 0
+
+
+# ----------------------------------------------------------------------
+# T26.8：分歧诊断 + 冻结快照数据基
+# ----------------------------------------------------------------------
+def _write_pair_custom(tmp_path: Path, *, n: int, rebase_from: int = 0,
+                       rebase_factor: float = 1.0, revise_last: int = 0,
+                       volume_base_frozen: int = 1_000_000,
+                       volume_base_cache: int = 1_000_000):
+    """造一对可精细控制分歧形态的「缓存 ↔ 冻结快照」。
+
+    - `rebase_from`/`rebase_factor`：前 `rebase_from` 行价格乘系数（qfq 锚点重算形态）；
+    - `revise_last`：最后 N 行 close 加一个偏移（最近行修订形态）；
+    - `volume_base_*`：两边 volume 基数不同（跨机股/手口径差的抽象）。
+    """
+    raw = tmp_path / "data" / "raw"
+    raw.mkdir(parents=True, exist_ok=True)
+    rng = np.random.default_rng(42)
+    closes = list(100 * np.exp(np.cumsum(rng.normal(0, 0.01, n))))
+    dates = pd.bdate_range("2024-01-01", periods=n)
+
+    def _dump(path: Path, *, factor: float, vol_base: int, revise: int = 0) -> None:
+        adj = [c * (factor if i < rebase_from else 1.0) for i, c in enumerate(closes)]
+        if revise:
+            adj = adj[:-revise] + [c + 0.12 for c in adj[-revise:]]
+        pd.DataFrame({
+            "date": dates, "open": adj, "high": [c * 1.01 for c in adj],
+            "low": [c * 0.99 for c in adj], "close": adj,
+            "volume": [vol_base + i for i in range(n)],
+        }).to_csv(path, index=False)
+
+    frozen_path = raw / f"TEST.SH.frozen.{FROZEN_TAG}.csv"
+    cache_path = raw / "TEST.SH.csv"
+    _dump(frozen_path, factor=1.0, vol_base=volume_base_frozen)
+    _dump(cache_path, factor=rebase_factor, vol_base=volume_base_cache,
+          revise=revise_last and 1 or 0)
+    return cache_path, frozen_path
+
+
+class TestDivergenceDiagnosis:
+    def test_qfq_reanchor_tail_anchored_history_rebased(self, tmp_path):
+        """历史 ×1.2 重算、尾部 10 行相等 ⇒ qfq_reanchor；volume 全不同**不否决**价格同一性。"""
+        c, f = _write_pair_custom(tmp_path, n=300, rebase_from=290, rebase_factor=1.2,
+                                  volume_base_cache=3_000_000)
+        r = R.reconcile_pair(str(c), str(f))
+        assert r["verdict"] == "snapshot_diverged"
+        assert r["divergence_pattern"] == "qfq_reanchor"
+        assert r["tail_price_match_rate"] >= R.TAIL_MATCH_MIN
+        assert r["older_price_match_rate"] <= R.OLDER_MATCH_MAX
+        assert r["volume_identical_rate"] == 0.0
+        assert "复权锚点" in r["reason"]
+        assert "不可复现" in r["reason"]
+
+    def test_recent_revision_history_identical_tail_row_revised(self, tmp_path):
+        """历史完全一致、仅最后 1 行不同（快照日盘中采集/数据源修订）⇒ recent_revision。"""
+        c, f = _write_pair_custom(tmp_path, n=300, revise_last=1,
+                                  volume_base_cache=2_500_000)
+        r = R.reconcile_pair(str(c), str(f))
+        assert r["verdict"] == "snapshot_diverged"
+        assert r["divergence_pattern"] == "recent_revision"
+        assert r["older_price_match_rate"] >= R.OLDER_MATCH_MIN
+        assert "最近" in r["reason"] or "修订" in r["reason"]
+
+    def test_hard_divergence_tail_also_differs(self, tmp_path):
+        c, f = _synthetic_pairs(tmp_path, diverged=True)
+        r = R.reconcile_pair(str(c), str(f))
+        assert r["divergence_pattern"] == "hard_divergence"
+
+    def test_price_equal_volume_different_is_replayable(self, tmp_path):
+        """价格同一、仅 volume 口径不同 ⇒ 仍 replayable（volume 不参与同一性判定）。"""
+        c, f = _write_pair_custom(tmp_path, n=300, volume_base_cache=9_000_000)
+        r = R.reconcile_pair(str(c), str(f))
+        assert r["verdict"] == "replayable"
+        assert r["volume_identical_rate"] == 0.0
+
+    def test_label_shift_still_detected_on_identical_prices(self, tmp_path):
+        """对齐搜索不回归 T26.6 原语义：同序列 + 日期错位 ⇒ replayable + 标签漂移读数。"""
+        c, f = _synthetic_pairs(tmp_path, offset_days=5)
+        r = R.reconcile_pair(str(c), str(f))
+        assert r["verdict"] == "replayable"
+        assert r["label_aligned"] is False
+        assert r["n_label_mismatch"] == 300
+
+
+class TestFrozenDataBase:
+    def test_load_frozen_frames_reads_committed_snapshots(self, tmp_path):
+        c, f = _write_pair_custom(tmp_path, n=300)
+        frames = R.load_frozen_frames(raw_dir=str(tmp_path / "data" / "raw"),
+                                      frozen_glob=f"data/raw/*.frozen.{FROZEN_TAG}.csv")
+        assert set(frames) == {"TEST.SH"}
+        df = frames["TEST.SH"]
+        assert {"date", *R.PRICE_COLUMNS, "volume"} <= set(df.columns)
+        assert len(df) == 300
+        # 排序 + 去重契约：日期单调
+        assert df["date"].is_monotonic_increasing
+
+    def test_load_frozen_frames_symbol_filter_and_missing_dir(self, tmp_path):
+        _write_pair_custom(tmp_path, n=300)
+        raw = str(tmp_path / "data" / "raw")
+        glob_pat = f"data/raw/*.frozen.{FROZEN_TAG}.csv"
+        assert R.load_frozen_frames(raw_dir=raw, frozen_glob=glob_pat,
+                                    symbols=["NOPE.SH"]) == {}
+        assert R.load_frozen_frames(raw_dir=str(tmp_path / "no_such_dir"),
+                                    frozen_glob=glob_pat) == {}
+
+    def test_frames_are_readonly_shaped(self, tmp_path):
+        """数据基只读：加载不落盘、不联网 —— 产出仅内存字典（结构性保证，防写缓存的误用）。"""
+        c, f = _write_pair_custom(tmp_path, n=300)
+        before = c.read_text(encoding="utf-8")
+        R.load_frozen_frames(raw_dir=str(tmp_path / "data" / "raw"),
+                             frozen_glob=f"data/raw/*.frozen.{FROZEN_TAG}.csv")
+        assert c.read_text(encoding="utf-8") == before
 
 
 # ----------------------------------------------------------------------
@@ -198,6 +330,14 @@ class TestScheduleOrdering:
         s = self._stage()
         assert "T26.6" in s["auto_acceptable"]
         t = next(x for x in s["tasks"] if x["id"] == "T26.6")
+        assert t["status"] == "completed"
+        assert t.get("completed_at") and t.get("result")
+
+    def test_t26_8_registered_and_delivered(self):
+        """T26.8（对照数据基冻结化 + 分歧诊断）同属 T26.1 之前的自动补交付。"""
+        s = self._stage()
+        assert "T26.8" in s["auto_acceptable"]
+        t = next(x for x in s["tasks"] if x["id"] == "T26.8")
         assert t["status"] == "completed"
         assert t.get("completed_at") and t.get("result")
 
