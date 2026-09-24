@@ -9,6 +9,10 @@ T26.2/T26.3/T26.4 自动交付（`src/eval/laya_typed_decision.py`，全部 `rea
 把「先批 T26.1 重型依赖、再发现 T26.3 对照不可复现」这一**顺序风险**变成审批时可见的读数
 （`python main.py laya-replay`，实测 `replayable_with_label_drift`：价格逐行相等、
 日期标签错位 5~7 个交易日 ⇒ 可离线复算，但口径须认冻结快照日期）；
+T26.7（**对照判据的接入前预注册**，同日补交付）再补一层：T26.3 的对照**没有预先写死的
+通过/不通过规则**，等真实权重跑出数字再定「多少算好」= 事后挑规则（post-hoc）、
+不可证伪 ⇒ 把三条门（命中率增量下限 / 两源相关性上限 / 分档×收益单调性）在 T26.1 之前
+冻结（`python main.py laya-prereg`，规则进 sha256 指纹，**无预注册规则一律不判 pass**）；
 T26.1（重型依赖 ~1.7GB + 许可证准入）/ T26.5（保留决策）
 待人工签字（决策包 priority 17/18，pending）。详见 `00_kickoff/s26_laya_decision_conclusion.md`。
 

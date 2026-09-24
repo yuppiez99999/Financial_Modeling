@@ -51,9 +51,10 @@ Laya 是 Jev 的**开放权重同构替代**（同一 request/response 形状：
 python main.py laya-decision                      # 适配器 + 离线对照 + 级联冒烟 + 决策单
 python main.py laya-decision --laya-weights /path/to/laya   # 指定本地权重（仍只读）
 python main.py laya-replay                        # 冻结快照回放对账（T26.6，只读、不联网）
+python main.py laya-prereg                        # 对照判据预注册（T26.7，只读、规则先于跑数）
 ```
 
-落盘：`reports/laya_evaluation.json` / `laya_contrast.json` / `laya_cascade_smoke.json` / `laya_decision.json` / `laya_replay.json`。
+落盘：`reports/laya_evaluation.json` / `laya_contrast.json` / `laya_cascade_smoke.json` / `laya_decision.json` / `laya_replay.json` / `laya_contrast_prereg.json`。
 
 ### 3.1 T26.6：为什么回放对账必须在 T26.1 之前（实测）
 
@@ -80,6 +81,35 @@ python main.py laya-replay                        # 冻结快照回放对账（T
 **判定**：对照**可离线复算**（价格同一），但**口径必须以冻结快照的日期为准**，
 不得混用缓存的错位标签 —— 否则日期语义与 `reports/*.frozen.*.json` 里的读数**对不上**。
 
+### 3.2 T26.7：为什么「判定规则」也必须在 T26.1 之前冻结
+
+T26.6 回答了「批了之后对照**能不能离线复现**」，但还剩一个更靠后的洞：
+**T26.3 的对照没有预先写死的判定规则**。读代码可见，`offline_contrast()`
+会算出 `delta_hit_rate` / `spearman_vs_baseline` / 置信度分档×收益 一堆读数，
+**但没有任何一条「达到什么算通过」的线**。后果很具体：
+
+> 等真实权重接进来、跑出数字，再回头定「多少算好」—— 那就是**事后挑规则**，
+> 读数再漂亮也**不可证伪**。
+
+本项目已吃过这类亏并已建纪律（S13 试验登记 / S17 统一试验预算 / S25 DSR > 0.5 采信标准）。
+⇒ `python main.py laya-prereg` 把 T26.3 的判定规则**在 T26.1 之前冻结**：
+
+| 门 | 阈值 | 理由 |
+|---|---|---|
+| 命中率增量下限 | `delta_hit_rate ≥ 0.02` | 现有概率 spread ≈ 1pp；Laya 给不出 2pp 增量则无边际 |
+| 两源相关性上限 | `|spearman| ≤ 0.85` | 超上限说明两源重复、边际为零 |
+| 分档×收益单调性 | 单调非递减 | 复用契约层「高置信 ≠ 可采信」判据 |
+
+规则内容进 `criterion_fingerprint`（sha256）——**规则一改，指纹即变**，
+该次读数不得再当「预注册结果」引用。判定词表 fail-close：
+`pass` / `fail` / `unverifiable` / `no_preregistered_criterion`
+（**无预注册规则一律不判 pass**）。现状：真实权重未接入 ⇒ `unverifiable`，
+待权重接入后**原样套用**即可。
+
+```bash
+python main.py laya-prereg     # 输出预注册规则 + 指纹 + 按当前读数的一次判定
+```
+
 ## 四、准入评估结果（T26.1 材料）
 
 | 候选 | 离线可复现 | 许可证 | 依赖重量 | 判定 |
@@ -99,6 +129,7 @@ python main.py laya-replay                        # 冻结快照回放对账（T
 | T26.3 | 离线对照（Laya vs LightGBM 概率） | ✅ |
 | T26.4 | 级联冒烟（只留 Laya 的本地降级路径） | ✅ |
 | T26.6 | 冻结快照回放对账（`src/eval/laya_frozen_replay.py`，接入前必做） | ✅ |
+| T26.7 | 对照判据预注册（`src/eval/laya_contrast_prereg.py`，规则先于跑数） | ✅ |
 | T26.5 | 是否接入 / 是否仅评估 | 🔶 人工 |
 
 CLI：`python main.py laya-decision [--laya-weights ... --decided-by ... --reason ...]`
@@ -115,4 +146,6 @@ CLI：`python main.py laya-decision [--laya-weights ... --decided-by ... --reaso
   **不得**以「Laya 有提升」为由放行；
 - **strategy_gate 零改动**；
 - **回放对账只读**（T26.6）：不写数据、不改配置、不联网；缺缓存 / 缺快照如实 `unverifiable`，
-  不给"没证明"的结论。
+  不给"没证明"的结论；
+- **判定规则先于跑数**（T26.7）：T26.3 的通过/不通过规则在 T26.1 之前冻结（指纹钉死），
+  无预注册规则一律不判 `pass`；规则改动须递版本号并重跑。

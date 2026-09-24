@@ -224,9 +224,10 @@ class TestScheduleConsistency:
         s = self._stage()
         assert s["round"] == "J1"
         assert s["affects_gate"] is False
-        # T26.6（冻结快照回放对账，2026-09-24 补交付）同属自动项：
-        # 它必须在 T26.1 准入签字**之前**完成 —— 先证明对照可离线复现，再批重型依赖。
-        assert set(s["auto_acceptable"]) == {"T26.2", "T26.3", "T26.4", "T26.6"}
+        # T26.6（冻结快照回放对账）/ T26.7（对照判据预注册），2026-09-24 补交付）同属自动项：
+        # 两者都必须在 T26.1 准入签字**之前**完成 —— 先证明对照可离线复现、且判定规则
+        # 已冻结，再批重型依赖（否则依赖被白批 / 结果不可证伪）。
+        assert set(s["auto_acceptable"]) == {"T26.2", "T26.3", "T26.4", "T26.6", "T26.7"}
         assert set(s["manual_checkpoint"]) == {"T26.1", "T26.5"}
 
     def test_manual_checkpoint_not_in_auto_acceptable(self):
