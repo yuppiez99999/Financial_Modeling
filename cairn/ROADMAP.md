@@ -5,7 +5,11 @@
 Laya（Convai 开放权重、Jev 同构）给类型化决策 `choice`/`score`/`noul` + **校准置信度**、
 可本地跑 ⇒ 补契约层缺失的一环：一个**只读第二决策源 / 交叉验证臂**。
 T26.2/T26.3/T26.4 自动交付（`src/eval/laya_typed_decision.py`，全部 `readonly`、
-`affects_gate` 恒 false）；T26.1（重型依赖 ~1.7GB + 许可证准入）/ T26.5（保留决策）
+`affects_gate` 恒 false）；T26.6（**接入前的冻结快照回放对账**，2026-09-24 补交付）
+把「先批 T26.1 重型依赖、再发现 T26.3 对照不可复现」这一**顺序风险**变成审批时可见的读数
+（`python main.py laya-replay`，实测 `replayable_with_label_drift`：价格逐行相等、
+日期标签错位 5~7 个交易日 ⇒ 可离线复算，但口径须认冻结快照日期）；
+T26.1（重型依赖 ~1.7GB + 许可证准入）/ T26.5（保留决策）
 待人工签字（决策包 priority 17/18，pending）。详见 `00_kickoff/s26_laya_decision_conclusion.md`。
 
 **前序焦点**：Issue #55「决策源契约与优化」——**第九轮（全池基线读数冻结）已完成**：
@@ -102,6 +106,9 @@ T26.2/T26.3/T26.4 自动交付（`src/eval/laya_typed_decision.py`，全部 `rea
       `cairn/risk-signal-informativeness.md`）
 - [x] **Issue #55 收口轮（⑨）**：**全池基线读数在统一切片上复现并冻结入库**
       （2026-09-17；详见 `cairn/full-pool-baseline.md`）
+- [ ] **J 轮 S26（Laya 只读接入）**：T26.2/T26.3/T26.4 + **T26.6（接入前冻结快照回放对账）**
+      已自动交付；T26.1（重型依赖准入）/ T26.5（保留决策）待人工签字
+      （2026-09-24 进度；详见 `00_kickoff/s26_laya_decision_conclusion.md`）
 
 ## 开放问题
 

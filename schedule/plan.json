@@ -1736,7 +1736,8 @@
       "auto_acceptable": [
         "T26.2",
         "T26.3",
-        "T26.4"
+        "T26.4",
+        "T26.6"
       ],
       "manual_checkpoint": [
         "T26.1",
@@ -1774,6 +1775,14 @@
           "result": "src/eval/laya_typed_decision.cascade_smoke：architecture=laya_local_only，不可用/低置信一律本地弃权（noul），network_calls=0、raises=False、verdict=pass；零信号产出（全部 readonly=True）"
         },
         {
+          "id": "T26.6",
+          "name": "接入前的冻结快照回放对账：现行 data/raw/<symbol>.csv 是**滑动增量缓存**（按日期标签对齐，实测日期标签整体错位 5 个交易日）⇒ 若先批 T26.1 重型依赖、再发现 T26.3 对照不可复现，依赖被白批；本任务把「能不能离线复算」变成审批时可见的读数（src/eval/laya_frozen_replay.py + python main.py laya-replay）",
+          "status": "completed",
+          "auto_run": true,
+          "completed_at": "2026-09-24T11:55:00+00:00",
+          "result": "src/eval/laya_frozen_replay.py：按位置逐行对账缓存 vs 冻结快照（金额列全等判定同一价格序列）+ 日期标签逐值核（区间相同而内部错位是最隐蔽的一种）+ 结论词表 replayable / replayable_with_label_drift / snapshot_diverged / unverifiable；CLI python main.py laya-replay → reports/laya_replay.json；实测 3/3 对账通过、价格逐行相等、日期标签错位 ⇒ replayable_with_label_drift（对照可离线复算，口径须认冻结快照日期）；全部产出 readonly=True、affects_gate/affects_signal 恒 False、不写数据、不联网"
+        },
+        {
           "id": "T26.5",
           "name": "保留决策（是否接入 / 是否仅评估）（人工检查点）",
           "status": "pending",
@@ -1781,8 +1790,8 @@
         }
       ],
       "affects_gate": false,
-      "note": "用户决策（Issue #66 会话指令「1同意 2只留Laya 3开工」）：方向同意 Laya 打底，且**只留 Laya**——移除原设计的 Jev 在线升级臂（闭源 API = 网络依赖 + 成本 + 不可复现，撞上 H5 被否的三条死因），故级联简化为纯本地降级。本阶段纪律沿 H5：只读、不进信号路径、CI 离线可复现、评估不通过则整阶段取消。Laya 权重属重型依赖（~1.7GB），须由 T26.1 人工检查点确认依赖代价。affects_gate=false、strategy_gate 零改动。 | 交付记录（2026-09-20）：00_kickoff/s26_laya_decision_conclusion.md",
-      "result": "自动任务（T26.2/T26.3/T26.4）已交付（详见 00_kickoff/s26_laya_decision_conclusion.md）；T26.1/T26.5 待人工签字",
+      "note": "用户决策（Issue #66 会话指令「1同意 2只留Laya 3开工」）：方向同意 Laya 打底，且**只留 Laya**——移除原设计的 Jev 在线升级臂（闭源 API = 网络依赖 + 成本 + 不可复现，撞上 H5 被否的三条死因），故级联简化为纯本地降级。本阶段纪律沿 H5：只读、不进信号路径、CI 离线可复现、评估不通过则整阶段取消。Laya 权重属重型依赖（~1.7GB），须由 T26.1 人工检查点确认依赖代价。affects_gate=false、strategy_gate 零改动。 | 交付记录（2026-09-20）：00_kickoff/s26_laya_decision_conclusion.md | T26.6 补交付（2026-09-24）：接入前的冻结快照回放对账 —— 把「先批 T26.1 重型依赖、再发现 T26.3 对照不可复现」这一顺序风险，变成审批时就能看到的读数。",
+      "result": "自动任务（T26.2/T26.3/T26.4/T26.6）已交付（详见 00_kickoff/s26_laya_decision_conclusion.md）；T26.1/T26.5 待人工签字",
       "started_at": "2026-09-20T06:40:00+00:00",
       "auto_acceptable_completed_at": "2026-09-20T06:40:00+00:00"
     }

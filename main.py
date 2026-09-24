@@ -2988,6 +2988,44 @@ def run_laya_decision(config: dict, symbols: list[str] | None = None,
             "contrast": contrast, "cascade_smoke": smoke, "decision": decision}
 
 
+def run_laya_replay(config: dict, symbols: list[str] | None = None,
+                    raw_dir: str = "data/raw") -> dict:
+    """Laya 接入前的冻结快照回放对账（S26 / J1 · T26.6，Issue #66）。
+
+    为什么它在 T26.1 之前：T26.1 是「是否接受 ~1.7GB 重型依赖」的人工检查点。
+    若是先批依赖再发现 T26.3 的对照**不可离线复现**，那一次依赖就被白批了。
+    本命令把「能不能离线复算」变成**审批时就能看到的数**。
+
+    只做三件只读的事（不写数据、不改配置、不联网）：
+      1. 逐标的按**位置**对账「增量缓存 vs 冻结快照」的金额列（同一价格序列？）；
+      2. 逐值核日期标签（区间相同但内部错位是最隐蔽的一种）；
+      3. 给结论：`replayable*` / `snapshot_diverged` / `unverifiable`。
+
+    ⚠️ ``affects_gate`` / ``affects_signal`` 恒为 False（结构性保证）。
+    落盘 ``reports/laya_replay.json``。
+    """
+    from src.eval.laya_frozen_replay import build_replay_report
+
+    logger.info("Laya 接入前冻结快照回放对账（J1 / S26 · T26.6）")
+    report = build_replay_report(raw_dir=raw_dir, symbols=symbols)
+    report["command"] = "laya-replay"
+    out_dir = Path("reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "laya_replay.json"
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str),
+                    encoding="utf-8")
+    report["report_path"] = str(path)
+    _record_trial(config, "laya-replay", {
+        "n_pairs": report.get("n_pairs"),
+        "n_replayable": report.get("n_replayable"),
+        "conclusion": report.get("conclusion"),
+    })
+    print(json.dumps({k: v for k, v in report.items() if k != "pairs"},
+                     ensure_ascii=False, indent=2, default=str))
+    print(f"\n逐标的明细见 {path}（{report.get('n_pairs')} 对）")
+    return report
+
+
 def _horizon_name_for(days: int, horizons_cfg: dict) -> str:
     """交易日数 → 配置里的 horizon 名（short_term 等）；找不到则用 ``h<days>d``。
 
@@ -4443,6 +4481,7 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py calibration-ablation     # 校准层消融对照：base/platt/isotonic 决策读数并排（T19.4 证据）
   python main.py research-assist          # 投研辅助只读接入评估：候选调研 + 离线对照 + 决策单（S20/H5）
   python main.py laya-decision             # Laya 类型化决策只读接入评估（S26/J1）：适配器 + 离线对照 + 级联冒烟 + 决策单
+  python main.py laya-replay               # Laya 接入前的冻结快照回放对账（S26/J1·T26.6）：缓存 vs 冻结快照逐行核账
   python main.py portfolio-backtest      # 组合回测闭环：信号×门槛×成本三档→净值/回撤/换手/夏普（S21/I1，report_only）
   python main.py decision-feed            # 决策源契约导出：净方向概率/综合分/采纳建议 → reports/decision_feed.json
   python main.py decision-feed --stdout    # 同上，直接打印 JSON（供下游管道消费）
@@ -4470,6 +4509,7 @@ def build_parser() -> argparse.ArgumentParser:
         "portfolio-backtest", "drift-monitor", "feature-attribution",
         "decision-feed", "tv-export", "pool-collinearity", "model-improve",
         "regime-signal", "edge-check", "ablation", "risk-signal", "laya-decision",
+        "laya-replay",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -5355,6 +5395,9 @@ def main():
             decided_by=str(getattr(args, "decided_by", "") or ""),
             reason=str(getattr(args, "reason", "") or ""),
             weights_path=str(getattr(args, "laya_weights", "") or ""))
+    elif args.command == "laya-replay":
+        run_laya_replay(config, symbols=_cli_symbols(args),
+                        raw_dir=str((config.get("data", {}) or {}).get("raw_dir", "data/raw")))
     elif args.command == "confidence-gate":
         _ct = getattr(args, "chosen_threshold", None)
         run_confidence_gate(
