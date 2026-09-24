@@ -2892,6 +2892,7 @@ def run_laya_decision(config: dict, symbols: list[str] | None = None,
     落盘 ``reports/laya_evaluation.json`` / ``laya_contrast.json`` /
     ``laya_cascade_smoke.json`` / ``laya_decision.json``。
     """
+    from src.eval.laya_contrast_prereg import build_prereg_report
     from src.eval.laya_typed_decision import (
         LayaLocalAdapter, build_decision, build_laya_evaluation, cascade_smoke,
         offline_contrast,
@@ -2953,13 +2954,16 @@ def run_laya_decision(config: dict, symbols: list[str] | None = None,
     smoke = cascade_smoke(adapter_available=adapter.available)
     decision = build_decision(evaluation, contrast,
                               decided_by=decided_by, proceed=False, reason=reason)
+    # T26.7：预注册判定规则 + 按该规则对当前对照读数判一次（规则先于跑数）
+    prereg = build_prereg_report(contrast)
 
     out_dir = Path("reports")
     out_dir.mkdir(exist_ok=True)
     for name, payload in (("laya_evaluation.json", evaluation),
                           ("laya_contrast.json", contrast),
                           ("laya_cascade_smoke.json", smoke),
-                          ("laya_decision.json", decision)):
+                          ("laya_decision.json", decision),
+                          ("laya_contrast_prereg.json", prereg)):
         (out_dir / name).write_text(json.dumps(payload, ensure_ascii=False, indent=2),
                                     encoding="utf-8")
 
@@ -2981,11 +2985,58 @@ def run_laya_decision(config: dict, symbols: list[str] | None = None,
                           "network_calls": smoke["network_calls"]},
         "decision": {"verdict": decision["verdict"], "status": decision["status"],
                      "blockers": decision["blockers"]},
+        "contrast_prereg": {"verdict": prereg["verdict"]["verdict"],
+                            "criterion_version": prereg["criterion"]["version"],
+                            "criterion_fingerprint": prereg["criterion_fingerprint"]},
     }, ensure_ascii=False, indent=2))
     print("\n报告已保存: reports/laya_evaluation.json / _contrast.json / "
-          "_cascade_smoke.json / _decision.json")
+          "_cascade_smoke.json / _decision.json / _contrast_prereg.json")
     return {"evaluation": evaluation, "adapter": adapter_status,
-            "contrast": contrast, "cascade_smoke": smoke, "decision": decision}
+            "contrast": contrast, "cascade_smoke": smoke, "decision": decision,
+            "contrast_prereg": prereg}
+
+
+def run_laya_prereg(config: dict, *, n_trials: int = 1) -> dict:
+    """Laya 对照判据的**接入前预注册**（S26 / J1 · T26.7）。
+
+    只读：输出预注册判定规则 + 指纹 + 按当前对照读数的一次判定。
+    规则在 T26.1 之前冻结（`frozen_before=T26.1`），避免真实权重接入后
+    **事后挑规则**。落盘 ``reports/laya_contrast_prereg.json``。
+    """
+    from src.eval.laya_contrast_prereg import build_prereg_report
+
+    logger.info("Laya 对照判据预注册（J1 / S26 · T26.7）")
+    # 用本地产出的对照读数（若已跑过）；缺失则如实记 unverifiable
+    contrast: dict | None = None
+    try:
+        cpath = Path("reports") / "laya_contrast.json"
+        if cpath.exists():
+            contrast = json.loads(cpath.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[laya-prereg] 读对照读数失败（不影响预注册）: {e}")
+
+    report = build_prereg_report(contrast, n_trials=n_trials)
+    report["command"] = "laya-prereg"
+
+    out_dir = Path("reports")
+    out_dir.mkdir(exist_ok=True)
+    path = out_dir / "laya_contrast_prereg.json"
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    _record_trial(config, "laya-prereg", {
+        "criterion_version": report["criterion"]["version"],
+        "verdict": report["verdict"]["verdict"],
+    })
+
+    print(json.dumps({
+        "criterion_version": report["criterion"]["version"],
+        "criterion_fingerprint": report["criterion_fingerprint"],
+        "rules": report["criterion"]["rules"],
+        "verdict": report["verdict"]["verdict"],
+        "conclusion": report["verdict"]["conclusion"],
+    }, ensure_ascii=False, indent=2))
+    print(f"\n报告已保存: {path}")
+    return report
 
 
 def run_laya_replay(config: dict, symbols: list[str] | None = None,
@@ -4482,6 +4533,7 @@ def build_parser() -> argparse.ArgumentParser:
   python main.py research-assist          # 投研辅助只读接入评估：候选调研 + 离线对照 + 决策单（S20/H5）
   python main.py laya-decision             # Laya 类型化决策只读接入评估（S26/J1）：适配器 + 离线对照 + 级联冒烟 + 决策单
   python main.py laya-replay               # Laya 接入前的冻结快照回放对账（S26/J1·T26.6）：缓存 vs 冻结快照逐行核账
+  python main.py laya-prereg               # Laya 对照判据的接入前预注册（S26/J1·T26.7）：规则先于跑数
   python main.py portfolio-backtest      # 组合回测闭环：信号×门槛×成本三档→净值/回撤/换手/夏普（S21/I1，report_only）
   python main.py decision-feed            # 决策源契约导出：净方向概率/综合分/采纳建议 → reports/decision_feed.json
   python main.py decision-feed --stdout    # 同上，直接打印 JSON（供下游管道消费）
@@ -4509,7 +4561,7 @@ def build_parser() -> argparse.ArgumentParser:
         "portfolio-backtest", "drift-monitor", "feature-attribution",
         "decision-feed", "tv-export", "pool-collinearity", "model-improve",
         "regime-signal", "edge-check", "ablation", "risk-signal", "laya-decision",
-        "laya-replay",
+        "laya-replay", "laya-prereg",
         "gate", "gate-diagnose", "factors", "factor-model",
         "stream", "intraday", "consistency", "risk-advice",
     ], help="执行命令")
@@ -5395,6 +5447,8 @@ def main():
             decided_by=str(getattr(args, "decided_by", "") or ""),
             reason=str(getattr(args, "reason", "") or ""),
             weights_path=str(getattr(args, "laya_weights", "") or ""))
+    elif args.command == "laya-prereg":
+        run_laya_prereg(config, n_trials=int(getattr(args, "n_trials", 1) or 1))
     elif args.command == "laya-replay":
         run_laya_replay(config, symbols=_cli_symbols(args),
                         raw_dir=str((config.get("data", {}) or {}).get("raw_dir", "data/raw")))

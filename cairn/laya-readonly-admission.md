@@ -10,6 +10,7 @@
 ```bash
 python main.py laya-decision     # 适配器 + 离线对照 + 级联冒烟 + 决策单（T26.2~T26.4）
 python main.py laya-replay       # 接入前冻结快照回放对账（T26.6）
+python main.py laya-prereg       # 对照判据的接入前预注册（T26.7，规则先于跑数）
 ```
 
 只读：`affects_gate=false`、`affects_signal=false`（结构性保证，非口头约定）；
@@ -42,6 +43,26 @@ T26.1 是「是否接受 ~1.7GB fp32 / ~2GB RAM 的**重型依赖**」。这里�
 事后专门做一轮「统一切片 + 冻结」才敢写结论）。
 
 `python main.py laya-replay` 把这件事从**事后补救**提前成**接入前的准入条件**。
+
+## 二·五、T26.7：判定规则也必须先于 T26.1 冻结
+
+T26.6 证明的是「对照**能不能离线复现**」；但还有一层更靠后的洞：
+**T26.3 的对照没有预先写死的通过/不通过规则** —— 它会算出 `delta_hit_rate`、
+`spearman_vs_baseline`、分档×收益一堆读数，**却没有一条「达到什么算通过」的线**。
+等真实权重接入、跑出数字再定「多少算好」，就是**事后挑规则**（post-hoc），
+读数再漂亮也**不可证伪**。
+
+⇒ `python main.py laya-prereg` 把判定规则在 T26.1 之前冻结：
+
+| 门 | 阈值 | 理由 |
+|---|---|---|
+| 命中率增量下限 | `delta_hit_rate ≥ 0.02` | 现有概率 spread ≈ 1pp；Laya 无 2pp 增量则无边际 |
+| 两源相关性上限 | `\|spearman\| ≤ 0.85` | 超上限 ⇒ 两源重复、边际为零 |
+| 分档×收益单调性 | 单调非递减 | 复用契约层「高置信 ≠ 可采信」判据 |
+
+**指纹钉死**：规则内容进 `criterion_fingerprint`（sha256），规则一改指纹即变，
+该次读数不得再当「预注册结果」引用。**fail-close**：无预注册规则 ⇒ 一律不判 `pass`；
+真实权重未接入 ⇒ `unverifiable`（规则已就位，待权重接入后原样套用）。
 
 ## 三、判据（写死，防事后找补）
 
@@ -84,6 +105,9 @@ T26.1 是「是否接受 ~1.7GB fp32 / ~2GB RAM 的**重型依赖**」。这里�
   只比 `[min, max]` 会漏掉这类错位。必须**逐值**核。
 - **contains 顺序风险要写进排期**：把"可复现性"列为**先于**"依赖准入"的自动任务
   （T26.6 先于 T26.1），比事后写一句"注意复现"有用得多 —— 后者没人会执行。
+- **contains 判定规则要先冻结再跑数**：只答"能不能复现"不够，还须在审批前写死
+  "达到什么算通过"。否则等读数出来再定规则 = 事后挑规则，不可证伪。
+  规则进指纹（sha256），改了可被识别（T26.7）。
 
 ## 六、下一步（属人工决策）
 
@@ -91,4 +115,6 @@ T26.1 是「是否接受 ~1.7GB fp32 / ~2GB RAM 的**重型依赖**」。这里�
 - **T26.5**：整条链路保留与否（仅作只读评估臂 / 彻底不引入 / 整阶段取消）。
 
 两项均 `pending`，`npc_may_decide=false`。决策材料见
-`00_kickoff/s26_laya_decision_conclusion.md` 与 `reports/laya_replay.json`。
+`00_kickoff/s26_laya_decision_conclusion.md`、`reports/laya_replay.json`（T26.6）
+与 `reports/laya_contrast_prereg.json`（T26.7 预注册判据 —— 审批时即可看到
+「批了之后什么算通过」）。

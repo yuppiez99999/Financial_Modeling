@@ -2,6 +2,31 @@
 
 本文件按倒序记录项目的实质性进展——最新条目紧贴本行下方。每条保持简短——只写摘要与指针；结论沉淀到 `cairn/<topic>.md` 知识专题文档。
 
+## 2026-09-24 · Laya 对照判据的接入前预注册（Issue #66 · J 轮 S26 · T26.7）
+
+- 用户「继续」⇒ 承接 T26.6，补**同一顺序风险的下一层**：T26.6 只答了
+  「对照**能不能离线复现**」，但 **T26.3 的对照没有预先写死的判定规则**。
+- **动机（事后挑规则风险）**：`offline_contrast()` 算出 `delta_hit_rate` /
+  `spearman_vs_baseline` / 分档×收益 一堆读数，**却没有一条「达到什么算通过」的线**。
+  等真实权重接入、跑出数字再定「多少算好」= **post-hoc**，读数再漂亮也**不可证伪**。
+- **交付** `src/eval/laya_contrast_prereg.py`：`default_criterion`（v1.0.0，三条可独立
+  证伪的门 —— `min_delta_hit_rate=0.02` / `max_spearman_vs_baseline=0.85` /
+  `require_band_monotonicity`）+ `criterion_fingerprint`（sha256 钉死规则，改了即识别）
+  + `apply_criterion`（fail-close 词表 `pass`/`fail`/`unverifiable`/
+  `no_preregistered_criterion`）+ `build_prereg_report`。
+  CLI `python main.py laya-prereg` → `reports/laya_contrast_prereg.json`；
+  `laya-decision` 同步产出该报告。
+- **纪律**：**无预注册规则一律不判 `pass`**；真实权重未接入如实 `unverifiable`
+  （规则已就位，待权重接入后**原样套用**）；全部产出 `affects_gate`/`affects_signal`
+  恒 False；不写数据、不联网；排期 S26 新增 **T26.7**（`auto_acceptable`，**先于 T26.1**）。
+- 新增 `tests/test_laya_contrast_prereg.py` **26 条守卫**（全离线，含指纹随规则变化、
+  三门各自可证伪、fail-close）；同步更新 `test_laya_typed_decision` 的 S26 自动项集。
+  `pytest tests`（忽略 fastapi 依赖的 test_roadmap_q1）→ **1494 passed / 16 failed**，
+  16 条失败均为环境缺 fastapi/hmmlearn/optuna，与 base 复现一致、与本改动无关。
+- **边界**：本模块只回答「批了之后**什么算通过**」，**不**回答「Laya 有没有用」
+  （仍须 T26.1 批依赖 + 真实权重的 T26.3 读数）；T26.1/T26.5 仍 `pending`，NPC 不代签。
+- 详见 `00_kickoff/s26_laya_decision_conclusion.md` §3.2 与 `cairn/laya-readonly-admission.md` §二·五。
+
 ## 2026-09-24 · Laya 接入前的冻结快照回放对账（Issue #66 · J 轮 S26 · T26.6）
 
 - 用户「继续开发」⇒ 本轮不新增假设，补 **S26 缺失的一块**：**接入前的可复现性证明**。

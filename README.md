@@ -365,7 +365,8 @@ python main.py schedule         # 自动重训练调度（常驻）
 > 缺列/数量不符 **fail-close 显式报错**，静默截断/填零的错位风险就此关闭。
 
 > 🔌 **Laya 只读决策源接入（J 轮 S26，Issue #66）**：
-> `python main.py laya-decision` / `python main.py laya-replay`（只读，`affects_gate=false`）
+> `python main.py laya-decision` / `python main.py laya-replay` / `python main.py laya-prereg`
+> （只读，`affects_gate=false`）
 > —— 方向裁定：**Laya 打底、只留本地 Laya**（Jev 闭源在线臂按用户决策移除，避免网络依赖 /
 > 成本 / 不可复现）。Laya 的 `choice`/`score`/`noul` + **校准置信度**用来补契约层缺失的一环：
 > 一个可离线复现的**只读第二决策源 / 交叉验证臂**；产出全部无
@@ -375,6 +376,10 @@ python main.py schedule         # 自动重训练调度（常驻）
 > **不同价格序列**上。`laya-replay` 逐行对账「缓存 ↔ 冻结快照」：实测
 > **价格逐行相等 ✅ 3/3、日期标签错位 ❌ 0/3** ⇒ `replayable_with_label_drift`
 > —— 对照**可离线复算**，但口径**必须认冻结快照的日期**。
+> **判据也要先冻结再跑数**（T26.7）：T26.3 的对照原本**没有预先写死的通过/不通过规则**，
+> 等真实权重跑出数字再定「多少算好」= 事后挑规则、不可证伪。`laya-prereg` 把三条门
+> （命中率增量 ≥ 2pp / 两源相关性 ≤ 0.85 / 分档×收益单调）在 T26.1 之前冻结，
+> 规则进 sha256 指纹（改了即识别），**无预注册规则一律不判 pass**（fail-close）。
 > T26.1（~1.7GB 重型依赖 + 许可证准入）/ T26.5（保留决策）仍 `pending`，**NPC 不代签**。
 > 详见 [Laya 只读接入边界](cairn/laya-readonly-admission.md)。
 
